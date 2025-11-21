@@ -1,0 +1,79 @@
+import { IsUUID, IsArray, ArrayNotEmpty, IsString, IsOptional, IsDateString, IsObject } from 'class-validator';
+
+export class CreateJourneyPlanDto {
+  @IsUUID()
+  userId: string;
+
+  @IsUUID()
+  branchId: string;
+
+  @IsUUID()
+  shiftId: string;
+
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  days: string[];
+
+  @IsOptional()
+  @IsDateString()
+  fromDate?: string;
+
+  @IsOptional()
+  @IsDateString()
+  toDate?: string;
+}
+
+export class CreateUnplannedJourneyDto {
+  @IsUUID()
+  userId: string;
+
+  @IsUUID()
+  branchId: string;
+
+  @IsUUID()
+  shiftId: string;
+
+  @IsDateString()
+  date?: string;
+}
+
+export class CheckInOutDto {
+  @IsString()
+  journeyId: string;
+
+	@IsOptional()
+  @IsString()
+  userId: string;
+
+  @IsOptional()
+  @IsDateString()
+  checkInTime?: Date;
+
+  @IsOptional()
+  @IsDateString()
+  checkOutTime?: Date;
+
+  @IsString()
+  geo: string; 
+
+  @IsOptional()
+  @IsString()
+  image?: string;
+
+  @IsOptional()
+  @IsString()
+  checkInDocument?: string;
+
+  @IsOptional()
+  @IsString()
+  checkOutDocument?: string;
+
+  @IsOptional()
+  @IsString()
+  noteIn?: string;
+
+  @IsOptional()
+  @IsString()
+  noteOut?: string;
+}

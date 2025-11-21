@@ -1,0 +1,117 @@
+{
+  "info": {
+    "name": "Feedback Module",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "fdb-module-collection-001"
+  },
+  "item": [
+    {
+      "name": "Create Feedback",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "userId", "value": "", "type": "text", "disabled": true },
+            { "key": "projectId", "value": "", "type": "text" },
+            { "key": "type", "value": "issue", "type": "text" },
+            { "key": "message", "value": "Something is wrong here.", "type": "text" },
+            {
+              "key": "files",
+              "type": "file",
+              "src": "",
+              "disabled": false
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{base_url}}/feedback",
+          "host": ["{{base_url}}"],
+          "path": ["feedback"]
+        }
+      }
+    },
+
+    {
+      "name": "Get Feedback List",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/feedback?page=1&limit=10&projectId=&userId=&type=&is_resolved=",
+          "host": ["{{base_url}}"],
+          "path": ["feedback"],
+          "query": [
+            { "key": "page", "value": "1" },
+            { "key": "limit", "value": "10" },
+            { "key": "search", "value": "", "disabled": true },
+            { "key": "projectId", "value": "" },
+            { "key": "userId", "value": "" },
+            { "key": "type", "value": "" },
+            { "key": "is_resolved", "value": "" }
+          ]
+        }
+      }
+    },
+
+    {
+      "name": "Get Single Feedback",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/feedback/{{feedbackId}}",
+          "host": ["{{base_url}}"],
+          "path": ["feedback", "{{feedbackId}}"]
+        }
+      }
+    },
+
+    {
+      "name": "Resolve / Unresolve Feedback",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"is_resolved\": true,\n  \"resolvedById\": \"\"\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/feedback/{{feedbackId}}/resolve",
+          "host": ["{{base_url}}"],
+          "path": ["feedback", "{{feedbackId}}", "resolve"]
+        }
+      }
+    },
+
+    {
+      "name": "Delete Feedback",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{token}}", "type": "text" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/feedback/{{feedbackId}}",
+          "host": ["{{base_url}}"],
+          "path": ["feedback", "{{feedbackId}}"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8081/api/v1" },
+    { "key": "token", "value": "YOUR_JWT_TOKEN_HERE" },
+    { "key": "feedbackId", "value": "" }
+  ]
+}

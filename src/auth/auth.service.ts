@@ -1,0 +1,340 @@
+import { Injectable, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import * as argon2 from 'argon2';
+import { ERole } from 'enums/Role.enum';
+import { User } from 'entities/user.entity';
+import { Role } from 'entities/role.entity';
+import { Project } from 'entities/project.entity';
+import { Branch } from 'entities/branch.entity';
+import { RegisterDto, LoginDto, UpdateUserDto } from 'dto/user.dto';
+
+@Injectable()
+export class AuthService {
+  constructor(
+    @InjectRepository(User) public userRepository: Repository<User>,
+    @InjectRepository(Role) private roleRepository: Repository<Role>,
+    @InjectRepository(Project) private projectRepository: Repository<Project>,
+    @InjectRepository(Branch) private branchRepository: Repository<Branch>,
+    private jwtService: JwtService,
+  ) {}
+
+  async register(requester: User | null, dto: RegisterDto) {
+    const existingUser = await this.userRepository.findOne({ where: { username: dto.username } });
+    if (existingUser) throw new BadRequestException('Username already exists');
+
+    const role = await this.roleRepository.findOne({ where: { name: dto.role } });
+    if (!role) throw new BadRequestException('Invalid role specified');
+
+    if (requester) {
+      if (dto.role === ERole.SUPER_ADMIN && requester.role.name !== ERole.SUPER_ADMIN) {
+        throw new ForbiddenException('Only SuperAdmin can create other SuperAdmins');
+      }
+
+      if (requester.role.name === ERole.PROJECT_ADMIN) {
+        if (dto.role === ERole.PROJECT_ADMIN) {
+          throw new ForbiddenException('You cannot create other Project Admins');
+        }
+        dto.project_id = requester.project.id;
+      }
+    } else {
+      if (dto.role !== ERole.SUPER_ADMIN) {
+        throw new ForbiddenException('Only SuperAdmin can be created this way');
+      }
+    }
+
+    // Handle project
+    let project: Project | null = null;
+    if (dto.role === ERole.PROJECT_ADMIN && requester?.role.name === ERole.SUPER_ADMIN) {
+      if (!dto.project_name) throw new BadRequestException('Project name is required when creating Project Admin');
+
+      project = await this.projectRepository.save(
+        this.projectRepository.create({
+          name: dto.project_name,
+          image_url: dto.image_url,
+          is_active: true,
+          owner: null,
+        }),
+      );
+    } else if (dto.role !== ERole.SUPER_ADMIN) {
+      const projectId = requester?.role.name === ERole.PROJECT_ADMIN ? requester.project.id : dto.project_id;
+      if (!projectId) throw new BadRequestException('Project ID is required for this role');
+
+      project = await this.projectRepository.findOne({ where: { id: projectId } });
+      if (!project) throw new BadRequestException('Project not found');
+    }
+
+    // Handle branch
+    let branch: Branch | null = null;
+    if (dto.branch_id) {
+      branch = await this.branchRepository.findOne({
+        where: { id: dto.branch_id, project: { id: project.id } },
+        relations: ['supervisor', 'team', 'project'],
+      });
+      if (!branch) throw new BadRequestException('Branch not found or not part of the project');
+
+      // Load all branches in the same project
+      const projectBranches = await this.branchRepository.find({
+        where: { project: { id: project.id } },
+        relations: ['supervisor', 'team'],
+      });
+
+      // Validate supervisor is not used elsewhere
+      if (dto.role === ERole.SUPERVISOR) {
+        if (branch.supervisor) {
+          throw new ConflictException('This branch already has a supervisor assigned');
+        }
+
+        const existingSupervisor = projectBranches.find(b => b.supervisor?.username === dto.username);
+        if (existingSupervisor) {
+          throw new ConflictException('This supervisor is already assigned to another branch');
+        }
+      }
+
+      // Validate promoter is not used elsewhere
+      if (dto.role === ERole.PROMOTER) {
+        const promoterUsed = projectBranches.some(b => b.team?.some(user => user.username === dto.username));
+        if (promoterUsed) {
+          throw new ConflictException('This promoter is already assigned to a branch in this project');
+        }
+      }
+    }
+
+    if (dto.role !== ERole.SUPER_ADMIN && dto.role !== ERole.PROJECT_ADMIN) {
+      dto.manager_id = requester.id;
+      dto.project_id = project.id;
+    }
+
+    const user = this.userRepository.create({
+      username: dto.username,
+      password: await argon2.hash(dto.password),
+      name: dto.name,
+      project_id: dto.project_id || null,
+      manager_id: dto.manager_id || null,
+      role,
+      project: dto.role === ERole.PROJECT_ADMIN ? project : undefined,
+      branch: branch ?? undefined,
+      is_active: true,
+      created_by: requester,
+      mobile: dto.mobile,
+    });
+
+    const savedUser = await this.userRepository.save(user);
+
+    // Assign supervisor or promoter to the branch
+    if (branch && dto.role === ERole.SUPERVISOR) {
+      branch.supervisor = savedUser;
+      await this.branchRepository.save(branch);
+    }
+
+    if (branch && dto.role === ERole.PROMOTER) {
+      if (!branch.team) branch.team = [];
+      branch.team.push(savedUser);
+      await this.branchRepository.save(branch);
+    }
+
+    if (dto.role === ERole.PROJECT_ADMIN && requester?.role.name === ERole.SUPER_ADMIN && project) {
+      project.owner = savedUser;
+      await this.projectRepository.save(project);
+    }
+
+    const { password, ...result } = savedUser;
+    return result;
+  }
+
+  async login(dto: LoginDto) {
+    const user = await this.userRepository.findOne({
+      where: { username: dto.username },
+      relations: ['role', 'project'],
+      select: ['id', 'username', 'name', 'password', 'is_active', 'device_id', 'role'],
+    });
+
+		console.log(dto.username);
+
+    if (!user || !(await argon2.verify(user.password, dto.password))) {
+      throw new UnauthorizedException('Invalid username or password');
+    }
+
+    if (!user.is_active) {
+      throw new UnauthorizedException('Your account is inactive');
+    }
+
+    if ([ERole.PROMOTER, ERole.SUPERVISOR].includes(user.role.name as ERole)) {
+      if (!dto.device_id) throw new BadRequestException('Device ID is required for your role');
+
+      if (!user.device_id) {
+        await this.userRepository.update(user.id, { device_id: dto.device_id });
+        user.device_id = dto.device_id;
+      } else if (user.device_id !== dto.device_id) {
+        throw new UnauthorizedException('This account is registered to another device');
+      }
+    }
+
+    return this.generateAuthResponse(user);
+  }
+
+  async refreshToken(refreshToken: string) {
+    try {
+      const payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: process.env.JWT_REFRESH_SECRET,
+      });
+
+      const user = await this.userRepository.findOne({
+        where: { id: payload.sub },
+        relations: ['role', 'project'],
+      });
+
+      if (!user || !user.is_active) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      return this.generateAuthResponse(user);
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+  }
+
+  async getCurrentUser(user: User) {
+    const userWithRelations = await this.userRepository.findOne({
+      where: { id: user.id },
+      relations: ['role', 'project', 'branch', 'created_by'],
+    });
+
+    if (!userWithRelations) throw new BadRequestException('User not found');
+
+    return {
+      id: userWithRelations.id,
+      username: userWithRelations.username,
+      role: userWithRelations.role.name,
+      project: userWithRelations.project,
+      branch: userWithRelations.branch,
+      created_by: userWithRelations.created_by,
+      mobile: userWithRelations.mobile,
+      is_active: userWithRelations.is_active,
+    };
+  }
+  async getUserById(userId: string) {
+    const userWithRelations = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['role', 'project', 'branch', 'created_by'],
+    });
+
+    if (!userWithRelations) throw new BadRequestException('User not found');
+    const project = await this.projectRepository.findOneBy({ id: userWithRelations.project_id });
+
+    return {
+      ...userWithRelations,
+      role: userWithRelations.role.name,
+			project: project,
+    };
+  }
+
+  async getUsersCreatedByOrAll(requester: User) {
+    const relations = ['role', 'project', 'branch', 'created_by'];
+    if (requester.role.name === ERole.SUPER_ADMIN) {
+      return this.userRepository.find({ relations });
+    } else {
+      return this.userRepository.find({
+        where: { created_by: { id: requester.id } },
+        relations,
+      });
+    }
+  }
+
+  async deleteUser(userId: any, requester: User) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['project'],
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    const isSuperAdmin = (requester?.role?.name?.toLowerCase?.() || '') === 'super_admin';
+
+    const targetRoleName = user?.role?.name?.toLowerCase?.();
+    if (targetRoleName && ['admin', 'super_admin'].includes(targetRoleName) && !isSuperAdmin) {
+      throw new ForbiddenException('Only super_admin can delete admin accounts');
+    }
+
+    if (requester.id === user.id) {
+      throw new ForbiddenException('You cannot delete your own account');
+    }
+
+    if (!isSuperAdmin) {
+      if (!requester.project_id) {
+        throw new ForbiddenException('Missing project context for requester');
+      }
+      if (user.project_id && requester.project_id !== user.project_id) {
+        throw new ForbiddenException('You can only delete users in your own project');
+      }
+    }
+
+    await this.userRepository.softDelete(user.id);
+    return { success: true, deletedUserId: user.id };
+  }
+
+  async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['project'],
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    if (requester.project.id !== user.project_id) {
+      throw new ForbiddenException('You can only edit users in your own project');
+    }
+
+    Object.assign(user, dto);
+    return await this.userRepository.save(user);
+  }
+
+  async updateUserRole(userId: any, roleId: any, requester: User) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ['project'],
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    if (user.project.id !== requester.project.id) {
+      throw new ForbiddenException('You can only update users in your own project');
+    }
+
+    const role = await this.roleRepository.findOneBy({ id: roleId as any });
+    if (!role) throw new NotFoundException('Role not found');
+
+    user.role = role;
+    return this.userRepository.save(user);
+  }
+
+  private async generateAuthResponse(user: User) {
+    const payload = {
+      sub: user.id,
+      username: user.username,
+      role: user.role.name,
+      project_id: user.project?.id,
+    };
+
+    return {
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        role: user.role.name,
+        mobile: user.mobile,
+        project_id: user.project?.id,
+        is_active: user.is_active,
+      },
+      access_token: await this.jwtService.signAsync(payload, {
+        secret: process.env.JWT_SECRET,
+        expiresIn: process.env.JWT_EXPIRE || '1h',
+      }),
+      refresh_token: await this.jwtService.signAsync(payload, {
+        secret: process.env.JWT_REFRESH_SECRET,
+        expiresIn: process.env.JWT_REFRESH_EXPIRE || '7d',
+      }),
+    };
+  }
+}

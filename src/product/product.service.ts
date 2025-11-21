@@ -1,0 +1,149 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { CreateProductDto, UpdateProductDto } from 'dto/product.dto';
+import { Branch } from 'entities/branch.entity';
+import { Brand } from 'entities/products/brand.entity';
+import { Category } from 'entities/products/category.entity';
+import { Product } from 'entities/products/product.entity';
+import { Project } from 'entities/project.entity';
+import { Stock } from 'entities/products/stock.entity';
+import { Brackets, Repository } from 'typeorm';
+import { ProductFilterQueryDto } from 'dto/product-filters.dto';
+import { CRUD } from 'common/crud.service';
+
+@Injectable()
+export class ProductService {
+  constructor(
+    @InjectRepository(Product)
+    public productRepository: Repository<Product>,
+    @InjectRepository(Project)
+    public projectRepository: Repository<Project>,
+    @InjectRepository(Brand)
+    public brandRepository: Repository<Brand>,
+    @InjectRepository(Category)
+    public categoryRepository: Repository<Category>,
+    @InjectRepository(Stock)
+    private stockRepository: Repository<Stock>,
+    @InjectRepository(Branch)
+    private branchRepository: Repository<Branch>,
+  ) {}
+
+ 
+  async create(dto: CreateProductDto): Promise<Product> {
+    const [brand, category, project] = await Promise.all([dto.brand_id ? this.brandRepository.findOne({ where: { id: dto.brand_id } }) : undefined, this.categoryRepository.findOne({ where: { id: dto.category_id } }), this.projectRepository.findOne({ where: { id: dto.project_id }, relations: ['branches'] })]);
+
+    if (dto.brand_id && !brand) throw new NotFoundException(`Brand with ID ${dto.brand_id} not found`);
+    if (!category) throw new NotFoundException(`Category with ID ${dto.category_id} not found`);
+    if (!project) throw new NotFoundException(`Project with ID ${dto.project_id} not found`);
+
+    // 🔒 Check for existing product name in this project
+    const existingProduct = await this.productRepository.findOne({
+      where: {
+        name: dto.name,
+        project: { id: project.id },
+      },
+    });
+    if (existingProduct) {
+      throw new ConflictException(`Product name "${dto.name}" already exists in this project`);
+    }
+
+    const product = this.productRepository.create({
+      ...dto,
+      brand,
+      category,
+      project,
+    });
+
+    const savedProduct = await this.productRepository.save(product);
+
+    // ➕ Handle Stock
+    if (dto.stock?.length) {
+      const stockToInsert: Partial<Stock>[] = [];
+
+      for (const stockItem of dto.stock) {
+        if (stockItem.all_branches) {
+          for (const branch of project.branches) {
+            stockToInsert.push({
+              branch,
+              product: savedProduct,
+              quantity: stockItem.quantity,
+            });
+          }
+        } else {
+          if (!stockItem.branch_id) {
+            throw new BadRequestException('branch_id is required unless all_branches is true');
+          }
+
+          const branch = await this.branchRepository.findOne({
+            where: { id: stockItem.branch_id, project: { id: project.id } },
+          });
+
+          if (!branch) {
+            throw new NotFoundException(`Branch with ID ${stockItem.branch_id} not found in this project`);
+          }
+
+          stockToInsert.push({
+            branch,
+            product: savedProduct,
+            quantity: stockItem.quantity,
+          });
+        }
+      }
+
+      await this.stockRepository.save(stockToInsert);
+    }
+
+    return savedProduct;
+  }
+
+  async findOne(id: string) {
+    const product = await this.productRepository.findOne({
+      where: { id },
+      relations: ['brand', 'category', 'stock', 'project'],
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${id} not found`);
+    }
+
+    return product;
+  }
+
+  async update(id: string, dto: UpdateProductDto): Promise<Product> {
+    const product = await this.findOne(id);
+
+    if (dto.brand_id) {
+      const brand = await this.brandRepository.findOne({ where: { id: dto.brand_id } });
+      if (!brand) throw new NotFoundException(`Brand with ID ${dto.brand_id} not found`);
+      product.brand = brand;
+    }
+
+    if (dto.category_id) {
+      const category = await this.categoryRepository.findOne({ where: { id: dto.category_id } });
+      if (!category) throw new NotFoundException(`Category with ID ${dto.category_id} not found`);
+      product.category = category;
+    }
+
+    // 🔐 Check uniqueness before updating name
+    if (dto.name && dto.name !== product.name) {
+      const exists = await this.productRepository.findOne({
+        where: {
+          name: dto.name,
+          project: { id: product.project.id },
+        },
+      });
+      if (exists && exists.id !== product.id) {
+        throw new ConflictException(`Another product with name "${dto.name}" already exists in this project`);
+      }
+    }
+
+    this.productRepository.merge(product, dto);
+    return this.productRepository.save(product);
+  }
+
+  async remove(id: string): Promise<void> {
+    const product = await this.findOne(id);
+    await this.productRepository.remove(product);
+  }
+ 
+}

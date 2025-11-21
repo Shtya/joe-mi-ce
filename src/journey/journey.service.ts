@@ -1,0 +1,389 @@
+// src/journey/journey.service.ts
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
+import * as dayjs from 'dayjs';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto } from 'dto/journey.dto';
+
+import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
+import { User } from 'entities/user.entity';
+import { Branch } from 'entities/branch.entity';
+import { Shift } from 'entities/employee/shift.entity';
+import { getDistance } from 'geolib';
+import { CRUD } from 'common/crud.service';
+import { NotificationService } from 'src/notification/notification.service';
+
+@Injectable()
+export class JourneyService {
+  constructor(
+    @InjectRepository(JourneyPlan)
+    public journeyPlanRepo: Repository<JourneyPlan>,
+
+    @InjectRepository(Journey)
+    public journeyRepo: Repository<Journey>,
+
+    @InjectRepository(CheckIn)
+    public checkInRepo: Repository<CheckIn>,
+
+    @InjectRepository(User)
+    public userRepo: Repository<User>,
+
+    @InjectRepository(Branch)
+    public branchRepo: Repository<Branch>,
+
+    @InjectRepository(Shift)
+    public shiftRepo: Repository<Shift>,
+
+    private readonly notificationService: NotificationService,
+  ) {}
+
+  // ===== إدارة الخطط =====
+  async createPlan(dto: CreateJourneyPlanDto) {
+    const [user, branch, shift] = await Promise.all([
+      this.userRepo.findOne({ where: { id: dto.userId } }),
+      this.branchRepo.findOne({
+        where: { id: dto.branchId },
+        relations: ['city', 'city.region', 'project'],
+      }),
+      this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
+    ]);
+
+    if (!user) throw new NotFoundException('User not found for given userId');
+    if (!branch) throw new NotFoundException('Branch not found for given branchId');
+    if (!shift) throw new NotFoundException('Shift not found for given shiftId');
+
+    if (!branch.project) {
+      throw new BadRequestException('Branch has no project assigned');
+    }
+
+    const fromDate = dto.fromDate || dayjs().format('YYYY-MM-DD');
+    const toDate = dto.toDate || '9999-12-31';
+
+    const existingPlans = await this.journeyPlanRepo.find({
+      where: {
+        user: { id: dto.userId },
+        branch: { id: dto.branchId },
+        shift: { id: dto.shiftId },
+        fromDate: LessThanOrEqual(toDate),
+        toDate: MoreThanOrEqual(fromDate),
+      },
+    });
+
+    for (const plan of existingPlans) {
+      const overlapDays = plan.days.filter(d => dto.days.includes(d));
+      if (overlapDays.length > 0) {
+        throw new ConflictException({
+          message: 'Conflict with existing plan days',
+          conflict: {
+            fromDate: plan.fromDate,
+            toDate: plan.toDate,
+            overlappingDays: overlapDays,
+          },
+        });
+      }
+    }
+
+    const newPlan = this.journeyPlanRepo.create({
+      user,
+      branch,
+      shift,
+      projectId: branch.project.id,
+      fromDate,
+      toDate,
+      days: dto.days,
+    });
+
+    const savedPlan = await this.journeyPlanRepo.save(newPlan);
+
+    return savedPlan;
+  }
+
+  // ===== الرحلات الطارئة =====
+  async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
+    const [user, branch, shift] = await Promise.all([
+      this.userRepo.findOne({ where: { id: dto.userId } }),
+      this.branchRepo.findOne({
+        where: { id: dto.branchId },
+        relations: ['city', 'city.region', 'project'],
+      }),
+      this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
+    ]);
+
+    if (!user) throw new NotFoundException('User not found for given userId');
+    if (!branch) throw new NotFoundException('Branch not found for given branchId');
+    if (!shift) throw new NotFoundException('Shift not found for given shiftId');
+    if (!branch.project) {
+      throw new BadRequestException('Branch has no project assigned');
+    }
+
+    const existingJourney = await this.journeyRepo.findOne({
+      where: {
+        user: { id: dto.userId },
+        date: dto.date,
+        type: JourneyType.UNPLANNED,
+      },
+    });
+
+    if (existingJourney) {
+      throw new ConflictException('Unplanned journey already exists for this user on this day');
+    }
+
+    const newJourney = this.journeyRepo.create({
+      user,
+      branch,
+      shift,
+      projectId: branch.project.id,
+      date: dto.date,
+      type: JourneyType.UNPLANNED,
+      status: JourneyStatus.UNPLANNED_ABSENT,
+      createdBy,
+    });
+
+    return this.journeyRepo.save(newJourney);
+  }
+
+  // ✅ New: journeys for today for a specific user (for phone)
+  async getTodayJourneysForUser(userId: string) {
+    const today = dayjs().format('YYYY-MM-DD');
+
+    const where: any = {
+      user: { id: userId },
+      date: today,
+    };
+
+    const journeys = await this.journeyRepo.find({
+      where,
+      relations: ['branch', 'branch.city', 'branch.city.region', 'shift'],
+      order: { created_at: 'ASC' },
+    });
+
+    return journeys;
+  }
+
+  async getCheckinsForSupervisorBranches(params: { supervisorId: string; date?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) {
+    const { supervisorId, date, fromDate, toDate, page = 1, limit = 20 } = params;
+
+    const branches = await this.branchRepo.find({
+      where: { supervisor: { id: supervisorId } },
+    });
+
+    if (!branches.length) {
+      return { items: [], total: 0, page, limit };
+    }
+
+    const branchIds = branches.map(b => b.id);
+
+    const qb = this.checkInRepo.createQueryBuilder('c').innerJoinAndSelect('c.journey', 'j').innerJoinAndSelect('j.branch', 'b').innerJoinAndSelect('j.shift', 'shift').innerJoinAndSelect('c.user', 'u').where('b.id IN (:...branchIds)', { branchIds });
+
+    if (date) {
+      qb.andWhere('j.date = :date', { date });
+    } else if (fromDate && toDate) {
+      qb.andWhere('j.date BETWEEN :from AND :to', { from: fromDate, to: toDate });
+    }
+
+    const total = await qb.getCount();
+
+    const items = await qb
+      .orderBy('c.checkInTime', 'DESC')
+      .skip((page||1 - 1) * limit||10)
+      .take(limit || 10)
+      .getMany();
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+    };
+  }
+
+  async checkInOut(dto: CheckInOutDto) {
+    const journey = await this.journeyRepo.findOne({
+      where: { id: dto.journeyId },
+      relations: ['branch', 'branch.supervisor', 'shift', 'user'],
+    });
+
+    if (!journey) {
+      throw new NotFoundException('Journey not found');
+    }
+
+    const isWithinRadius = this.isWithinGeofence(journey.branch, dto.geo);
+    if (!isWithinRadius) {
+      throw new ConflictException('User is not within the allowed geofence radius');
+    }
+
+    let checkIn = await this.checkInRepo.findOne({
+      where: { journey: { id: dto.journeyId } },
+    });
+
+    const isCheckIn = !!dto.checkInTime && !dto.checkOutTime;
+    const isCheckOut = !!dto.checkOutTime;
+    const isUpdate = !!dto.checkInTime && !!dto.checkOutTime;
+
+    if (checkIn) {
+      if (dto.checkInTime) {
+        checkIn.checkInTime = dto.checkInTime as any;
+        checkIn.checkInDocument = dto.checkInDocument;
+        checkIn.noteIn = dto.noteIn;
+        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+      }
+
+      if (dto.checkOutTime) {
+        if (!checkIn.checkInTime) {
+          throw new ConflictException('Cannot check out without check in');
+        }
+        checkIn.checkOutTime = dto.checkOutTime as any;
+        checkIn.checkOutDocument = dto.checkOutDocument;
+        checkIn.noteOut = dto.noteOut;
+        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
+      }
+
+      checkIn.geo = dto.geo as any;
+      checkIn.image = dto.image;
+      checkIn.isWithinRadius = isWithinRadius;
+    } else {
+      if (!dto.checkInTime) {
+        throw new ConflictException('Check in time is required for first time');
+      }
+
+      checkIn = this.checkInRepo.create({
+        journey,
+        user: journey.user,
+        checkInTime: dto.checkInTime as any,
+        checkOutTime: dto.checkOutTime as any,
+        checkInDocument: dto.checkInDocument,
+        checkOutDocument: dto.checkOutDocument,
+        geo: dto.geo as any,
+        image: dto.image,
+        noteIn: dto.noteIn,
+        noteOut: dto.noteOut,
+        isWithinRadius,
+      });
+
+      journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+    }
+
+    await this.journeyRepo.save(journey);
+    const savedCheckIn = await this.checkInRepo.save(checkIn);
+
+    // 🔔 Notify supervisor if exists
+    const supervisor = journey.branch?.supervisor;
+    console.log(journey);
+    if (supervisor) {
+      const type: 'checkin' | 'checkout' | 'update' = isUpdate ? 'update' : isCheckOut ? 'checkout' : 'checkin';
+
+      const time = type === 'checkout' ? savedCheckIn.checkOutTime : savedCheckIn.checkInTime || new Date();
+
+      await this.notificationService.notifySupervisorOnCheckin({
+        supervisorId: supervisor.id,
+        branchId: journey.branch.id,
+        branchName: journey.branch.name,
+        promoterId: journey.user.id,
+        promoterName: journey.user.name,
+        journeyId: journey.id,
+        type,
+        time,
+      });
+    }
+
+    return savedCheckIn;
+  }
+
+  // ===== سجل الحضور =====
+  async getAttendanceHistory(projectId?: string, userId?: string, date?: string, fromDate?: string, toDate?: string) {
+    const where: any = {};
+
+    if (userId) where.user = { id: userId };
+    if (date) where.journey = { date };
+    if (fromDate && toDate) {
+      where.journey = { date: Between(fromDate, toDate) };
+    }
+    if (projectId) {
+      where.journey = {
+        ...(where.journey || {}),
+        projectId,
+      };
+    }
+
+    const checkIns = await this.checkInRepo.find({
+      where,
+      relations: ['journey', 'journey.branch', 'journey.branch.city', 'journey.branch.city.region', 'journey.shift', 'user'],
+      order: { checkInTime: 'DESC' },
+    });
+
+    return checkIns;
+  }
+
+  // ===== الكرون جوب =====
+  async createJourneysForTomorrow(): Promise<{
+    createdCount: number;
+    date: string;
+  }> {
+    const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
+    const dayName = dayjs(tomorrow).format('dddd').toLowerCase();
+
+    const plans = await this.journeyPlanRepo.createQueryBuilder('plan').leftJoinAndSelect('plan.user', 'user').leftJoinAndSelect('plan.branch', 'branch').leftJoinAndSelect('branch.project', 'project').leftJoinAndSelect('plan.shift', 'shift').where('plan.fromDate <= :tomorrow', { tomorrow }).andWhere('plan.toDate >= :tomorrow', { tomorrow }).andWhere(':dayName = ANY(plan.days)', { dayName }).getMany();
+
+    let createdCount = 0;
+
+    for (const plan of plans) {
+      const exists = await this.journeyRepo.findOne({
+        where: {
+          user: { id: plan.user.id },
+          shift: { id: plan.shift.id },
+          date: tomorrow,
+          type: JourneyType.PLANNED,
+        },
+      });
+
+      if (exists) continue;
+
+      const journey = this.journeyRepo.create({
+        user: plan.user,
+        branch: plan.branch,
+        shift: plan.shift,
+        projectId: plan.projectId || plan.branch.project?.id,
+        date: tomorrow,
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.ABSENT,
+        journeyPlan: plan,
+      });
+
+      await this.journeyRepo.save(journey);
+      createdCount++;
+    }
+
+    return { createdCount, date: tomorrow };
+  }
+
+  // ===== الدوال المساعدة =====
+  private isWithinGeofence(branch: Branch, geo: any): boolean {
+    const branchCoords = this.parseLatLng(branch.geo);
+    const userCoords = this.parseLatLng(geo);
+
+    const distance = getDistance({ latitude: branchCoords.lat, longitude: branchCoords.lng }, { latitude: userCoords.lat, longitude: userCoords.lng });
+
+    return distance <= branch.geofence_radius_meters;
+  }
+
+  private parseLatLng(value: any): { lat: number; lng: number } {
+    if (typeof value === 'object' && value.lat && value.lng) {
+      return { lat: Number(value.lat), lng: Number(value.lng) };
+    }
+
+    if (typeof value === 'string') {
+      const [lat, lng] = value.split(',').map(v => Number(v.trim()));
+      if (isNaN(lat) || isNaN(lng)) {
+        throw new BadRequestException('Invalid geo format (expected: "lat,lng")');
+      }
+      return { lat, lng };
+    }
+
+    if (Array.isArray(value) && value.length === 2) {
+      const [lat, lng] = value.map(v => Number(v));
+      return { lat, lng };
+    }
+
+    throw new BadRequestException('Invalid geo value sent.');
+  }
+}
