@@ -1,7 +1,7 @@
 // src/journey/journey.service.ts
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, Between } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In } from 'typeorm';
 import * as dayjs from 'dayjs';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto } from 'dto/journey.dto';
 
@@ -47,15 +47,14 @@ export class JourneyService {
       }),
       this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
     ]);
-
+  
     if (!user) throw new NotFoundException('User not found for given userId');
     if (!branch) throw new NotFoundException('Branch not found for given branchId');
     if (!shift) throw new NotFoundException('Shift not found for given shiftId');
-
+  
     if (!branch.project) {
       throw new BadRequestException('Branch has no project assigned');
     }
-
     const fromDate = dto.fromDate || dayjs().format('YYYY-MM-DD');
     const toDate = dto.toDate || '9999-12-31';
 
@@ -68,7 +67,6 @@ export class JourneyService {
         toDate: MoreThanOrEqual(fromDate),
       },
     });
-
     for (const plan of existingPlans) {
       const overlapDays = plan.days.filter(d => dto.days.includes(d));
       if (overlapDays.length > 0) {
@@ -82,7 +80,6 @@ export class JourneyService {
         });
       }
     }
-
     const newPlan = this.journeyPlanRepo.create({
       user,
       branch,
@@ -91,13 +88,74 @@ export class JourneyService {
       fromDate,
       toDate,
       days: dto.days,
+      createdBy: user,
     });
-
+  
     const savedPlan = await this.journeyPlanRepo.save(newPlan);
-
+  
+    // ✅ Create journey records for each day in the plan range
+    await this.createJourneysFromPlan(savedPlan);
+  
     return savedPlan;
   }
-
+  private async createJourneysFromPlan(plan: JourneyPlan) {
+    const start = dayjs(plan.fromDate);
+    const end = dayjs(plan.toDate);
+  
+    const totalDays = [];
+    const planDaysUpper = new Set(plan.days.map(d => d.toUpperCase()));
+  
+    // Build list of valid dates
+    for (let d = start; d.isBefore(end) || d.isSame(end); d = d.add(1, 'day')) {
+      const dayStr = d.format('YYYY-MM-DD');
+      const dayName = d.format('dddd').toUpperCase();
+  
+      if (planDaysUpper.has(dayName)) {
+        totalDays.push(dayStr);
+      }
+    }
+  
+    if (!totalDays.length) return;
+  
+    // 🔍 Query all existing journeys for these dates
+    const existingJourneys = await this.journeyRepo.find({
+      where: {
+        user: { id: plan.user.id },
+        date: In(totalDays),
+      },
+    });
+  
+    const existingDates = new Set(existingJourneys.map(j => j.date));
+  
+    // Prepare new journey objects
+    const journeysToCreate = totalDays
+      .filter(date => !existingDates.has(date))
+      .map(date => ({
+        user: plan.user,
+        branch: plan.branch,
+        shift: plan.shift,
+        date,
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.ABSENT,
+        projectId: plan.projectId,
+        journeyPlan: plan,
+        createdBy: plan.createdBy,
+      }));
+  
+    // Bulk insert
+    if (journeysToCreate.length > 0) {
+      const entities = this.journeyRepo.create(journeysToCreate);
+      await this.journeyRepo.save(entities);
+    }
+  
+    // Link existing journeys to plan (if missing)
+    const toUpdate = existingJourneys.filter(j => !j.journeyPlan);
+    if (toUpdate.length > 0) {
+      for (const j of toUpdate) j.journeyPlan = plan;
+      await this.journeyRepo.save(toUpdate);
+    }
+  }
+  
   // ===== الرحلات الطارئة =====
   async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
     const [user, branch, shift] = await Promise.all([
@@ -159,7 +217,6 @@ export class JourneyService {
 
     return journeys;
   }
-
   async getCheckinsForSupervisorBranches(params: { supervisorId: string; date?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) {
     const { supervisorId, date, fromDate, toDate, page = 1, limit = 20 } = params;
 
