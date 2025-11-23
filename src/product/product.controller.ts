@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query, ParseUUIDPipe } from '@nestjs/common';
 import { CreateProductDto, GetProductsByBranchDto, UpdateProductDto } from 'dto/product.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { CRUD } from 'common/crud.service';
@@ -18,7 +18,14 @@ export class ProductController {
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
-
+  @Get("mobile/list/:categoryId")
+  @Permissions(EPermission.BRAND_READ)
+  findAllForMobile(
+ @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+  @Query() query: PaginationQueryDto,
+  ) {
+    return this.productService.findAllForMobile(query, categoryId);
+  }
   @Get()
   @Permissions(EPermission.PRODUCT_READ)
   findAll(@Query() q: ProductFilterQueryDto) {

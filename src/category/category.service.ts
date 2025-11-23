@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateCategoryDto, UpdateCategoryDto } from 'dto/category.dto';
+import { PaginationQueryDto } from 'dto/pagination.dto';
 import { Category } from 'entities/products/category.entity';
 import { ERole } from 'enums/Role.enum';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 
 @Injectable()
 export class CategoryService {
@@ -55,5 +56,30 @@ export class CategoryService {
     const category = await this.findOne(id);
     this.categoryRepository.merge(category, updateCategoryDto);
     return await this.categoryRepository.save(category);
+  }
+  async findAllForMobile(brandId: string, query: PaginationQueryDto, user: any) {
+    const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+  
+    try {
+      const categories = await this.categoryRepository
+        .createQueryBuilder('category')
+        .innerJoin('category.brands', 'brand', 'brand.id = :brandId', { brandId })
+        .select(['category.id', 'category.name'])
+        .where(search ? 'category.name ILIKE :search' : '1=1', { search: `%${search}%` })
+        .orderBy(`category.${sortBy}`, sortOrder)
+        .getMany();
+  
+      return {
+        success: true,
+        data: categories,
+      };
+    } catch (error) {
+      console.error('Error in findCategoriesByBrand:', error);
+      return {
+        success: false,
+        message: 'Failed to fetch categories for brand',
+        data: []
+      };
+    }
   }
 }

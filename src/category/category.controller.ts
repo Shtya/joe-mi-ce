@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Put, Delete, Query, UseGuards, Req, ParseUUIDPipe } from '@nestjs/common';
 import { CategoryService } from './category.service';
 import { CreateCategoryDto, UpdateCategoryDto } from 'dto/category.dto';
 import { PaginationQueryDto } from 'dto/pagination.dto';
@@ -18,6 +18,15 @@ export class CategoryController {
   create(@Body() createCategoryDto: CreateCategoryDto, @Req() req: any) {
     return this.categoryService.create(createCategoryDto, req.user);
   }
+@Get("mobile/list/:brandId")
+@Permissions(EPermission.BRAND_READ)
+findCategoriesByBrand(
+  @Param('brandId', new ParseUUIDPipe()) brandId: string,
+  @Query() query: PaginationQueryDto,
+  @Req() req: any
+) {
+  return this.categoryService.findAllForMobile(brandId, query, req.user);
+}
 
   @Get()
   @Permissions(EPermission.CATEGORY_READ)

@@ -1,9 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateBrandDto, UpdateBrandDto } from 'dto/brand.dto';
+import { PaginationQueryDto } from 'dto/pagination.dto';
 import { Brand } from 'entities/products/brand.entity';
 import { ERole } from 'enums/Role.enum';
-import { Repository } from 'typeorm';
+import { ILike, Repository } from 'typeorm';
 
 @Injectable()
 export class BrandService {
@@ -59,5 +60,41 @@ export class BrandService {
   async remove(id: string): Promise<void> {
     const brand = await this.findOne(id);
     await this.brandRepository.remove(brand);
+  }
+  async findAllForMobile(query: PaginationQueryDto, user: any) {
+
+
+    const where: any = {};
+
+
+    const {search, sortBy = 'name', sortOrder = 'ASC' } = query;
+
+    const findOptions: any = {
+      where,
+      select: ['id', 'name'],
+      order: { [sortBy]: sortOrder },
+
+    };
+
+    if (search) {
+      where.name = ILike(`%${search}%`);
+    }
+
+    try {
+      const brands = await this.brandRepository.find(findOptions);
+
+
+      return {
+        success: true,
+        data: brands,
+      };
+    } catch (error) {
+      console.error('Error in findAllForMobile:', error);
+      return {
+        success: false,
+        message: 'Failed to fetch brands',
+        data: []
+      };
+    }
   }
 }

@@ -3,5 +3,6 @@ export enum ERole {
   PROJECT_ADMIN = 'admin', // Manages a single project
   SUPERVISOR = 'supervisor', // Oversees promoters in branches
   PROMOTER = 'promoter', // Field staff performing audits/sales
-  AUDITOR = 'auditor', // Specialized audit role (optional)
+  AUDITOR = 'auditor',
+  USER = "USER", // Specialized audit role (optional)
 }

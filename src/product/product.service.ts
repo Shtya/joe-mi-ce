@@ -7,9 +7,10 @@ import { Category } from 'entities/products/category.entity';
 import { Product } from 'entities/products/product.entity';
 import { Project } from 'entities/project.entity';
 import { Stock } from 'entities/products/stock.entity';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, ILike, Repository } from 'typeorm';
 import { ProductFilterQueryDto } from 'dto/product-filters.dto';
 import { CRUD } from 'common/crud.service';
+import { PaginationQueryDto } from 'dto/pagination.dto';
 
 @Injectable()
 export class ProductService {
@@ -145,5 +146,37 @@ export class ProductService {
     const product = await this.findOne(id);
     await this.productRepository.remove(product);
   }
- 
+  async findAllForMobile(query: PaginationQueryDto, categoryId?: string) {
+    const where: any = {};
+  
+    const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+  
+    const findOptions: any = {
+      where,
+      select: ['id', 'name', 'price', 'image_url'],
+      order: { [sortBy]: sortOrder },
+    };
+  
+    if (search) {
+      where.name = ILike(`%${search}%`);
+    }
+      where.category = { id: categoryId };
+    
+
+    try {
+      const products = await this.productRepository.find(findOptions);
+  
+      return {
+        success: true,
+        data: products,
+      };
+    } catch (error) {
+      console.error('Error in findAllForMobile:', error);
+      return {
+        success: false,
+        message: 'Failed to fetch products',
+        data: []
+      };
+    }
+  }
 }

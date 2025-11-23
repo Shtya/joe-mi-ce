@@ -7,7 +7,6 @@ import { AuthGuard } from 'src/auth/auth.guard';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { ERole } from 'enums/Role.enum';
-import { IsNull } from 'typeorm';
 
 @UseGuards(AuthGuard)
 @Controller('brands')
@@ -17,7 +16,13 @@ export class BrandController {
   @Post()
   @Permissions(EPermission.BRAND_CREATE)
   create(@Body() dto: CreateBrandDto, @Req() req: any) {
-    return this.brandService.create(dto, req.user); // will set ownerUserId
+    return this.brandService.create(dto, req.user);
+  }
+  
+  @Get("mobile/list")
+  @Permissions(EPermission.BRAND_READ)
+  findAllForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
+    return this.brandService.findAllForMobile(query, req.user);
   }
 
   @Get()
