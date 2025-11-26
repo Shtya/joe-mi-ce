@@ -9,10 +9,11 @@ import { StockController } from './stock.controller';
 import { StockService } from './stock.service';
 import { User } from 'entities/user.entity';
 import { ExportModule } from 'src/export/export.module';
+import { Sale } from 'entities/products/sale.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Stock, Product, Branch , User] ),
+    TypeOrmModule.forFeature([Stock, Product, Branch , User,Sale] ),
     ProductModule,
     BranchModule, 
 		ExportModule

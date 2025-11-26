@@ -13,6 +13,7 @@ import { Project } from 'entities/project.entity';
 import { Repository } from 'typeorm';
 import { User } from 'entities/user.entity';
 import { ERole } from 'enums/Role.enum';
+import { SalesTarget, SalesTargetType } from 'entities/sales-target.entity';
 
 @Injectable()
 export class BranchService {
@@ -22,6 +23,8 @@ export class BranchService {
     @InjectRepository(City) readonly cityRepo: Repository<City>,
     @InjectRepository(Chain) readonly chainRepo: Repository<Chain>,
     @InjectRepository(User) readonly userRepo: Repository<User>,
+    @InjectRepository(SalesTarget) readonly salesTargetRepo: Repository<SalesTarget>,
+
   ) {}
   async create(dto: CreateBranchDto, user: User): Promise<Branch> {
     console.log(user.role.name, ERole.PROJECT_ADMIN);
@@ -90,9 +93,29 @@ export class BranchService {
       chain,
       supervisor,
       team,
+      salesTargetType: dto.salesTargetType ?? SalesTargetType.QUARTERLY,
+      autoCreateSalesTargets: dto.autoCreateSalesTargets ?? true,
+      defaultSalesTargetAmount: dto.defaultSalesTargetAmount ?? null
     });
+    const savedBranch = await this.branchRepo.save(branch);
+    if (savedBranch.autoCreateSalesTargets && savedBranch.defaultSalesTargetAmount) {
+      const salesTarget = this.salesTargetRepo.create({
+        branch: savedBranch,
+        type: savedBranch.salesTargetType,
+        name:`default target ${dto.name}`,
+        description: `this is the deafault target of the branch ${dto.name} and the target is ${dto.defaultSalesTargetAmount}`,
 
-    return await this.branchRepo.save(branch);
+        targetAmount: savedBranch.defaultSalesTargetAmount,
+        autoRenew:savedBranch.autoCreateSalesTargets,
+
+
+      });
+    
+      await this.salesTargetRepo.save(salesTarget);
+    }
+    
+    return savedBranch;
+
   }
 
   async assignSupervisor(branchId: string, userId: string, user: User): Promise<Branch> {

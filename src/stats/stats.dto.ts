@@ -43,7 +43,9 @@ export interface ProjectStatsDto {
     totalQuantity: number;
     totalAmount: number;
     todayTotalAmount: number;
-  };
+    weekly:any
+  },
+  
 
   stock: {
     totalSkuWithStock: number;

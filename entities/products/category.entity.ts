@@ -16,17 +16,6 @@ export class Category extends CoreEntity {
   products: Product[];
 
   @ManyToMany(() => Brand, brand => brand.categories)
-  @JoinTable({
-    name: 'brand_categories', // join table name
-    joinColumn: {
-      name: 'category_id',
-      referencedColumnName: 'id',
-    },
-    inverseJoinColumn: {
-      name: 'brand_id',
-      referencedColumnName: 'id',
-    },
-  })
   brands: Brand[];
 
   @Index()

@@ -32,6 +32,7 @@ import { CheckoutsModule } from './checkout/checkout.module';
 import { FeedbackModule } from './feedback/feedback.module'; 
 import { ProjectStatsModule } from './stats/stats.module';
 import { NotificationModule } from './notification/notification.module';
+import { SalesTargetModule } from './sales-target/sales-target.module';
  @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -87,6 +88,7 @@ import { NotificationModule } from './notification/notification.module';
     FeedbackModule,
     ProjectStatsModule,
     NotificationModule,
+    SalesTargetModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],

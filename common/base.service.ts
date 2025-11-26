@@ -11,7 +11,7 @@ import { Repository, Brackets, QueryFailedError } from 'typeorm';
 import { I18nService } from 'nestjs-i18n';
  import { checkEntityExists } from './checkEntityExists';
 
-export interface FindAllOptions {
+  export interface FindAllOptions {
   entityName: string;
   page?: number;
   limit?: number;
