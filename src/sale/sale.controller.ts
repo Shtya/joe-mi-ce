@@ -107,21 +107,20 @@ export class SaleController {
     );
   }
 
-  @Get('by-user/:userId')
-  @Permissions(EPermission.SALE_READ)
-  findByUser(@Param('userId') userId: string, @Query() query: any) {
-    return this.saleService.findSalesWithBrand(
-      'sale', 
-      query.search, 
-      query.page, 
-      query.limit, 
-      query.sortBy, 
-      query.sortOrder, 
-      ["user", "product", "branch"], 
-      ['status'], 
-      { user: { id: userId }, ...query.filters }
-    );
-  }
+// sale.controller.ts
+@Get('by-user/:userId')
+@Permissions(EPermission.SALE_READ)
+findByUser(@Param('userId') userId: string, @Query() query: any) {
+  return this.saleService.findSalesByUserOptimized(
+    userId,
+    query.search, 
+    query.page, 
+    query.limit, 
+    query.sortBy, 
+    query.sortOrder, 
+    { ...query.filters }
+  );
+}
   @Get('branch/:branchId/progress')
   @Permissions(EPermission.SALE_READ)
   getSalesWithTargetProgress(
