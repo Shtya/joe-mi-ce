@@ -117,56 +117,91 @@ async getLowStockAlertsOptimized(
   }
 
 
+
   @Get('out-of-stock')
-  @Permissions(EPermission.STOCK_READ)
-  async outOfStockSmart(@Query() query: any) {
-    // Parse the filter format from query parameters
-    const filters = this.parseFilters(query);
+  @Permissions(EPermission.STOCK_ANALYZE)
+  async outOfStockSmart(
+    @Query('branchId') branchId?: string, 
+    @Query('productId') productId?: string,
+    @Query('project') project?: string, // ✅ Added project filter
+    @Query('threshold') threshold = '0', 
+    @Query('export') exportFlag?: string, 
+    @Res({ passthrough: true }) res?: any
+  ) {
+    // if (!branchId) {
+    //   throw new BadRequestException('branchId is required');
+    // }
+  
+    const thrNum = Number(threshold);
+    const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
+  
+    const result = await this.stockService.getOutOfStockSmart({
+      branchId,
+      productId,
+      project, // ✅ Pass project to service
+      threshold: safeThr,
+    });
     
-    const outOfStockQuery: any = {
-      page: query.page ? Number(query.page) : 1,
-      limit: query.limit ? Number(query.limit) : 10,
-      search: query.search,
-      sortBy: query.sortBy || 'quantity',
-      sortOrder: (query.sortOrder as 'ASC' | 'DESC') || 'ASC',
-      filters
+    // 🔄 normalize to flat items (no nested product.stock)
+    const flatItems = result.items.map(it => ({
+      product_id: it.product?.id ?? null,
+      product_name: it.product?.name ?? null,
+      sku: it.product?.sku ?? null,
+      model: it.product?.model ?? null,
+      price: it.product?.price ?? null,
+      is_active: it.product?.is_active ?? null,
+      project: it.product?.project ?? null, // ✅ Added project to flat items
+  
+      // per-branch only; aggregate => null
+      branch_id: result.mode === 'per-branch' ? (it.branch?.id ?? null) : null,
+      branch_name: result.mode === 'per-branch' ? (it.branch?.name ?? null) : null,
+  
+      // quantity = stock.quantity (per-branch) OR total_qty (aggregate)
+      quantity: it.quantity,
+    }));
+  
+    const payload = {
+      mode: result.mode, // 'aggregate' | 'per-branch'
+      threshold: result.threshold, // number
+      branchId: result.branchId?? null,
+      productId: result.productId ?? null,
+      project: result.project ?? null, // ✅ Added project to payload
+      items: flatItems,
+      count: flatItems.length,
     };
   
-    return await this.stockService.getOutOfStockSmart(outOfStockQuery);
+    // export => Excel
+    const shouldExport = typeof exportFlag === 'string' && ['true', '1', 'yes'].includes(exportFlag.toLowerCase());
+  
+    if (shouldExport) {
+      await this.exportService.exportRowsToExcel(res, flatItems, {
+        sheetName: 'out_of_stock',
+        fileName: productId ? 'out_of_stock_per_branch' : 'out_of_stock_aggregate',
+        columns: [
+          { header: 'mode', key: 'mode', width: 14 },
+          { header: 'branch_id', key: 'branch_id', width: 24 },
+          { header: 'branch_name', key: 'branch_name', width: 28 },
+          { header: 'product_id', key: 'product_id', width: 24 },
+          { header: 'product_name', key: 'product_name', width: 32 },
+          { header: 'sku', key: 'sku', width: 18 },
+          { header: 'model', key: 'model', width: 18 },
+          { header: 'price', key: 'price', width: 14 },
+          { header: 'is_active', key: 'is_active', width: 12 },
+          { header: 'project', key: 'project', width: 20 }, // ✅ Added project column
+          { header: 'quantity', key: 'quantity', width: 14 },
+          { header: 'threshold', key: 'threshold', width: 14 },
+          { header: 'filter_branchId', key: 'filter_branchId', width: 24 },
+          { header: 'filter_productId', key: 'filter_productId', width: 24 },
+          { header: 'filter_project', key: 'filter_project', width: 24 }, // ✅ Added project filter column
+        ],
+      });
+      return; // stream ended
+    }
+  
+    // JSON response (flat, clean)
+    return payload;
   }
-  
-  private parseFilters(query: any): Record<string, any> {
-    const filters: Record<string, any> = {};
-  
-    Object.keys(query).forEach(key => {
-      if (key.startsWith('filters[')) {
-        const match = key.match(/filters\[([^\]]+)\]/);
-        if (match) {
-          const fieldPath = match[1];
-          
-          // Handle nested filters like filters[product][project][id]
-          if (fieldPath.includes('][')) {
-            const fieldParts = fieldPath.split('][');
-            let currentLevel = filters;
-            
-            fieldParts.forEach((part, index) => {
-              if (index === fieldParts.length - 1) {
-                currentLevel[part] = query[key];
-              } else {
-                currentLevel[part] = currentLevel[part] || {};
-                currentLevel = currentLevel[part];
-              }
-            });
-          } else {
-            // Simple filter like filters[threshold]
-            filters[fieldPath] = query[key];
-          }
-        }
-      }
-    });
-  
-    return filters;
-  }
+
   @Get(':id')
   @Permissions(EPermission.STOCK_READ)
   async getById(@Param('id') id: string) {

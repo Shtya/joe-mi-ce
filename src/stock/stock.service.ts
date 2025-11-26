@@ -12,7 +12,6 @@ import { Sale } from 'entities/products/sale.entity';
 type OutOfStockItem = {
   product: any;
   branch?: any | null;
-  brand:any | null
   quantity: number;
 };
 
@@ -21,9 +20,11 @@ type OutOfStockResponse = {
   threshold: number;
   branchId?: string;
   productId?: string;
+  project:any;
   items: OutOfStockItem[];
   count: number;
 };
+
 
 @Injectable()
 export class StockService {
@@ -157,21 +158,18 @@ async getStocksByBranch(branchId: string) {
       relations: ['product', 'branch', 'product.brand'], // Added 'product.brand'
     });
   }
-
-  async getOutOfStockSmart(opts: { branchId?: string; productId?: string; threshold?: number }) {
-    const { branchId, productId, threshold = 0 } = opts;
-    
+  // stock.service.ts
+  async getOutOfStockSmart(opts: { branchId?: string; productId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
+    const { branchId, productId, project, threshold = 0 } = opts;
     if (productId) {
-      return this.getOutOfStock({ branchId, productId, threshold });
+      return this.getOutOfStock({ branchId, productId, project, threshold });
     }
-    return this.getOutOfStockAggregated({ branchId, threshold });
+    return this.getOutOfStockAggregated({ branchId, project, threshold });
   }
   
-  //  version of getOutOfStock
-  async getOutOfStock(opts: { branchId?: string; productId?: string; threshold?: number }) {
-    const { branchId, productId, threshold = 0 } = opts;
+  async getOutOfStock(opts: { branchId?: string; productId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
+    const { branchId, productId, project, threshold = 0 } = opts;
   
-    // Validate branch and product exist
     if (branchId) {
       const branch = await this.branchRepo.findOne({ where: { id: branchId } });
       if (!branch) throw new NotFoundException(`Branch with ID ${branchId} not found`);
@@ -184,89 +182,95 @@ async getStocksByBranch(branchId: string) {
     const where: any = { quantity: LessThanOrEqual(threshold) };
     if (branchId) where.branch = { id: branchId };
     if (productId) where.product = { id: productId };
+    if (project) where.product = { ...where.product, project }; // ✅ Added project filter
   
     const stocks = await this.stockRepo.find({
       where,
-      relations: ['product', 'branch', 'product.brand', 'product.category'],
+      relations: ['product', 'branch'],
       order: { quantity: 'ASC' },
     });
   
-    // Extract branch info if applicable
-    const branchInfo = branchId && stocks.length > 0 ? {
-      id: stocks[0].branch?.id || null,
-      name: stocks[0].branch?.name || null,
-      city: stocks[0].branch?.city || null
-    } : null;
-  
-    // Transform to  records - ensure we always return an array
-    const records = stocks.map(stock => ({
-      id: stock.id,
-      quantity: stock.quantity,
-      created_at: stock.created_at,
-      product: {
-        id: stock.product?.id || null,
-        name: stock.product?.name || null,
-        sku: stock.product?.sku || null,
-        brand_name: stock.product?.brand?.name || null,
-        category_name: stock.product?.category?.name || null
-      }
+    const items = stocks.map(s => ({
+      product: s.product,
+      branch: s.branch,
+      quantity: s.quantity,
     }));
   
     return {
-      total_records: stocks.length,
-      threshold,
-      branch: branchInfo,
       mode: 'per-branch',
-      records // Always defined array
+      threshold,
+      branchId,
+      productId,
+      project, // ✅ Return project in response
+      items,
+      count: items.length,
     };
   }
   
-  //  version of getOutOfStockAggregated
-  async getOutOfStockAggregated(opts: { branchId?: string; threshold?: number }) {
-    const { branchId, threshold = 0 } = opts;
+  async getOutOfStockAggregated(opts: { branchId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
+    const { branchId, project, threshold = 0 } = opts;
   
+    // تجميعة آمنة بلا سحب stock.id
     const qb = this.productRepo.createQueryBuilder('product')
       .leftJoin('product.stock', 'stock')
       .leftJoin('stock.branch', 'branch')
-      .leftJoin('product.brand', 'brand')
-      .leftJoin('product.category', 'category')
-      .select([
-        'product.id as product_id',
-        'product.name as product_name',
-        'product.sku as product_sku',
-        'brand.name as brand_name',
-        'category.name as category_name',
-        'COALESCE(SUM(stock.quantity), 0) as total_qty'
-      ])
-      .groupBy('product.id, product.name, product.sku, brand.name, category.name')
+      .select('product.id', 'product_id')
+      .addSelect('product.name', 'product_name')
+      .addSelect('product.project', 'project') // ✅ Added project to select
+      .addSelect('COALESCE(SUM(stock.quantity), 0)', 'total_qty')
+      .groupBy('product.id')
+      .addGroupBy('product.name')
+      .addGroupBy('product.project') // ✅ Added project to group by
       .having('COALESCE(SUM(stock.quantity), 0) <= :thr', { thr: threshold })
       .orderBy('total_qty', 'ASC');
   
     if (branchId) {
       qb.andWhere('branch.id = :branchId', { branchId });
     }
+    if (project) {
+      qb.andWhere('product.project = :project', { project }); // ✅ Added project filter
+    }
   
-    const rows = await qb.getRawMany();
+    const rows = await qb.getRawMany(); // [{ product_id, product_name, project, total_qty }]
+    if (rows.length === 0) {
+      return {
+        mode: 'aggregate',
+        threshold,
+        branchId,
+        project, // ✅ Return project in response
+        items: [],
+        count: 0,
+      };
+    }
   
-    // Always return an array, even if empty
-    const records = rows.map(row => ({
-      product: {
-        id: row.product_id,
-        name: row.product_name,
-        sku: row.product_sku,
-        brand_name: row.brand_name || null,
-        category_name: row.category_name || null
-      },
-      quantity: Number(row.total_qty) || 0,
-      is_aggregated: true
-    }));
+    // حمّل المنتجات مع stocks + branches (لنفس شكل الإخراج)
+    const productIds = rows.map(r => r.product_id);
+    const products = await this.productRepo.find({
+      where: { id: In(productIds) },
+      relations: ['stock', 'stock.branch'],
+    });
+    const byId = new Map(products.map(p => [p.id, p]));
+  
+    const items = rows.map(r => {
+      const product = byId.get(r.product_id)!;
+  
+      // لو عايز تقتصر stocks داخل المنتج على فرع معين (للمعاينة فقط)، ممكن تفعّل السطر ده:
+      const productScoped = branchId ? { ...product, stock: (product.stock ?? []).filter((s: any) => s.branch?.id === branchId) } : product;
+  
+      return {
+        product: productScoped,
+        branch: null, // موحّد مع per-branch (لكن هنا aggregate)
+        quantity: Number(r.total_qty), // نفس المفتاح "quantity" في الحالتين
+      };
+    });
   
     return {
-      total_records: records.length,
-      threshold,
-      branch: branchId ? { id: branchId } : null,
       mode: 'aggregate',
-      records // Always defined array
+      threshold,
+      branchId,
+      project, // ✅ Return project in response
+      items,
+      count: items.length,
     };
   }
 
