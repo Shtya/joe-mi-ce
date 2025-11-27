@@ -75,26 +75,26 @@ export class SaleService {
   async update(id: string, dto: UpdateSaleDto) {
     const sale = await this.saleRepo.findOne({ 
       where: { id }, 
-      relations: ['product', 'branch', 'user'] 
+      relations: ['product', 'branch', 'user', 'product.brand', 'product.category'] 
     });
     
     if (!sale) throw new NotFoundException('Sale not found');
-
+  
     if (sale.status === 'returned' || sale.status === 'cancelled') {
       throw new BadRequestException('Cannot update returned or cancelled sale');
     }
-
+  
     const stock = await this.stockRepo.findOne({
       where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
     });
-
+  
     if (!stock) {
       throw new NotFoundException('Stock not found for this branch');
     }
-
+  
     let stockAdjustment = 0;
     let amountAdjustment = 0;
-
+  
     // Handle quantity changes
     if (dto.quantity !== undefined && dto.quantity !== sale.quantity) {
       const quantityDiff = dto.quantity - sale.quantity;
@@ -105,7 +105,7 @@ export class SaleService {
       
       stockAdjustment = -quantityDiff; // Negative because we subtract from stock
     }
-
+  
     // Handle price changes
     const oldTotalAmount = sale.total_amount;
     const newTotalAmount = dto.price !== undefined ? dto.price * (dto.quantity || sale.quantity) : oldTotalAmount;
@@ -113,13 +113,13 @@ export class SaleService {
     if (dto.price !== undefined || dto.quantity !== undefined) {
       amountAdjustment = newTotalAmount - oldTotalAmount;
     }
-
+  
     // Update stock if quantity changed
     if (stockAdjustment !== 0) {
       stock.quantity += stockAdjustment;
       await this.stockRepo.save(stock);
     }
-
+  
     // Update sale
     if (dto.price !== undefined) sale.price = dto.price;
     if (dto.quantity !== undefined) sale.quantity = dto.quantity;
@@ -127,13 +127,47 @@ export class SaleService {
     
     sale.total_amount = newTotalAmount;
     await this.saleRepo.save(sale);
-
+  
     // Update sales target progress if amount changed
     if (amountAdjustment !== 0) {
       await this.updateSalesTargetProgress(sale.branch.id, amountAdjustment);
     }
-
-    return sale;
+  
+    // Transform the response to match the get method structure
+    const updatedSale = await this.saleRepo.findOne({
+      where: { id },
+      relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
+    });
+  
+    // Format response to match findSalesByUserOptimized structure
+    return {
+      total_records: 1,
+      current_page: 1,
+      per_page: 1,
+      branch: updatedSale.branch ? {
+        id: updatedSale.branch.id,
+        name: updatedSale.branch.name,
+        city: updatedSale.branch.city
+      } : null,
+      user: updatedSale.user ? {
+        id: updatedSale.user.id,
+        name: updatedSale.user.name
+      } : null,
+      records: [{
+        id: updatedSale.id,
+        quantity: updatedSale.quantity,
+        total_amount: updatedSale.total_amount,
+        created_at: updatedSale.created_at,
+        status: updatedSale.status,
+        product: {
+          id: updatedSale.product?.id || null,
+          name: updatedSale.product?.name || null,
+          sku: updatedSale.product?.sku || null,
+          brand_name: updatedSale.product?.brand?.name || null,
+          category_name: updatedSale.product?.category?.name || null
+        }
+      }]
+    };
   }
 
   async delete(id: string) {

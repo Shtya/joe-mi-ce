@@ -75,21 +75,47 @@ export class StockController {
 
   @Get('product/:productId')
   @Permissions(EPermission.STOCK_READ)
-  getStocksByProduct(@Param('productId') productId: string) {
-    return this.stockService.getStocksByProduct(productId);
+  async getStocksByProduct(
+    @Param('productId') productId: string,
+    @Query() query?: any,
+    @Query('search') search?: string, 
+    @Query('page') page: any = 1, 
+    @Query('limit') limit: any = 10, 
+    @Query('sortBy') sortBy?: string, 
+    @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC'
+  ) {
+    return this.stockService.getStocksByProduct(
+      productId,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      query?.filters
+    );
   }
-
  
-@Get('by-branch/:branchId')
-@Permissions(EPermission.STOCK_READ)
-async getStocksByBranch(@Param('branchId') branchId: string) {
-  const result = await this.stockService.getStocksByBranch(branchId);
-  return {
-    ...result,
-    records: result.records || []
-  };
-}
-
+  @Get('by-branch/:branchId')
+  @Permissions(EPermission.STOCK_READ)
+  async getStocksByBranch(
+    @Param('branchId') branchId: string,
+    @Query() query?: any,
+    @Query('search') search?: string, 
+    @Query('page') page: any = 1, 
+    @Query('limit') limit: any = 10, 
+    @Query('sortBy') sortBy?: string, 
+    @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC'
+  ) {
+    return this.stockService.getStocksByBranch(
+      branchId,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      query?.filters
+    );
+  }
 @Get('low-stock-alerts')
 @Permissions(EPermission.STOCK_READ)
 async getLowStockAlertsOptimized(

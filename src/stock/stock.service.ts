@@ -111,53 +111,74 @@ export class StockService {
     return this.stockRepo.save(stock);
   }
 
-// stock.service.ts
-async getStocksByBranch(branchId: string) {
-  const stocks = await this.stockRepo.find({
-    where: { branch: { id: branchId } },
-    relations: ['product', 'branch', 'product.brand', 'product.category'],
-  });
-
-  // Extract branch info (same for all records)
-  const branchInfo = stocks.length > 0 ? {
-    id: stocks[0].branch?.id || null,
-    name: stocks[0].branch?.name || null,
-    city: stocks[0].branch?.city || null
-  } : null;
-
-  // Transform the data
-  const optimizedRecords = stocks.map(stock => ({
-    id: stock.id,
-    quantity: stock.quantity,
-    created_at: stock.created_at,
-    updated_at: stock.updated_at,
-    product: {
-      id: stock.product?.id || null,
-      name: stock.product?.name || null,
-      sku: stock.product?.sku || null,
-      brand_name: stock.product?.brand?.name || null,
-      category_name: stock.product?.category?.name || null
+  async getStocksByBranch(
+    branchId: string,
+    search?: string,
+    page: any = 1,
+    limit: any = 10,
+    sortBy?: string,
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    filters?: any
+  ) {
+    if (!branchId) {
+      throw new BadRequestException('branchId is required');
     }
-  }));
+  
+    const baseFilters = {
+      branch: {
+        id: branchId,
+      },
+      ...filters
+    };
+  
+    return CRUD.findAllRelation<Stock>(
+      this.stockRepo,
+      'stock',  
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      ['product', 'branch', 'branch.project', 'product.brand', 'product.category'], 
+      ['name'], 
+      baseFilters,
+    );
+  }
 
-  return {
-    total_records: stocks.length,
-    branch: branchInfo,
-    records: optimizedRecords
+async getStocksByProduct(
+  productId: string,
+  search?: string,
+  page: any = 1,
+  limit: any = 10,
+  sortBy?: string,
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  filters?: any
+) {
+  if (!productId) {
+    throw new BadRequestException('productId is required');
+  }
+
+  const baseFilters = {
+    product: {
+      id: productId,
+    },
+    ...filters
   };
+
+  return CRUD.findAllRelation<Stock>(
+    this.stockRepo,
+    'stock',  
+    search,
+    page,
+    limit,
+    sortBy,
+    sortOrder,
+    ['product', 'branch', 'branch.project', 'product.brand', 'product.category'], 
+    ['name'], 
+    baseFilters,
+  );
 }
 
-  async getStocksByProduct(productId: string): Promise<Stock[]> {
-    const product = await this.productRepo.findOne({ where: { id: productId } });
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${productId} not found`);
-    }
-
-    return this.stockRepo.find({
-      where: { product: { id: productId } },
-      relations: ['product', 'branch', 'product.brand'], // Added 'product.brand'
-    });
-  }
   // stock.service.ts
   async getOutOfStockSmart(opts: { branchId?: string; productId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
     const { branchId, productId, project, threshold = 0 } = opts;
