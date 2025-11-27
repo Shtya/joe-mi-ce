@@ -24,7 +24,23 @@ export class BrandController {
   findAllForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
     return this.brandService.findAllForMobile(query, req.user);
   }
-
+  @Post(':id/categories')
+  @Permissions(EPermission.BRAND_UPDATE)
+  assignCategories(
+    @Param('id') id: string,
+    @Body() body: { categoryIds: string[] }
+  ) {
+    return this.brandService.assignCategories(id, body.categoryIds);
+  }
+  @Delete(':id/categories')
+  @Permissions(EPermission.BRAND_UPDATE)
+  removeCategories(
+    @Param('id') id: string,
+    @Body() body: { categoryIds: string[] }
+  ) {
+    return this.brandService.removeCategories(id, body.categoryIds);
+  }
+  
   @Get()
   @Permissions(EPermission.BRAND_READ)
   findAll(@Query() query: PaginationQueryDto, @Req() req: any) {

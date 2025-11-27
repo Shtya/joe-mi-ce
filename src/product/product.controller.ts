@@ -18,13 +18,15 @@ export class ProductController {
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
-  @Get("mobile/list/:categoryId")
+  @Get("mobile/list/:categoryId/:brandId")
   @Permissions(EPermission.BRAND_READ)
   findAllForMobile(
  @Param('categoryId', new ParseUUIDPipe()) categoryId: string,
+ @Param('brandId', new ParseUUIDPipe()) brandId: string,
+
   @Query() query: PaginationQueryDto,
   ) {
-    return this.productService.findAllForMobile(query, categoryId);
+    return this.productService.findAllForMobile(query, categoryId ,brandId);
   }
   @Get()
   @Permissions(EPermission.PRODUCT_READ)

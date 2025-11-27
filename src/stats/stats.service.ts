@@ -255,7 +255,24 @@ export class ProjectStatsService {
         .select('COUNT(*)', 'totalAnswers')
         .getRawOne(),
     ]);
-
+    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const firstDayStr = firstDayOfMonth.toISOString().slice(0, 10);
+    
+    const weeklySales = await this.saleRepo
+      .createQueryBuilder('s')
+      .select(
+        `EXTRACT(WEEK FROM s.sale_date)::INTEGER - EXTRACT(WEEK FROM DATE_TRUNC('month', s.sale_date))::INTEGER + 1`,
+        'week',
+      )
+      .addSelect('COUNT(*)', 'totalOrders')
+      .addSelect('SUM(s.quantity)', 'totalQuantity')
+      .addSelect('SUM(s.total_amount)', 'totalAmount')
+      .where('s.projectId = :projectId', { projectId })
+      .andWhere('s.sale_date >= :firstDay', { firstDay: firstDayStr })
+      .andWhere('s.sale_date <= :today', { today: todayStr })
+      .groupBy('week')
+      .orderBy('week', 'ASC')
+      .getRawMany();
     const totalAnswers = Number(surveyAnswersAgg?.totalAnswers) || 0;
 
     // --------- Build DTO ----------
@@ -295,7 +312,14 @@ export class ProjectStatsService {
         totalQuantity: salesTotalQuantity,
         totalAmount: salesTotalAmount,
         todayTotalAmount: salesTodayTotalAmount,
+        weekly: weeklySales.map(w => ({
+          week: Number(w.week),
+          totalOrders: Number(w.totalOrders),
+          totalQuantity: Number(w.totalQuantity),
+          totalAmount: Number(w.totalAmount),
+        })),
       },
+      
       stock: {
         totalSkuWithStock,
         totalQuantity: totalStockQuantity,

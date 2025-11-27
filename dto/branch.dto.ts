@@ -43,9 +43,14 @@ export class CreateBranchDto {
   @IsArray()
   @IsOptional()
   teamIds?: string[];
+
+  salesTargetType?: SalesTargetType;
+  autoCreateSalesTargets?: boolean;
+  defaultSalesTargetAmount?: number;
 }
 
 
 import { PartialType } from '@nestjs/mapped-types';
+import { SalesTargetType } from 'entities/sales-target.entity';
  
 export class UpdateBranchDto extends PartialType(CreateBranchDto) {}

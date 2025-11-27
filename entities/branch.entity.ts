@@ -10,6 +10,7 @@ import { GeoLocation } from './geo.embeddable';
 import { Chain } from './locations/chain.entity';
 import { City } from './locations/city.entity';
 import { Journey } from './all_plans.entity';
+import { SalesTarget, SalesTargetType } from './sales-target.entity';
  
 @Entity('branches')
 @Index(['name', 'project'])
@@ -25,7 +26,20 @@ export class Branch extends CoreEntity {
 
   @Column({ nullable: true })
   image_url: string;
+  @Column({ 
+    type: 'enum', 
+    enum: SalesTargetType, 
+    default: SalesTargetType.MONTHLY 
+  })
+  salesTargetType: SalesTargetType;
+  @Column({ type: 'boolean', default: true })
+  autoCreateSalesTargets: boolean;
 
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  defaultSalesTargetAmount: number;
+  
+  @OneToMany(() => SalesTarget, salesTarget => salesTarget.branch)
+  salesTargets: SalesTarget[];
   // Relationships
   @ManyToOne(() => Project, project => project.branches)
   project: Project;

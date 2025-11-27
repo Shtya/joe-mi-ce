@@ -146,7 +146,7 @@ export class ProductService {
     const product = await this.findOne(id);
     await this.productRepository.remove(product);
   }
-  async findAllForMobile(query: PaginationQueryDto, categoryId?: string) {
+  async findAllForMobile(query: PaginationQueryDto, categoryId: string, brandId: string) {
     const where: any = {};
   
     const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
@@ -161,7 +161,8 @@ export class ProductService {
       where.name = ILike(`%${search}%`);
     }
       where.category = { id: categoryId };
-    
+      where.brand = {id:brandId}
+      
 
     try {
       const products = await this.productRepository.find(findOptions);

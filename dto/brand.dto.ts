@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, IsUUID } from 'class-validator';
 
 export class CreateBrandDto {
   @IsString()
@@ -12,6 +12,12 @@ export class CreateBrandDto {
   @IsString()
   @IsOptional()
   logo_url?: string;
+
+  
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  categoryIds?: string[];
 }
 
 export class UpdateBrandDto {
@@ -26,4 +32,9 @@ export class UpdateBrandDto {
   @IsString()
   @IsOptional()
   logo_url?: string;
+
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  categoryIds?: string[];
 }

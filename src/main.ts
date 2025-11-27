@@ -16,7 +16,13 @@ async function bootstrap() {
   app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), { prefix: '/uploads/' });
   // app.useGlobalInterceptors(new LoggingInterceptor());
 
-  app.enableCors();
+  app.enableCors({
+    origin: true,
+    credentials: true,
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    allowedHeaders: 'Content-Type, Authorization, Accept',
+  });
+  
   app.setGlobalPrefix('api/v1');
 
   const loggingValidationPipe = app.get(LoggingValidationPipe);

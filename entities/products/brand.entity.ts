@@ -1,4 +1,4 @@
-import { Entity, Column, OneToMany, Index, Unique, ManyToMany } from 'typeorm';
+import { Entity, Column, OneToMany, Index, Unique, ManyToMany, JoinTable } from 'typeorm';
 import { Product } from './product.entity';
 import { CoreEntity } from 'entities/core.entity';
 import { Category } from './category.entity';
@@ -19,9 +19,14 @@ export class Brand extends CoreEntity {
   products: Product[];
 
   @ManyToMany(() => Category, category => category.brands)
+  @JoinTable({
+    name: 'brand_categories',
+    joinColumn: { name: 'brand_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'category_id', referencedColumnName: 'id' }
+  })
   categories: Category[];
-
   @Index()
   @Column({ type: 'uuid', nullable: true })
   ownerUserId: string | null;
 }
+
