@@ -593,6 +593,8 @@ async findSalesByUserOptimized(
       'product.id',
       'product.name',
       'product.sku',
+      'product.price', // Add product price to calculate amounts
+      'product.discount', // Added discount field if available
       'brand.id',
       'brand.name',
       'category.id',
@@ -658,21 +660,33 @@ async findSalesByUserOptimized(
   } : null;
 
   // Transform the data - branch and user only appear once at the top level
-  const optimizedRecords = records.map(sale => ({
-    id: sale.id,
-    quantity: sale.quantity,
-    total_amount: sale.total_amount,
-    created_at: sale.created_at,
-    status: sale.status,
-    product: {
-      id: sale.product?.id || null,
-      name: sale.product?.name || null,
-      sku: sale.product?.sku || null,
-      brand_name: sale.product?.brand?.name || null,
-      category_name: sale.product?.category?.name || null
-    }
-    // Remove branch and user from individual records
-  }));
+  const optimizedRecords = records.map(sale => {
+    const unitPrice = sale.product?.price || 0;
+    const quantity = sale.quantity || 0;
+    const discount = sale.product.discount || 0;
+    
+    return {
+      id: sale.id,
+      quantity: quantity,
+      total_amount: sale.total_amount,
+      created_at: sale.created_at,
+      status: sale.status,
+      discount: discount,
+      product: {
+        id: sale.product?.id || null,
+        name: sale.product?.name || null,
+        sku: sale.product?.sku || null,
+        price: unitPrice,
+        // All three amount types
+        unit_amount: unitPrice, // Unit price (same as product price)
+        total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
+        discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
+        brand_name: sale.product?.brand?.name || null,
+        category_name: sale.product?.category?.name || null
+      }
+      // Remove branch and user from individual records
+    };
+  });
 
   return {
     total_records,
