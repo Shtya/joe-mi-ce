@@ -543,6 +543,34 @@ export class CRUD {
       Object.entries(flatFilters).forEach(([flatKey, value]) => {
         if (value === null || value === undefined || value === '') return;
 
+        // 🔹 Special date filters on created_at (date only)
+        // filters[start_date]  => DATE(created_at) >= start_date
+        // filters[end_date]    => DATE(created_at) <= end_date
+        // filters[created_at]  => DATE(created_at) = created_at (same day)
+        const paramKey = flatKey.replace(/\./g, '_');
+
+        if (flatKey === 'start_date') {
+          query.andWhere(`DATE(${entityName}.created_at) >= :${paramKey}`, {
+            [paramKey]: value, // expect 'YYYY-MM-DD'
+          });
+          return;
+        }
+
+        if (flatKey === 'end_date') {
+          query.andWhere(`DATE(${entityName}.created_at) <= :${paramKey}`, {
+            [paramKey]: value, // expect 'YYYY-MM-DD'
+          });
+          return;
+        }
+
+        if (flatKey === 'created_at' || flatKey === 'created_ate') {
+          // "same day" filter: ignore time part in DB
+          query.andWhere(`DATE(${entityName}.created_at) = :${paramKey}`, {
+            [paramKey]: value, // expect 'YYYY-MM-DD'
+          });
+          return;
+        }
+
         // 🔹 Range filters: "<field>_from" / "<field>_to"
         // e.g. audit_date_from / audit_date_to
         const isFrom = flatKey.endsWith('_from');
@@ -551,7 +579,7 @@ export class CRUD {
         if (isFrom || isTo) {
           const baseKey = flatKey.replace(/_(from|to)$/, ''); // "audit_date"
           const operator = isFrom ? '>=' : '<='; // from → >= , to → <=
-          const paramKey = flatKey.replace(/\./g, '_');
+          const rangeParamKey = flatKey.replace(/\./g, '_');
 
           if (baseKey.includes('.')) {
             const parts = baseKey.split('.');
@@ -561,12 +589,12 @@ export class CRUD {
               alias = `${alias}_${seg}`;
             }
 
-            query.andWhere(`${alias}.${column} ${operator} :${paramKey}`, {
-              [paramKey]: value,
+            query.andWhere(`${alias}.${column} ${operator} :${rangeParamKey}`, {
+              [rangeParamKey]: value,
             });
           } else {
-            query.andWhere(`${entityName}.${baseKey} ${operator} :${paramKey}`, {
-              [paramKey]: value,
+            query.andWhere(`${entityName}.${baseKey} ${operator} :${rangeParamKey}`, {
+              [rangeParamKey]: value,
             });
           }
 
@@ -574,8 +602,6 @@ export class CRUD {
         }
 
         // 🔹 Normal filters (exact match)
-        const paramKey = flatKey.replace(/\./g, '_');
-
         if (flatKey.includes('.')) {
           const parts = flatKey.split('.');
           const column = parts.pop()!; // "id"
