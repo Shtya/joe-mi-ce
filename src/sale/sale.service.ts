@@ -139,7 +139,12 @@ export class SaleService {
       relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
     });
   
-    // Format response to match findSalesByUserOptimized structure
+    // Calculate product amounts
+    const unitPrice = updatedSale.product?.price || 0;
+    const quantity = updatedSale.quantity || 0;
+    const discount = updatedSale.product?.discount || 0;
+  
+    // Format response to match findSalesByUserOptimized structure exactly
     return {
       total_records: 1,
       current_page: 1,
@@ -155,21 +160,27 @@ export class SaleService {
       } : null,
       records: [{
         id: updatedSale.id,
-        quantity: updatedSale.quantity,
+        quantity: quantity,
         total_amount: updatedSale.total_amount,
         created_at: updatedSale.created_at,
         status: updatedSale.status,
+        discount: discount,
         product: {
           id: updatedSale.product?.id || null,
           name: updatedSale.product?.name || null,
           sku: updatedSale.product?.sku || null,
+          price: unitPrice,
+          // All three amount types matching the optimized structure
+          unit_amount: unitPrice, // Unit price (same as product price)
+          total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
+          discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
           brand_name: updatedSale.product?.brand?.name || null,
           category_name: updatedSale.product?.category?.name || null
         }
+        // Note: branch and user are removed from individual records as per optimized structure
       }]
     };
   }
-
   async delete(id: string) {
     const sale = await this.saleRepo.findOne({ 
       where: { id }, 
