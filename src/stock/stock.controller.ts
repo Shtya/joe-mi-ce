@@ -16,7 +16,78 @@ export class StockController {
     private readonly stockService: StockService,
     private readonly exportService: ExportService,
   ) {}
+// Add these to your StockController class
 
+// Add these to your StockController class
+
+@Get('mobile/stocks/:branchId')
+@UseGuards(AuthGuard)
+async getStocksByUserBranchMobile(
+  @Req() req: any,
+  @Param("branchId") branchId:any,
+  @Query('search') search?: string,
+  @Query('page') page: any = 1,
+  @Query('limit') limit: any = 10,
+  @Query('sortBy') sortBy?: string,
+  @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC',
+  @Query() filters?: any
+) {
+  const userId = req.user.id;
+  return this.stockService.getStocksByUserBranchMobile(
+    userId, branchId,search, page, limit, sortBy, sortOrder, filters
+  );
+}
+
+@Post('mobile/stocks/:branchId')
+@UseGuards(AuthGuard)
+async createStockMobile(
+  @Req() req: any,
+  @Param("branchId") branchId:any, 
+  @Body() createStockDto: CreateStockDto
+) {
+  const userId = req.user.id;
+  return this.stockService.createStockMobile(userId, branchId,createStockDto);
+}
+
+@Patch('mobile/stocks/:id')
+@UseGuards(AuthGuard)
+async updateStockMobile(
+  @Req() req: any,
+  @Param('id') stockId: string,
+  @Body() updateStockDto: UpdateStockDto
+) {
+  const userId = req.user.id;
+  return this.stockService.updateStockMobile(userId, stockId, updateStockDto);
+}
+
+@Delete('mobile/stocks/:id')
+@UseGuards(AuthGuard)
+async deleteStockMobile(
+  @Req() req: any,
+  @Param('id') stockId: string
+) {
+  const userId = req.user.id;
+  return this.stockService.deleteStockMobile(userId, stockId);
+}
+@Get('mobile/out-of-stock/:branchId')
+@UseGuards(AuthGuard)
+async getOutOfStockByUserBranchMobile(
+  @Req() req: any,
+  @Param("branchId") branchId,
+  @Query('threshold') threshold = '0',
+  @Query('search') search?: string,
+  @Query('page') page: any = 1,
+  @Query('limit') limit: any = 10,
+  @Query('sortBy') sortBy?: string,
+  @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'ASC',
+  @Query() filters?: any
+) {
+  const userId = req.user.id;
+  const thresholdNum = Number(threshold) || 0;
+  return this.stockService.getOutOfStockByUserBranchMobile(
+    userId, branchId,thresholdNum, search, page, limit, sortBy, sortOrder, filters
+  );
+}
   @Get('project/:projectId')
   @Permissions(EPermission.STOCK_READ)
   async getProjectStocks(@Req() req, @Param('projectId') projectId?: string, @Query() query?: any, @Query('search') search?: string, @Query('page') page: any = 1, @Query('limit') limit: any = 10, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC') {
@@ -37,7 +108,26 @@ export class StockController {
       query,
     });
   }
+  @Get('project/:projectId')
+  @Permissions(EPermission.STOCK_READ)
+  async getPromoterStocks(@Req() req, @Param('projectId') projectId?: string, @Query() query?: any, @Query('search') search?: string, @Query('page') page: any = 1, @Query('limit') limit: any = 10, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC') {
+    const user = req.user as any;
+    const effectiveProjectId = projectId || user?.project_id || user?.project?.id || null;
 
+    if (!effectiveProjectId) {
+      throw new BadRequestException('projectId is required or user must belong to a project');
+    }
+
+    return this.stockService.getStocksByProjectPaginated({
+      projectId: effectiveProjectId,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      query,
+    });
+  }
   @Post('upsert')
   @Permissions(EPermission.STOCK_CREATE, EPermission.STOCK_UPDATE)
   async createOrUpdate(@Body() dto: CreateStockDto) {

@@ -6,8 +6,9 @@ import { CreateStockDto, UpdateStockDto } from 'dto/stock.dto';
 import { Branch } from 'entities/branch.entity';
 import { Product } from 'entities/products/product.entity';
 import { Stock } from 'entities/products/stock.entity';
-import { In, LessThanOrEqual, Not, Repository } from 'typeorm';
+import { Brackets, In, LessThanOrEqual, Not, Repository } from 'typeorm';
 import { Sale } from 'entities/products/sale.entity';
+import { User } from 'entities/user.entity';
 
 type OutOfStockItem = {
   product: any;
@@ -33,6 +34,8 @@ export class StockService {
     @InjectRepository(Product) public productRepo: Repository<Product>,
     @InjectRepository(Branch) public branchRepo: Repository<Branch>,
     @InjectRepository(Sale) public saleRepo: Repository<Sale>,
+    @InjectRepository(User) public userRepo: Repository<User>,
+
   ) {}
 
   async getStocksByProjectPaginated(params: { projectId: string; search?: string; page?: any; limit?: any; sortBy?: string; sortOrder?: 'ASC' | 'DESC', query: any }) {
@@ -519,4 +522,554 @@ async getLowStockAlerts(threshold: number = 10, projectId?: string) {
       salesHistory: sales,
     };
   }
+// Add these methods to your StockService class
+
+// Mobile - Get stocks by user's branch
+async getStocksByUserBranchMobile(
+  userId: string,
+  branchId:string,
+  search?: string,
+  page: any = 1,
+  limit: any = 10,
+  sortBy?: string,
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  filters?: any
+) {
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || 10;
+  const skip = (pageNumber - 1) * limitNumber;
+
+  // Get user with branch info
+  const user = await this.userRepo.findOne({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+const branch = await this.branchRepo.findOne({
+  where:{id:branchId}
+})
+
+if (!branch) {
+  throw new NotFoundException('Branch not found');
+}
+  // Create query builder with all needed relations
+  const qb = this.stockRepo.createQueryBuilder('stock')
+    .leftJoinAndSelect('stock.product', 'product')
+    .leftJoinAndSelect('product.brand', 'brand')
+    .leftJoinAndSelect('product.category', 'category')
+    .leftJoinAndSelect('stock.branch', 'branch')
+    .select([
+      'stock.id',
+      'stock.quantity',
+      'stock.created_at',
+      'product.id',
+      'product.name',
+      'product.sku',
+      'product.price',
+      'product.discount',
+      'brand.id',
+      'brand.name',
+      'category.id',
+      'category.name',
+      'branch.id',
+      'branch.name',
+      'branch.city'
+    ])
+    .where('branch.id = :branchId', { branchId })
+    .skip(skip)
+    .take(limitNumber);
+
+  // Apply search if provided
+  if (search) {
+    qb.andWhere(
+      new Brackets(subQb => {
+        subQb.where('product.name ILIKE :search', { search: `%${search}%` })
+            .orWhere('brand.name ILIKE :search', { search: `%${search}%` })
+            .orWhere('category.name ILIKE :search', { search: `%${search}%` })
+            .orWhere('product.sku ILIKE :search', { search: `%${search}%` });
+      })
+    );
+  }
+
+  // Apply additional filters
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        if (key.includes('.')) {
+          const [relation, field] = key.split('.');
+          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { 
+            [key.replace('.', '_')]: value 
+          });
+        } else {
+          qb.andWhere(`stock.${key} = :${key}`, { [key]: value });
+        }
+      }
+    });
+  }
+
+  // Apply sorting
+  const sortField = sortBy || 'stock.created_at';
+  qb.orderBy(sortField, sortOrder);
+
+  const [records, total_records] = await qb.getManyAndCount();
+
+  // Transform the data to match optimized structure
+  const optimizedRecords = records.map(stock => {
+    const productPrice = stock.product?.price || 0;
+    const discount = stock.product?.discount || 0;
+    
+    return {
+      id: stock.id,
+      quantity: stock.quantity,
+      created_at: stock.created_at,
+      product: {
+        id: stock.product?.id || null,
+        name: stock.product?.name || null,
+        sku: stock.product?.sku || null,
+        price: productPrice,
+        discount: discount,
+        unit_amount: productPrice,
+        total_amount: productPrice * stock.quantity,
+        discounted_amount: (productPrice - discount) * stock.quantity,
+        brand_name: stock.product?.brand?.name || null,
+        category_name: stock.product?.category?.name || null
+      }
+    };
+  });
+
+  return {
+    total_records,
+    current_page: pageNumber,
+    per_page: limitNumber,
+    branch: {
+      id: branch.id,
+      name: branch.name,
+      city: branch.city
+    },
+    user: {
+      id: user.id,
+      name: user.name
+    },
+    records: optimizedRecords
+  };
+}
+
+// Mobile - Create stock for user's branch
+async createStockMobile(
+  userId: string,
+  branchId:string,
+  createStockDto: CreateStockDto
+) {
+  // Get user with branch info
+  const user = await this.userRepo.findOne({
+    where: { id: userId },
+
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+  const branch = await this.branchRepo.findOne({
+    where:{id:branchId}
+  })
+  
+  if (!branch) {
+    throw new NotFoundException('Branch not found');
+  }
+
+  // Validate quantity
+  if (!Number.isInteger(createStockDto.quantity) || createStockDto.quantity < 0) {
+    throw new BadRequestException('Quantity must be an integer >= 0');
+  }
+
+  const product = await this.productRepo.findOne({
+    where: { id: createStockDto.product_id },
+    relations: ['brand', 'category'],
+  });
+  
+  if (!product) {
+    throw new NotFoundException(`Product with ID ${createStockDto.product_id} not found`);
+  }
+
+  // Check if stock already exists for this product and branch
+  const existingStock = await this.stockRepo.findOne({
+    where: {
+      product: { id: createStockDto.product_id },
+      branch: { id: branch.id },
+    },
+    relations: ['product', 'branch', 'product.brand', 'product.category'],
+  });
+
+  let stock: Stock;
+
+  if (existingStock) {
+    // Update existing stock
+    existingStock.quantity += createStockDto.quantity;
+    stock = await this.stockRepo.save(existingStock);
+  } else {
+    // Create new stock
+    stock = this.stockRepo.create({
+      quantity: createStockDto.quantity,
+      product,
+      branch: branch,
+      product_id: createStockDto.product_id,
+      branch_id: branch.id,
+    });
+    stock = await this.stockRepo.save(stock);
+    
+    // Reload with relations for response
+    stock = await this.stockRepo.findOne({
+      where: { id: stock.id },
+      relations: ['product', 'branch', 'product.brand', 'product.category'],
+    });
+  }
+
+  // Transform response to match optimized structure
+  const productPrice = stock.product?.price || 0;
+  const discount = stock.product?.discount || 0;
+  
+  return {
+    message: existingStock ? 'Stock updated successfully' : 'Stock created successfully',
+    total_records: 1,
+    current_page: 1,
+    per_page: 1,
+    branch: {
+      id: branch.id,
+      name: branch.name,
+      city: branch.city
+    },
+    user: {
+      id: user.id,
+      name: user.name
+    },
+    records: [{
+      id: stock.id,
+      quantity: stock.quantity,
+      created_at: stock.created_at,
+      product: {
+        id: stock.product?.id || null,
+        name: stock.product?.name || null,
+        sku: stock.product?.sku || null,
+        price: productPrice,
+        discount: discount,
+        unit_amount: productPrice,
+        total_amount: productPrice * stock.quantity,
+        discounted_amount: (productPrice - discount) * stock.quantity,
+        brand_name: stock.product?.brand?.name || null,
+        category_name: stock.product?.category?.name || null
+      }
+    }]
+  };
+}
+
+// Mobile - Update stock for user's branch
+async updateStockMobile(
+  userId: string,
+  stockId: string,
+  updateStockDto: UpdateStockDto
+) {
+  // Get user with branch info
+  const user = await this.userRepo.findOne({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+
+
+  // Get stock with relations
+  const stock = await this.stockRepo.findOne({
+    where: { id: stockId },
+    relations: ['product', 'branch', 'product.brand', 'product.category']
+  });
+
+  if (!stock) {
+    throw new NotFoundException('Stock not found');
+  }
+
+
+  // Validate quantity if provided
+  if (typeof updateStockDto.quantity === 'number') {
+    if (!Number.isInteger(updateStockDto.quantity) || updateStockDto.quantity < 0) {
+      throw new BadRequestException('Quantity must be an integer >= 0');
+    }
+    stock.quantity = updateStockDto.quantity;
+  }
+
+  // Update product if provided
+  if (updateStockDto.product_id) {
+    const product = await this.productRepo.findOne({
+      where: { id: updateStockDto.product_id },
+      relations: ['brand', 'category'],
+    });
+    
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${updateStockDto.product_id} not found`);
+    }
+    
+    stock.product = product;
+    stock.product_id = product.id;
+  }
+
+  const updatedStock = await this.stockRepo.save(stock);
+
+  // Transform response to match optimized structure
+  const productPrice = updatedStock.product?.price || 0;
+  const discount = updatedStock.product?.discount || 0;
+  
+  return {
+    message: 'Stock updated successfully',
+    total_records: 1,
+    current_page: 1,
+    per_page: 1,
+    branch: {
+      id:  updatedStock.branch.id,
+      name: updatedStock.branch.name,
+      city:updatedStock.branch.city,
+    },
+    user: {
+      id: user.id,
+      name: user.name
+    },
+    records: [{
+      id: updatedStock.id,
+      quantity: updatedStock.quantity,
+      created_at: updatedStock.created_at,
+      product: {
+        id: updatedStock.product?.id || null,
+        name: updatedStock.product?.name || null,
+        sku: updatedStock.product?.sku || null,
+        price: productPrice,
+        discount: discount,
+        unit_amount: productPrice,
+        total_amount: productPrice * updatedStock.quantity,
+        discounted_amount: (productPrice - discount) * updatedStock.quantity,
+        brand_name: updatedStock.product?.brand?.name || null,
+        category_name: updatedStock.product?.category?.name || null
+      }
+    }]
+  };
+}
+
+// Mobile - Delete stock from user's branch
+async deleteStockMobile(
+  userId: string,
+  stockId: string
+) {
+  // Get user with branch info
+  const user = await this.userRepo.findOne({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+
+
+
+  // Get stock with relations
+  const stock = await this.stockRepo.findOne({
+    where: { id: stockId },
+    relations: ['product', 'branch', 'product.brand', 'product.category']
+  });
+
+  if (!stock) {
+    throw new NotFoundException('Stock not found');
+  }
+
+
+  // Check if there are any sales associated with this stock
+  const salesCount = await this.saleRepo.count({
+    where: {
+      product: { id: stock.product.id },
+      branch: { id: stock.branch.id },
+    },
+  });
+
+  if (salesCount > 0) {
+    throw new ForbiddenException(
+      `Cannot delete stock. There are ${salesCount} sales associated with this product and branch.`
+    );
+  }
+
+  // Store stock data for response before deletion
+  const stockData = {
+    id: stock.id,
+    quantity: stock.quantity,
+    created_at: stock.created_at,
+    product: {
+      id: stock.product?.id || null,
+      name: stock.product?.name || null,
+      sku: stock.product?.sku || null,
+      price: stock.product?.price || 0,
+      discount: stock.product?.discount || 0,
+      unit_amount: stock.product?.price || 0,
+      total_amount: (stock.product?.price || 0) * stock.quantity,
+      discounted_amount: ((stock.product?.price || 0) - (stock.product?.discount || 0)) * stock.quantity,
+      brand_name: stock.product?.brand?.name || null,
+      category_name: stock.product?.category?.name || null
+    }
+  };
+
+  // Soft delete the stock
+  await this.stockRepo.softDelete(stockId);
+
+  return {
+    message: 'Stock deleted successfully',
+    total_records: 1,
+    current_page: 1,
+    per_page: 1,
+    branch: {
+      id: stock.branch.id,
+      name: stock.branch.name,
+      city: stock.branch.city
+    },
+    user: {
+      id: user.id,
+      name: user.name
+    },
+    records: [stockData]
+  };
+}
+
+async getOutOfStockByUserBranchMobile(
+  userId: string,
+  branchId:string,
+  threshold: number = 0,
+  search?: string,
+  page: any = 1,
+  limit: any = 10,
+  sortBy?: string,
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  filters?: any
+) {
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || 10;
+  const skip = (pageNumber - 1) * limitNumber;
+
+  // Get user with branch info
+  const user = await this.userRepo.findOne({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+  const branch = await this.branchRepo.findOne({
+    where:{id:branchId}
+  })
+  
+  if (!branch) {
+    throw new NotFoundException('Branch not found');
+  }
+
+
+  // Create query builder for out-of-stock items
+  const qb = this.stockRepo.createQueryBuilder('stock')
+    .leftJoinAndSelect('stock.product', 'product')
+    .leftJoinAndSelect('product.brand', 'brand')
+    .leftJoinAndSelect('product.category', 'category')
+    .leftJoinAndSelect('stock.branch', 'branch')
+    .select([
+      'stock.id',
+      'stock.quantity',
+      'stock.created_at',
+      'product.id',
+      'product.name',
+      'product.sku',
+      'product.price',
+      'product.discount',
+      'brand.id',
+      'brand.name',
+      'category.id',
+      'category.name',
+      'branch.id',
+      'branch.name',
+      'branch.city'
+    ])
+    .where('branch.id = :branchId', { branchId })
+    .andWhere('stock.quantity <= :threshold', { threshold })
+    .skip(skip)
+    .take(limitNumber);
+
+  // Apply search if provided
+  if (search) {
+    qb.andWhere(
+      new Brackets(subQb => {
+        subQb.where('product.name ILIKE :search', { search: `%${search}%` })
+            .orWhere('brand.name ILIKE :search', { search: `%${search}%` })
+            .orWhere('category.name ILIKE :search', { search: `%${search}%` })
+            .orWhere('product.sku ILIKE :search', { search: `%${search}%` });
+      })
+    );
+  }
+
+  // Apply additional filters
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        if (key.includes('.')) {
+          const [relation, field] = key.split('.');
+          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { 
+            [key.replace('.', '_')]: value 
+          });
+        } else {
+          qb.andWhere(`stock.${key} = :${key}`, { [key]: value });
+        }
+      }
+    });
+  }
+
+  // Apply sorting
+  const sortField = sortBy || 'stock.quantity';
+  qb.orderBy(sortField, sortOrder);
+
+  const [records, total_records] = await qb.getManyAndCount();
+
+  // Transform the data to match optimized structure
+  const optimizedRecords = records.map(stock => {
+    const productPrice = stock.product?.price || 0;
+    const discount = stock.product?.discount || 0;
+    
+    return {
+      id: stock.id,
+      quantity: stock.quantity,
+      created_at: stock.created_at,
+      is_out_of_stock: stock.quantity <= threshold,
+      threshold: threshold,
+      product: {
+        id: stock.product?.id || null,
+        name: stock.product?.name || null,
+        sku: stock.product?.sku || null,
+        price: productPrice,
+        discount: discount,
+        unit_amount: productPrice,
+        total_amount: productPrice * stock.quantity,
+        discounted_amount: (productPrice - discount) * stock.quantity,
+        brand_name: stock.product?.brand?.name || null,
+        category_name: stock.product?.category?.name || null
+      }
+    };
+  });
+
+  return {
+    total_records,
+    current_page: pageNumber,
+    per_page: limitNumber,
+    threshold: threshold,
+    branch: {
+      id: branch.id,
+      name: branch.name,
+      city: branch.city
+    },
+    user: {
+      id: user.id,
+      name: user.name
+    },
+    records: optimizedRecords
+  };
+}
 }

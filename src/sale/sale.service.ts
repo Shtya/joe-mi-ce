@@ -184,34 +184,69 @@ export class SaleService {
   async delete(id: string) {
     const sale = await this.saleRepo.findOne({ 
       where: { id }, 
-      relations: ['product', 'branch'] 
+      relations: ['product', 'branch', 'user', 'product.brand', 'product.category'] 
     });
     
     if (!sale) throw new NotFoundException('Sale not found');
-
+  
     if (sale.status === 'returned' || sale.status === 'cancelled') {
       throw new BadRequestException('Sale is already returned or cancelled');
     }
-
+  
     const stock = await this.stockRepo.findOne({
       where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
     });
-
+  
     if (!stock) {
       throw new NotFoundException('Stock not found for this branch');
     }
-
+  
     // Return quantity to stock
     stock.quantity += sale.quantity;
     await this.stockRepo.save(stock);
-
+  
     // Update sales target progress
     await this.updateSalesTargetProgress(sale.branch.id, -sale.total_amount);
-
-    // Soft delete the sale
+  
+    // Transform the response to match the optimized structure before deletion
+    const response = {
+      total_records: 1,
+      current_page: 1,
+      per_page: 1,
+      branch: sale.branch ? {
+        id: sale.branch.id,
+        name: sale.branch.name,
+        city: sale.branch.city
+      } : null,
+      user: sale.user ? {
+        id: sale.user.id,
+        name: sale.user.name
+      } : null,
+      records: [{
+        id: sale.id,
+        quantity: sale.quantity,
+        total_amount: sale.total_amount,
+        created_at: sale.created_at,
+        status: sale.status,
+        discount: sale.product?.discount || 0,
+        product: {
+          id: sale.product?.id || null,
+          name: sale.product?.name || null,
+          sku: sale.product?.sku || null,
+          price: sale.product?.price || 0,
+          unit_amount: sale.product?.price || 0,
+          total_amount: (sale.product?.price || 0) * sale.quantity,
+          discounted_amount: ((sale.product?.price || 0) - (sale.product?.discount || 0)) * sale.quantity,
+          brand_name: sale.product?.brand?.name || null,
+          category_name: sale.product?.category?.name || null
+        }
+      }]
+    };
+  
+    // Soft delete the sale after preparing response
     await this.saleRepo.softDelete(id);
-
-    return { message: 'Sale deleted successfully' };
+  
+    return response;
   }
 
   async cancelOrReturn(id: string) {
