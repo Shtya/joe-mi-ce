@@ -38,7 +38,7 @@ async getStocksByUserBranchMobile(
   );
 }
 
-@Post('mobile/stocks/:branchId')
+@Post('mobile/stocks')
 @UseGuards(AuthGuard)
 async createStockMobile(
   @Req() req: any,
@@ -289,73 +289,73 @@ async getOutOfStockByUserBranchMobile(
     return list;
   }
 
-  @Get('mobile/out-of-stock')
-  @Permissions(EPermission.STOCK_ANALYZE)
-  async outOfStockSmartMobile(@Query('branchId') branchId?: string, @Query('productId') productId?: string, @Query('project') project?: string, @Query('threshold') threshold = '0', @Query('export') exportFlag?: string, @Res({ passthrough: true }) res?: any) {
-    const thrNum = Number(threshold);
-    const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
+  // @Get('mobile/out-of-stock')
+  // @Permissions(EPermission.STOCK_ANALYZE)
+  // async outOfStockSmartMobile(@Query('branchId') branchId?: string, @Query('productId') productId?: string, @Query('project') project?: string, @Query('threshold') threshold = '0', @Query('export') exportFlag?: string, @Res({ passthrough: true }) res?: any) {
+  //   const thrNum = Number(threshold);
+  //   const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
 
-    const result = await this.stockService.getOutOfStockSmart({
-      branchId,
-      productId,
-      project,
-      threshold: safeThr,
-    });
+  //   const result = await this.stockService.getOutOfStockSmart({
+  //     branchId,
+  //     productId,
+  //     project,
+  //     threshold: safeThr,
+  //   });
 
-    const flatItems = result.items.map(it => ({
-      product_id: it.product?.id ?? null,
-      product_name: it.product?.name ?? null,
-      sku: it.product?.sku ?? null,
-      model: it.product?.model ?? null,
-      price: it.product?.price ?? null,
-      is_active: it.product?.is_active ?? null,
-      project: it.product?.project ?? null,
+  //   const flatItems = result.items.map(it => ({
+  //     product_id: it.product?.id ?? null,
+  //     product_name: it.product?.name ?? null,
+  //     sku: it.product?.sku ?? null,
+  //     model: it.product?.model ?? null,
+  //     price: it.product?.price ?? null,
+  //     is_active: it.product?.is_active ?? null,
+  //     project: it.product?.project ?? null,
 
-      branch_id: result.mode === 'per-branch' ? (it.branch?.id ?? null) : null,
-      branch_name: result.mode === 'per-branch' ? (it.branch?.name ?? null) : null,
+  //     branch_id: result.mode === 'per-branch' ? (it.branch?.id ?? null) : null,
+  //     branch_name: result.mode === 'per-branch' ? (it.branch?.name ?? null) : null,
 
-      quantity: it.quantity,
-    }));
+  //     quantity: it.quantity,
+  //   }));
 
-    const payload = {
-      mode: result.mode,
-      threshold: result.threshold,
-      branchId: result.branchId ?? null,
-      productId: result.productId ?? null,
-      project: result.project ?? null,
-      items: flatItems,
-      count: flatItems.length,
-    };
+  //   const payload = {
+  //     mode: result.mode,
+  //     threshold: result.threshold,
+  //     branchId: result.branchId ?? null,
+  //     productId: result.productId ?? null,
+  //     project: result.project ?? null,
+  //     items: flatItems,
+  //     count: flatItems.length,
+  //   };
 
-    const shouldExport = typeof exportFlag === 'string' && ['true', '1', 'yes'].includes(exportFlag.toLowerCase());
+  //   const shouldExport = typeof exportFlag === 'string' && ['true', '1', 'yes'].includes(exportFlag.toLowerCase());
 
-    if (shouldExport) {
-      await this.exportService.exportRowsToExcel(res, flatItems, {
-        sheetName: 'out_of_stock',
-        fileName: productId ? 'out_of_stock_per_branch' : 'out_of_stock_aggregate',
-        columns: [
-          { header: 'mode', key: 'mode', width: 14 },
-          { header: 'branch_id', key: 'branch_id', width: 24 },
-          { header: 'branch_name', key: 'branch_name', width: 28 },
-          { header: 'product_id', key: 'product_id', width: 24 },
-          { header: 'product_name', key: 'product_name', width: 32 },
-          { header: 'sku', key: 'sku', width: 18 },
-          { header: 'model', key: 'model', width: 18 },
-          { header: 'price', key: 'price', width: 14 },
-          { header: 'is_active', key: 'is_active', width: 12 },
-          { header: 'project', key: 'project', width: 20 },
-          { header: 'quantity', key: 'quantity', width: 14 },
-          { header: 'threshold', key: 'threshold', width: 14 },
-          { header: 'filter_branchId', key: 'filter_branchId', width: 24 },
-          { header: 'filter_productId', key: 'filter_productId', width: 24 },
-          { header: 'filter_project', key: 'filter_project', width: 24 },
-        ],
-      });
-      return;
-    }
+  //   if (shouldExport) {
+  //     await this.exportService.exportRowsToExcel(res, flatItems, {
+  //       sheetName: 'out_of_stock',
+  //       fileName: productId ? 'out_of_stock_per_branch' : 'out_of_stock_aggregate',
+  //       columns: [
+  //         { header: 'mode', key: 'mode', width: 14 },
+  //         { header: 'branch_id', key: 'branch_id', width: 24 },
+  //         { header: 'branch_name', key: 'branch_name', width: 28 },
+  //         { header: 'product_id', key: 'product_id', width: 24 },
+  //         { header: 'product_name', key: 'product_name', width: 32 },
+  //         { header: 'sku', key: 'sku', width: 18 },
+  //         { header: 'model', key: 'model', width: 18 },
+  //         { header: 'price', key: 'price', width: 14 },
+  //         { header: 'is_active', key: 'is_active', width: 12 },
+  //         { header: 'project', key: 'project', width: 20 },
+  //         { header: 'quantity', key: 'quantity', width: 14 },
+  //         { header: 'threshold', key: 'threshold', width: 14 },
+  //         { header: 'filter_branchId', key: 'filter_branchId', width: 24 },
+  //         { header: 'filter_productId', key: 'filter_productId', width: 24 },
+  //         { header: 'filter_project', key: 'filter_project', width: 24 },
+  //       ],
+  //     });
+  //     return;
+  //   }
 
-    return payload;
-  }
+  //   return payload;
+  // }
 
   @Get(':id')
   @Permissions(EPermission.STOCK_READ)

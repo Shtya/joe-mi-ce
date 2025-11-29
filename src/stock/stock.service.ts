@@ -683,7 +683,6 @@ async createStockMobile(
   if (!Number.isInteger(createStockDto.quantity) || createStockDto.quantity < 0) {
     throw new BadRequestException('Quantity must be an integer >= 0');
   }
-
   const product = await this.productRepo.findOne({
     where: { id: createStockDto.product_id },
     relations: ['brand', 'category'],
@@ -705,7 +704,6 @@ async createStockMobile(
   let stock: Stock;
 
   if (existingStock) {
-    // Update existing stock
     existingStock.quantity += createStockDto.quantity;
     stock = await this.stockRepo.save(existingStock);
   } else {
