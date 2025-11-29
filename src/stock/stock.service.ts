@@ -97,9 +97,11 @@ export class StockService {
         product: { id: product_id },
         branch: { id: branch_id },
       },
+      withDeleted:true,
   relations: ['product', 'branch', 'product.brand'], // Added 'product.brand'
     });
     if (stock) {
+      stock.deleted_at = null;
       stock.quantity = quantity;
     } else {
       stock = this.stockRepo.create({
@@ -659,108 +661,140 @@ if (!branch) {
 // Mobile - Create stock for user's branch
 async createStockMobile(
   userId: string,
-  branchId:string,
   createStockDto: CreateStockDto
 ) {
-  // Get user with branch info
+  const { product_id, branch_id, quantity } = createStockDto;
+
+  // ─────────────────────────────────────────────
+  // Validate User
+  // ─────────────────────────────────────────────
   const user = await this.userRepo.findOne({
     where: { id: userId },
-
   });
 
   if (!user) {
     throw new NotFoundException('User not found');
   }
+
+  // ─────────────────────────────────────────────
+  // Validate Branch
+  // ─────────────────────────────────────────────
   const branch = await this.branchRepo.findOne({
-    where:{id:branchId}
-  })
-  
+    where: { id: branch_id },
+  });
+
   if (!branch) {
     throw new NotFoundException('Branch not found');
   }
 
-  // Validate quantity
-  if (!Number.isInteger(createStockDto.quantity) || createStockDto.quantity < 0) {
+  // ─────────────────────────────────────────────
+  // Validate Quantity
+  // ─────────────────────────────────────────────
+  if (!Number.isInteger(quantity) || quantity < 0) {
     throw new BadRequestException('Quantity must be an integer >= 0');
   }
+
+  // ─────────────────────────────────────────────
+  // Validate Product
+  // ─────────────────────────────────────────────
   const product = await this.productRepo.findOne({
-    where: { id: createStockDto.product_id },
+    where: { id: product_id },
     relations: ['brand', 'category'],
   });
-  
+
   if (!product) {
-    throw new NotFoundException(`Product with ID ${createStockDto.product_id} not found`);
+    throw new NotFoundException(`Product with ID ${product_id} not found`);
   }
 
-  // Check if stock already exists for this product and branch
+  // ─────────────────────────────────────────────
+  // Check & Update Existing Stock
+  // ─────────────────────────────────────────────
   const existingStock = await this.stockRepo.findOne({
     where: {
-      product: { id: createStockDto.product_id },
-      branch: { id: branch.id },
+      product_id, 
+      branch_id
     },
+    withDeleted: true,
     relations: ['product', 'branch', 'product.brand', 'product.category'],
   });
 
   let stock: Stock;
 
   if (existingStock) {
-    existingStock.quantity += createStockDto.quantity;
+    existingStock.deleted_at = null
+    existingStock.quantity += quantity;
     stock = await this.stockRepo.save(existingStock);
   } else {
-    // Create new stock
     stock = this.stockRepo.create({
-      quantity: createStockDto.quantity,
+      quantity,
       product,
-      branch: branch,
-      product_id: createStockDto.product_id,
-      branch_id: branch.id,
+      branch,
+      product_id,
+      branch_id,
     });
+
     stock = await this.stockRepo.save(stock);
-    
-    // Reload with relations for response
+
+    // Reload with all relations
     stock = await this.stockRepo.findOne({
       where: { id: stock.id },
       relations: ['product', 'branch', 'product.brand', 'product.category'],
     });
   }
 
-  // Transform response to match optimized structure
-  const productPrice = stock.product?.price || 0;
-  const discount = stock.product?.discount || 0;
-  
+  // ─────────────────────────────────────────────
+  // Calculate Price Fields
+  // ─────────────────────────────────────────────
+  const productPrice = product.price || 0;
+  const discount = product.discount || 0;
+
+  const unitAmount = productPrice;
+  const totalAmount = productPrice * stock.quantity;
+  const discountedAmount = (productPrice - discount) * stock.quantity;
+
+  // ─────────────────────────────────────────────
+  // Response DTO
+  // ─────────────────────────────────────────────
   return {
     message: existingStock ? 'Stock updated successfully' : 'Stock created successfully',
     total_records: 1,
     current_page: 1,
     per_page: 1,
+
     branch: {
       id: branch.id,
       name: branch.name,
-      city: branch.city
+      city: branch.city,
     },
+
     user: {
       id: user.id,
-      name: user.name
+      name: user.name,
     },
-    records: [{
-      id: stock.id,
-      quantity: stock.quantity,
-      created_at: stock.created_at,
-      product: {
-        id: stock.product?.id || null,
-        name: stock.product?.name || null,
-        sku: stock.product?.sku || null,
-        price: productPrice,
-        discount: discount,
-        unit_amount: productPrice,
-        total_amount: productPrice * stock.quantity,
-        discounted_amount: (productPrice - discount) * stock.quantity,
-        brand_name: stock.product?.brand?.name || null,
-        category_name: stock.product?.category?.name || null
-      }
-    }]
+
+    records: [
+      {
+        id: stock.id,
+        quantity: stock.quantity,
+        created_at: stock.created_at,
+
+        product: {
+          id: product.id,
+          name: product.name,
+          sku: product.sku,
+          price: productPrice,
+          discount,
+          unit_amount: unitAmount,
+          total_amount: totalAmount,
+          discounted_amount: discountedAmount,
+          brand_name: product.brand?.name || null,
+          category_name: product.category?.name || null,
+        },
+      },
+    ],
   };
 }
+
 
 // Mobile - Update stock for user's branch
 async updateStockMobile(

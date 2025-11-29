@@ -42,11 +42,11 @@ async getStocksByUserBranchMobile(
 @UseGuards(AuthGuard)
 async createStockMobile(
   @Req() req: any,
-  @Param("branchId") branchId:any, 
+ 
   @Body() createStockDto: CreateStockDto
 ) {
   const userId = req.user.id;
-  return this.stockService.createStockMobile(userId, branchId,createStockDto);
+  return this.stockService.createStockMobile(userId, createStockDto);
 }
 
 @Patch('mobile/stocks/:id')
