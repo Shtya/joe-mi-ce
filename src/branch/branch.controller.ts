@@ -33,10 +33,9 @@ export class BranchController {
     if (req.user.role?.name == ERole.SUPER_ADMIN) {
       throw new ForbiddenException('You cannot access this route');
     }
-  
-    // Create base where condition with project filter
+    
     const whereCondition = { 
-      project: { id: req.user.project.id } 
+      project: { id: req.user.project_id } 
     };
   
     // Apply other filters if they exist and are for branch fields
@@ -44,7 +43,7 @@ export class BranchController {
       Object.assign(whereCondition, query.filters);
     }
   
-    return CRUD.findAll(
+    return CRUD.findAll2(
       this.branchService.branchRepo, 
       'branch', 
       query.search, 

@@ -214,24 +214,25 @@ export class CRUD {
     }
 
     // ---------- search ----------
-    if (search && searchFields?.length) {
-      qb.andWhere(
-        new Brackets(qb2 => {
-          for (const field of searchFields) {
-            if (field.includes('.')) {
-              // joined search: e.g. 'owner.username'
-              const qualified = qualifyField(field);
-              qb2.orWhere(`LOWER(${qualified}) LIKE LOWER(:search)`, { search: `%${search}%` });
-              continue;
-            }
-            const dbName = resolveOwnColumnName(field);
-            if (!dbName) continue;
-            const qualified = `${entityName}.${dbName}`;
-            qb2.orWhere(`LOWER(${qualified}) LIKE LOWER(:search)`, { search: `%${search}%` });
-          }
-        }),
-      );
-    }
+// ---------- search ----------
+if (search && searchFields?.length) {
+  qb.andWhere(
+    new Brackets(qb2 => {
+      for (const field of searchFields) {
+        if (field.includes('.')) {
+          // joined search: e.g. 'owner.username'
+          const qualified = qualifyField(field);
+          qb2.orWhere(`${qualified} ILIKE :search`, { search: `%${search}%` }); // Changed to ILIKE
+          continue;
+        }
+        const dbName = resolveOwnColumnName(field);
+        if (!dbName) continue;
+        const qualified = `${entityName}.${dbName}`;
+        qb2.orWhere(`${qualified} ILIKE :search`, { search: `%${search}%` }); // Changed to ILIKE
+      }
+    }),
+  );
+}
 
     // ---------- sorting ----------
     if (sortBy?.includes('.')) {

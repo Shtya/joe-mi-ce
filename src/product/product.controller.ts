@@ -30,33 +30,16 @@ export class ProductController {
   }
   @Get()
   @Permissions(EPermission.PRODUCT_READ)
-  findAll(@Query() q: ProductFilterQueryDto) {
-    const filters: Record<string, any> = {};
+  findAll(@Query() q: any) {
 
-    // relations we need for filtering/response
-    const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
+   const filters = { ...q.filters}
+   const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
 
-    // map simple refs → nested filters your CRUD understands
-    if (q.projectId) filters['project.id'] = q.projectId;
-    if (q.brandId) filters['brand.id'] = q.brandId;
-    if (q.categoryId) filters['category.id'] = q.categoryId;
-    if (q.branchId) filters['stock.branch.id'] = q.branchId;
 
-    // booleans
-    if (q.isActive === 'true') filters['is_active'] = true;
-    if (q.isActive === 'false') filters['is_active'] = false;
-
-    // numeric ranges (use operators your CRUD supports)
-    if (q.minPrice) filters['price.gte'] = Number(q.minPrice);
-    if (q.maxPrice) filters['price.lte'] = Number(q.maxPrice);
-
-    if (q.inStock === 'true') filters['stock.quantity.gt'] = 0;
-    if (q.inStock === 'false') filters['stock.quantity.lte'] = 0;
-
-    // search over these fields (ILIKE via CRUD search)
-    const searchFields = ['name', 'model', 'sku'];
-
-    return CRUD.findAll2(this.productService.productRepository, 'product', q.search, q.page, q.limit, q.sortBy, (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC', relations, searchFields, filters);
+   const searchFields = ['name', 'model', 'sku'];
+       return CRUD.findAll2(
+        this.productService.productRepository, 'product', q.search, q.page, q.limit, q.sortBy, (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC', relations, searchFields, filters
+      );
   }
 
   @Get(':id')
