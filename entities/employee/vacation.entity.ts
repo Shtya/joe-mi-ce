@@ -1,8 +1,9 @@
+// entities/employee/vacation.entity.ts
 import { Branch } from 'entities/branch.entity';
 import { CoreEntity } from 'entities/core.entity';
-import { City } from 'entities/locations/city.entity';
 import { User } from 'entities/user.entity';
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, CreateDateColumn } from 'typeorm';
+import { VacationDate } from './vacation-date.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn, OneToMany } from 'typeorm';
 
 @Entity('vacations')
 export class Vacation extends CoreEntity {
@@ -13,25 +14,27 @@ export class Vacation extends CoreEntity {
   @ManyToOne(() => Branch)
   @JoinColumn({ name: 'branch_id' })
   branch: Branch;
- 
-  @Column('date')
-  start_date: Date;
 
-  @Column('date')
-  end_date: Date;
+  @OneToMany(() => VacationDate, vacationDate => vacationDate.vacation, { cascade: true })
+  vacationDates: VacationDate[];
 
   @Column()
   reason: string;
 
+  @Column({ nullable: true })
+  image_url: string;
+
   @Column({
     type: 'enum',
-    enum: ['pending', 'approved', 'rejected'],
+    enum: ['pending', 'partially_approved', 'approved', 'rejected'],
     default: 'pending',
   })
-  status: string;
+  overall_status: string;
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'processed_by' })
   processedBy: User;
 
+  @Column({ type: 'text', nullable: true })
+  rejection_reason: string;
 }
