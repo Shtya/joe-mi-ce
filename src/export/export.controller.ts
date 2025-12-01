@@ -15,7 +15,7 @@ export class ExportController {
 		@Body('url') url: string,
     @Res() res: Response,
     @Query('fileName') fileName?: string,
-    @Query('auth') authHeader?: string,
+    @Body('auth') authHeader?: string,
   ) {
 		
     return this.exportService.exportFromUrlOnly(url, res, fileName, authHeader);
