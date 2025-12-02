@@ -12,13 +12,19 @@ export class ExportController {
 
   @Get('by-url')
   async exportByUrl(
-		@Body('url') url: string,
+    @Query() query: any,
     @Res() res: Response,
-    @Query('fileName') fileName?: string,
-    @Query('auth') authHeader?: string,
+    @Headers('authorization') authHeader: string,
   ) {
-		
-    return this.exportService.exportFromUrlOnly(url, res, fileName, authHeader);
+    const { url, fileName, ...filters } = query;
+
+    // Rebuild the URL with its query params
+    const fullUrl =
+      Object.keys(filters).length > 0
+        ? `${url}?${new URLSearchParams(filters).toString()}`
+        : url;
+  
+    return this.exportService.exportFromUrlOnly(fullUrl, res, fileName, authHeader);
   }
 }
 
