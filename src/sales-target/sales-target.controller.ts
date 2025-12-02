@@ -50,8 +50,69 @@ import { AuthGuard } from '../auth/auth.guard';
   
     @Get()
     async findAll(@Query() query: any) {
-        return CRUD.findAll2(this.salesTargetService.salesTargetRepository, 'sales_targets', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['branch', 'branch.supervisor', 'createdBy'], ['name', 'created_at'], query.filters);
+        console.log('Query params:', query); // Add this to see what you're getting
+        
+        // Parse filters from query parameters
+        const filtersObj = this.parseFiltersFromQuery(query);
+        
+        return CRUD.findAll2(
+            this.salesTargetService.salesTargetRepository,
+            'sales_targets',
+            query.search,
+            query.page,
+            query.limit,
+            query.sortBy,
+            query.sortOrder,
+            ['branch', 'branch.supervisor', 'createdBy'],
+            ['name', 'created_at'],
+            filtersObj
+        );
+    }
     
+    private parseFiltersFromQuery(query: any): Record<string, any> {
+        const filters: Record<string, any> = {};
+        
+        // Check if filters are already in the format you expect
+        if (query.filters && typeof query.filters === 'object') {
+            return query.filters;
+        }
+        
+        // Parse filters from query parameters like "filters[status]=completed"
+        for (const [key, value] of Object.entries(query)) {
+            const match = key.match(/^filters\[(.+)\]$/);
+            if (match) {
+                const filterKey = match[1];
+                filters[filterKey] = value;
+            }
+        }
+        
+        // Also check for nested filters like "filters[status][eq]=completed"
+        for (const [key, value] of Object.entries(query)) {
+            const match = key.match(/^filters\[(.+)\]\[(.+)\]$/);
+            if (match) {
+                const filterKey = match[1];
+                const operator = match[2];
+                
+                if (!filters[filterKey]) {
+                    filters[filterKey] = {};
+                }
+                
+                // Handle different operator formats
+                if (operator === 'eq' || operator === 'ne' || operator === 'gt' || 
+                    operator === 'gte' || operator === 'lt' || operator === 'lte' ||
+                    operator === 'like' || operator === 'ilike') {
+                    filters[filterKey] = value;
+                } else {
+                    // For complex operators, create nested structure
+                    if (typeof filters[filterKey] !== 'object') {
+                        filters[filterKey] = {};
+                    }
+                    filters[filterKey][operator] = value;
+                }
+            }
+        }
+        
+        return filters;
     }
     @Get('stats/overview')
     async getStatistics(@Query('branchId') branchId?: string) {
