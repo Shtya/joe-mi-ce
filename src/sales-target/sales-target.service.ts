@@ -13,7 +13,7 @@ export class SalesTargetService {
 
   constructor(
     @InjectRepository(SalesTarget)
-    private readonly salesTargetRepository: Repository<SalesTarget>,
+    public readonly salesTargetRepository: Repository<SalesTarget>,
     @InjectRepository(Branch)
     private readonly branchRepository: Repository<Branch>,
   ) {}
