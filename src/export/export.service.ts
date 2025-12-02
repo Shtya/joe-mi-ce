@@ -272,34 +272,36 @@ export class ExportService {
     }
   }
 
-  private async fetchDataFromUrl(url: string, authorization?: any): Promise<any[]> {
+  private async fetchDataFromUrl(url: string, authorization?: string): Promise<any[]> {
     try {
       const cleanUrl = url.startsWith('/') ? url.substring(1) : url;
-      const fullUrl = `http://localhost:${process.env.PORT || 3000}/${cleanUrl}`;
-
+      const baseUrl = process.env.MAIN_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const fullUrl = `${baseUrl}/${cleanUrl}`; 
+  
       console.log(`Fetching data from: ${fullUrl}`);
-
-      // Prepare headers for internal call
+  
       const headers: any = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${authorization}` 
       };
-      const response = await firstValueFrom(this.httpService.get(fullUrl, { headers }));
-			console.log(response);
-
-      // Handle different response formats
-      if (Array.isArray(response.data)) {
-        return response.data;
-      } else if (response.data && Array.isArray(response.data.data)) {
-        return response.data.data;
-      } else if (response.data && response.data.items) {
-        return response.data.items;
-      } else {
-        return [response.data];
+  
+      if (authorization) {
+        headers.Authorization = `${authorization}`;
       }
+  
+      const response = await firstValueFrom(
+        this.httpService.get(fullUrl, { headers })
+      );
+  
+      if (Array.isArray(response.data)) return response.data;
+      if (Array.isArray(response.data?.data)) return response.data.data;
+      if (response.data?.items) return response.data.items;
+  
+      return [response.data];
+  
     } catch (error) {
       console.error('Error fetching data from URL:', error.response?.data || error.message);
       throw new Error(`Failed to fetch data from ${url}: ${error.response?.data?.message || error.message}`);
     }
   }
+  
 }
