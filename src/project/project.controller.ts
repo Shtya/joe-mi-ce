@@ -19,7 +19,7 @@ export class ProjectController {
     if (req.user.role?.name !== 'super_admin') {
       throw new ForbiddenException('Only super admin can view all projects');
     }
-    console.log('here');
+  
     return CRUD.findAll(this.projectService.projectRepo, 'project', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['branches', 'products', 'owner'], ['name', 'created_at'], query.filters);
   }
 

@@ -11,7 +11,10 @@ import {
     UsePipes, 
     ValidationPipe,
     ParseUUIDPipe,
-    Req 
+    Req, 
+    DefaultValuePipe,
+    ParseIntPipe,
+    UseGuards
   } from '@nestjs/common';
   import { SalesTargetService } from './sales-target.service';
   import { SalesTarget, SalesTargetStatus } from '../../entities/sales-target.entity';
@@ -23,11 +26,16 @@ import {
   } from '../../dto/sales-target.dto';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
+import { CRUD } from 'common/crud.service';
+import { AuthGuard } from '../auth/auth.guard';
+;
   
   @Controller('sales-targets')
+  
   @UsePipes(new ValidationPipe({ transform: true }))
+  @UseGuards(AuthGuard)
   export class SalesTargetController {
-    constructor(private readonly salesTargetService: SalesTargetService) {}
+    constructor( readonly salesTargetService: SalesTargetService) {}
   
     @Post()
     @Permissions(EPermission.BRANCH_CREATE)
@@ -41,8 +49,9 @@ import { EPermission } from 'enums/Permissions.enum';
     }
   
     @Get()
-    async findAll(@Query() query: SalesTargetQueryDto): Promise<SalesTarget[]> {
-      return await this.salesTargetService.findAll(query);
+    async findAll(@Query() query: any) {
+        return CRUD.findAll2(this.salesTargetService.salesTargetRepository, 'sales_targets', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['branch', 'branch.supervisor', 'createdBy'], ['name', 'created_at'], query.filters);
+    
     }
     @Get('stats/overview')
     async getStatistics(@Query('branchId') branchId?: string) {
@@ -71,7 +80,8 @@ import { EPermission } from 'enums/Permissions.enum';
       return await this.salesTargetService.getCurrentTarget(branchId);
     }
     @Get('upcoming-expirations')
-    async getUpcomingExpirations(@Query('days') days: number = 7): Promise<SalesTarget[]> {
+    async getUpcomingExpirations(  @Query('days', new DefaultValuePipe(7), ParseIntPipe) days: number,
+): Promise<SalesTarget[]> {
       return await this.salesTargetService.getUpcomingExpirations(days);
     }
   
