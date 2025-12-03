@@ -86,9 +86,6 @@ export const moduleRepoMap: Record<ModuleName, any> = {
   [ModuleName.SURVEY]: Survey,
 };
 
-// Define valid array handling types
-export type ArrayHandlingType = 'expand' | 'join' | 'ignore' | 'count';
-
 @Injectable()
 export class ExportService {
   constructor(
@@ -97,54 +94,65 @@ export class ExportService {
   ) {}
 
   /**
-   * Validate and normalize array handling parameter
+   * Extract main entity name from URL
+   * Example: /api/v1/products -> "products"
+   * Example: /api/v1/users?search=john -> "users"
    */
-  private normalizeArrayHandling(arrayHandling: any): ArrayHandlingType {
-    const validTypes: ArrayHandlingType[] = ['expand', 'join', 'ignore', 'count'];
-    
-    if (typeof arrayHandling === 'string') {
-      const normalized = arrayHandling.toLowerCase().trim() as ArrayHandlingType;
-      if (validTypes.includes(normalized)) {
-        return normalized;
+  private extractMainEntityFromUrl(url: string): string {
+    try {
+      // Remove query parameters
+      const urlWithoutQuery = url.split('?')[0];
+      
+      // Split by slashes
+      const parts = urlWithoutQuery.split('/');
+      
+      // Find the last non-empty part (usually the entity name)
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (parts[i] && parts[i].trim() !== '') {
+          // Remove any file extensions or version prefixes
+          let entity = parts[i].toLowerCase();
+          
+          // Remove common suffixes
+          entity = entity.replace(/\.(json|xml|csv)$/, '');
+          
+          // Singularize if needed (optional)
+          return entity;
+        }
       }
+      
+      return 'data';
+    } catch (error) {
+      console.error('Error extracting entity from URL:', error);
+      return 'data';
     }
-    
-    return 'expand'; // default to expand (create new rows)
   }
 
   /**
-   * Extract data from response and handle nested records structure
+   * Extract data from response
    */
   private extractDataFromResponse(response: any): any[] {
-    // Common pagination fields to remove
     const paginationFields = [
       'current_page', 'per_page', 'last_page', 'total', 'next_page_url',
       'prev_page_url', 'from', 'to', 'path', 'first_page_url', 'last_page_url', 'links'
     ];
 
-    // Check if response has a 'records' property
     if (response && typeof response === 'object') {
-      // Check for 'records' array
       if (Array.isArray(response.records)) {
         return response.records;
       }
       
-      // Check for 'data' property (common in paginated responses)
       if (Array.isArray(response.data)) {
         return response.data;
       }
       
-      // Check if response has an 'items' property
       if (Array.isArray(response.items)) {
         return response.items;
       }
       
-      // If it's an array, return it directly
       if (Array.isArray(response)) {
         return response;
       }
       
-      // If the object itself is data-like but has pagination fields, remove them
       const isPaginated = paginationFields.some(field => field in response);
       if (isPaginated) {
         const cleanData: any = {};
@@ -154,7 +162,6 @@ export class ExportService {
           }
         });
         
-        // Check for nested data after cleaning
         if (Array.isArray(cleanData.records)) {
           return cleanData.records;
         }
@@ -165,7 +172,6 @@ export class ExportService {
         return [cleanData];
       }
       
-      // If it's a single object, wrap it in array
       return [response];
     }
     
@@ -179,18 +185,15 @@ export class ExportService {
     const allRows: any[] = [];
     
     data.forEach(row => {
-      // Find all keys that start with "Records "
       const recordKeys = Object.keys(row).filter(key => 
         key.startsWith('Records ') && key.match(/Records \d+/)
       );
       
       if (recordKeys.length === 0) {
-        // No Records columns, add as-is
         allRows.push(row);
         return;
       }
       
-      // Extract the record number from each key
       const recordNumbers = [...new Set(
         recordKeys.map(key => {
           const match = key.match(/Records (\d+)/);
@@ -198,22 +201,18 @@ export class ExportService {
         }).filter(num => num >= 0)
       )].sort((a, b) => a - b);
       
-      // For each record number, create a new row
       recordNumbers.forEach(recordNum => {
         const newRow: any = {};
         
-        // Copy all non-record columns
         Object.keys(row).forEach(key => {
           if (!key.startsWith('Records ')) {
             newRow[key] = row[key];
           }
         });
         
-        // Extract fields for this specific record
         const recordPrefix = `Records ${recordNum} `;
         Object.keys(row).forEach(key => {
           if (key.startsWith(recordPrefix)) {
-            // Remove the "Records X " prefix
             const fieldName = key.substring(recordPrefix.length);
             newRow[fieldName] = row[key];
           }
@@ -227,84 +226,102 @@ export class ExportService {
   }
 
   /**
-   * Flatten nested objects into single-level object
+   * Flatten object with entity-aware prefixes
    */
-  private flattenObject(
-    obj: any, 
-    prefix: string = '', 
-    result: any = {}, 
-    options: {
-      excludeKeys?: string[];
-      skipNullUndefined?: boolean;
-      currentLevel?: number;
-      maxLevel?: number;
-    } = {}
+  private flattenObjectWithEntityPrefixes(
+    obj: any,
+    mainEntity: string = '',
+    currentEntity: string = '',
+    result: any = {},
+    visited: Set<any> = new Set()
   ): any {
-    if (!obj || typeof obj !== 'object') {
+    if (!obj || typeof obj !== 'object' || visited.has(obj)) {
       return result;
     }
 
-    const {
-      excludeKeys = ['updated_at', 'deleted_at'],
-      skipNullUndefined = true,
-      currentLevel = 0,
-      maxLevel = 3
-    } = options;
+    visited.add(obj);
 
-    // Prevent infinite recursion
-    if (currentLevel >= maxLevel) {
-      if (typeof obj === 'object' && !Array.isArray(obj) && !(obj instanceof Date)) {
-        result[prefix || 'data'] = JSON.stringify(obj);
-      }
-      return result;
-    }
+    const excludeFields = [
+      'id', '_id', 'created_at', 'createdAt', 'updated_at', 'updatedAt',
+      'deleted_at', 'deletedAt', '__v', '__version', 'password', 'token'
+    ];
 
     for (const key in obj) {
-      if (excludeKeys.includes(key)) continue;
-      
-      const newKey = prefix ? `${prefix} ${key}` : key;
-      const value = obj[key];
-      
-      if (skipNullUndefined && (value === null || value === undefined)) {
+      if (excludeFields.includes(key.toLowerCase()) || 
+          key.toLowerCase().includes('id') ||
+          key.toLowerCase().includes('created') ||
+          key.toLowerCase().includes('updated') ||
+          key.toLowerCase().includes('deleted')) {
         continue;
       }
+
+      const value = obj[key];
       
-      if (value && typeof value === 'object') {
-        if (Array.isArray(value)) {
-          // Handle arrays
-          if (value.length === 0) {
-            if (!skipNullUndefined) {
-              result[newKey] = '';
+      if (value === null || value === undefined || value === '') {
+        continue;
+      }
+
+      // Determine entity prefix
+      let entityPrefix = currentEntity;
+      const keyLower = key.toLowerCase();
+      
+      // Common entity names
+      const entityNames = ['product', 'brand', 'category', 'project', 'user', 'branch', 'stock', 'sale', 'order'];
+      
+      if (entityNames.includes(keyLower)) {
+        // This key is an entity object
+        entityPrefix = key;
+      } else if (!entityPrefix && mainEntity) {
+        // Use main entity as prefix for root-level fields
+        entityPrefix = mainEntity;
+      }
+
+      const fullKey = entityPrefix ? `${entityPrefix} ${key}` : key;
+
+      if (Array.isArray(value)) {
+        if (value.length > 0) {
+          if (typeof value[0] === 'object') {
+            // Handle array of objects
+            const itemPrefix = key.endsWith('s') ? key.slice(0, -1) : key;
+            if (entityNames.includes(itemPrefix.toLowerCase())) {
+              this.flattenObjectWithEntityPrefixes(value[0], mainEntity, itemPrefix, result, visited);
+            } else {
+              result[fullKey] = value.map(item => 
+                typeof item === 'object' ? JSON.stringify(item) : String(item)
+              ).join('; ');
             }
           } else {
-            // For arrays, we might want to handle them differently
-            // For now, join them or create separate records
-            result[newKey] = value.map(item => 
-              typeof item === 'object' ? JSON.stringify(item) : String(item)
-            ).join('; ');
+            result[fullKey] = value.join(', ');
           }
-        } else if (value instanceof Date) {
-          result[newKey] = value.toISOString();
-        } else {
-          // Recursively flatten nested objects
-          this.flattenObject(value, newKey, result, {
-            ...options,
-            currentLevel: currentLevel + 1
-          });
         }
+      } else if (value instanceof Date) {
+        continue;
+      } else if (typeof value === 'object') {
+        // Recursively flatten nested objects
+        const nestedPrefix = entityNames.includes(keyLower) ? key : entityPrefix;
+        this.flattenObjectWithEntityPrefixes(value, mainEntity, nestedPrefix, result, visited);
       } else {
-        // Handle primitive values
-        result[newKey] = value;
+        result[fullKey] = value;
       }
     }
-    
+
+    visited.delete(obj);
     return result;
   }
 
   /**
-   * Extract all columns from data
+   * Clean and organize data with main entity first
    */
-  private extractColumnsFromData(data: any[]): { header: string; key: string; width?: number }[] {
+  private cleanDataForExport(data: any[], mainEntity: string): any[] {
+    return data.map(item => {
+      return this.flattenObjectWithEntityPrefixes(item, mainEntity);
+    });
+  }
+
+  /**
+   * Group columns with main entity first
+   */
+  private groupColumnsByEntity(data: any[], mainEntity: string): { header: string; key: string; width?: number; entity?: string }[] {
     if (data.length === 0) return [];
 
     const allColumns = new Set<string>();
@@ -312,118 +329,235 @@ export class ExportService {
     data.forEach(row => {
       Object.keys(row).forEach(key => allColumns.add(key));
     });
+
+    // Group columns by entity
+    const columnsByEntity = new Map<string, { key: string; displayName: string }[]>();
     
-    return Array.from(allColumns)
-      .sort()
-      .map(key => ({
-        header: this.formatHeader(key),
-        key,
-        width: 20
-      }));
-  }
-
-  /**
-   * Format header for better readability
-   */
-  private formatHeader(key: string): string {
-    return key
-      .split(' ')
-      .map(part => {
+    allColumns.forEach(key => {
+      // Extract entity from key
+      const parts = key.split(' ');
+      let entity = '';
+      let fieldName = key;
+      
+      if (parts.length > 1) {
+        const firstPart = parts[0].toLowerCase();
+        const commonEntities = ['product', 'brand', 'category', 'project', 'user', 'branch', 'stock', 'sale'];
+        
+        if (commonEntities.includes(firstPart)) {
+          entity = parts[0];
+          fieldName = parts.slice(1).join(' ');
+        } else {
+          // If no known entity, assume it's part of the main entity
+          entity = mainEntity;
+          fieldName = key;
+        }
+      } else {
+        // Single word columns belong to main entity
+        entity = mainEntity;
+      }
+      
+      if (!columnsByEntity.has(entity)) {
+        columnsByEntity.set(entity, []);
+      }
+      
+      // Format display name
+      let displayName = fieldName;
+      if (fieldName !== key) {
         // Capitalize each word
-        return part.charAt(0).toUpperCase() + part.slice(1);
-      })
-      .join(' ');
+        displayName = fieldName.split(' ').map(word => 
+          word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+      } else {
+        displayName = key.charAt(0).toUpperCase() + key.slice(1);
+      }
+      
+      columnsByEntity.get(entity)!.push({ key, displayName });
+    });
+
+    // Sort entities: main entity first, then others alphabetically
+    const allEntities = Array.from(columnsByEntity.keys());
+    const sortedEntities = allEntities.sort((a, b) => {
+      if (a === mainEntity) return -1;
+      if (b === mainEntity) return 1;
+      return a.localeCompare(b);
+    });
+
+    const columns: { header: string; key: string; width?: number; entity?: string }[] = [];
+    
+    sortedEntities.forEach(entity => {
+      const entityColumns = columnsByEntity.get(entity)!;
+      
+      // Sort columns within each entity
+      entityColumns.sort((a, b) => {
+        const aName = a.displayName.toLowerCase().includes('name') || a.displayName.toLowerCase().includes('title');
+        const bName = b.displayName.toLowerCase().includes('name') || b.displayName.toLowerCase().includes('title');
+        if (aName && !bName) return -1;
+        if (!aName && bName) return 1;
+        
+        const aDesc = a.displayName.toLowerCase().includes('description');
+        const bDesc = b.displayName.toLowerCase().includes('description');
+        if (aDesc && !bDesc) return -1;
+        if (!aDesc && bDesc) return 1;
+        
+        return a.displayName.localeCompare(b.displayName);
+      });
+      
+      // Add columns for this entity
+      entityColumns.forEach(({ key, displayName }) => {
+        const header = entity === mainEntity ? displayName : `${entity.charAt(0).toUpperCase() + entity.slice(1)} ${displayName}`;
+        
+        columns.push({
+          header: header,
+          key: key,
+          width: this.calculateColumnWidth(key),
+          entity: entity
+        });
+      });
+    });
+
+    return columns;
   }
 
   /**
-   * Process data for export - main entry point
+   * Calculate column width
+   */
+  private calculateColumnWidth(key: string): number {
+    const baseWidth = 15;
+    const length = key.length;
+    
+    if (key.toLowerCase().includes('description') || key.toLowerCase().includes('details')) {
+      return Math.max(baseWidth, Math.min(length + 5, 50));
+    }
+    if (key.toLowerCase().includes('name') || key.toLowerCase().includes('title')) {
+      return Math.max(baseWidth, Math.min(length + 3, 30));
+    }
+    if (key.toLowerCase().includes('email')) {
+      return 25;
+    }
+    if (key.toLowerCase().includes('address')) {
+      return 30;
+    }
+    if (key.toLowerCase().includes('url') || key.toLowerCase().includes('image')) {
+      return 30;
+    }
+    
+    return Math.max(baseWidth, Math.min(length + 2, 25));
+  }
+
+  /**
+   * Process and export data to Excel with main entity first
    */
   async exportRowsToExcel(
     res: any,
     rows: any[],
+    mainEntity: string,
     options: {
       sheetName?: string;
       fileName?: string;
-      columns?: { header: string; key: string; width?: number }[];
-      flattenNestedObjects?: boolean;
     } = {},
   ) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(options.sheetName || 'Report');
 
-    const shouldFlatten = options.flattenNestedObjects !== false;
-    let exportData: any[];
-    let columns: { header: string; key: string; width?: number }[];
+    // Clean and process data
+    const cleanedData = this.cleanDataForExport(rows, mainEntity);
+    const finalData = this.convertRecordsColumnsToRows(cleanedData);
+    
+    // Get grouped columns with main entity first
+    const groupedColumns = this.groupColumnsByEntity(finalData, mainEntity);
+    
+    // Create worksheet columns
+    const worksheetColumns = groupedColumns.map(col => ({
+      header: col.header,
+      key: col.key,
+      width: col.width
+    }));
 
-    if (shouldFlatten) {
-      // First, flatten all nested objects
-      exportData = rows.map(item => 
-        this.flattenObject(item, '', {}, {
-          excludeKeys: ['updated_at', 'deleted_at'],
-          skipNullUndefined: true
-        })
-      );
-      
-      // Check if we have Records X format and convert to separate rows
-      exportData = this.convertRecordsColumnsToRows(exportData);
-      
-      // Get columns from processed data
-      columns = options.columns || this.extractColumnsFromData(exportData);
-    } else {
-      exportData = rows;
-      columns = options.columns || 
-        (rows.length > 0 
-          ? Object.keys(rows[0]).map(key => ({ 
-              header: this.formatHeader(key), 
-              key, 
-              width: 20 
-            })) 
-          : []);
-    }
+    worksheet.columns = worksheetColumns;
 
-    // Set worksheet columns
-    worksheet.columns = columns;
-
-    // Add rows
-    exportData.forEach(rowData => {
+    // Add data rows
+    finalData.forEach(rowData => {
       const rowValues: any = {};
       
-      columns.forEach(col => {
+      worksheetColumns.forEach(col => {
         const value = rowData[col.key];
-        // Only set value if it's not null/undefined/empty
         if (value !== null && value !== undefined && value !== '') {
           rowValues[col.key] = value;
         }
       });
       
-      const row = worksheet.addRow(rowValues);
-      row.eachCell(cell => {
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      });
+      if (Object.keys(rowValues).length > 0) {
+        const row = worksheet.addRow(rowValues);
+        row.eachCell(cell => {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        });
+      }
     });
 
     // Format header row
-    if (worksheet.getRow(1)) {
-      worksheet.getRow(1).eachCell(cell => {
+    if (worksheet.rowCount > 0) {
+      const headerRow = worksheet.getRow(1);
+      
+      // Track current column for entity grouping
+      let currentCol = 1;
+      let currentEntity = '';
+      let entityStartCol = 1;
+      
+      groupedColumns.forEach((col, index) => {
+        const cell = headerRow.getCell(currentCol);
+        
+        // Apply entity-specific styling
+        if (col.entity && col.entity !== currentEntity) {
+          // Close previous entity group if exists
+          if (currentEntity && currentCol > entityStartCol) {
+            // Apply background color to previous entity group
+            for (let i = entityStartCol; i < currentCol; i++) {
+              const prevCell = headerRow.getCell(i);
+              const color = this.getEntityColor(currentEntity);
+              prevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+            }
+          }
+          
+          // Start new entity group
+          currentEntity = col.entity!;
+          entityStartCol = currentCol;
+        }
+        
+        cell.value = col.header;
         cell.font = { bold: true };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFCCCCCC' } };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        
+        currentCol++;
       });
+      
+      // Apply color to last entity group
+      if (currentEntity && currentCol > entityStartCol) {
+        for (let i = entityStartCol; i < currentCol; i++) {
+          const prevCell = headerRow.getCell(i);
+          const color = this.getEntityColor(currentEntity);
+          prevCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+        }
+      }
     }
 
     // Auto-size columns
     worksheet.columns.forEach(col => {
-      let max = col.header?.length || 10;
+      let max = col.header?.toString().length || 10;
       if (col.eachCell) {
         col.eachCell({ includeEmpty: true }, cell => {
           const v = cell.value ? String(cell.value) : '';
           if (v.length > max) max = v.length;
         });
       }
-      col.width = Math.min(max + 2, 60);
+      col.width = Math.min(max + 2, col.width || 60);
     });
 
-    const fileName = (options.fileName || 'export') + '.xlsx';
+    // Freeze header row
+    worksheet.views = [
+      { state: 'frozen', xSplit: 0, ySplit: 1 }
+    ];
+
+    const fileName = (options.fileName || mainEntity || 'export') + '.xlsx';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
 
@@ -431,14 +565,37 @@ export class ExportService {
     res.end();
   }
 
+  /**
+   * Get color for entity group
+   */
+  private getEntityColor(entity: string): string {
+    const colorMap: Record<string, string> = {
+      'product': 'FFE2EFDA',     // Light green
+      'products': 'FFE2EFDA',
+      'project': 'FFFDE9D9',     // Light orange
+      'projects': 'FFFDE9D9',
+      'brand': 'FFD9E1F2',       // Light blue
+      'brands': 'FFD9E1F2',
+      'category': 'FFE2EFDA',    // Light green
+      'categories': 'FFE2EFDA',
+      'user': 'FFF2DCDB',        // Light red
+      'users': 'FFF2DCDB',
+      'branch': 'FFDCE6F1',      // Light blue
+      'branches': 'FFDCE6F1',
+      'stock': 'FFEDEDED',       // Light gray
+      'stocks': 'FFEDEDED',
+      'sale': 'FFE2EFDA',        // Light green
+      'sales': 'FFE2EFDA'
+    };
+    
+    return colorMap[entity.toLowerCase()] || 'FFE2EFDA';
+  }
+
   async exportFromUrlOnly(
     url: string, 
     res: any, 
     fileName?: string, 
     authHeader?: any,
-    options?: {
-      flattenNestedObjects?: boolean;
-    }
   ) {
     try {
       if (!url) {
@@ -446,16 +603,15 @@ export class ExportService {
       }
 
       const rawData = await this.fetchDataFromUrl(url, authHeader);
-      
-      // Extract data from response
       const data = this.extractDataFromResponse(rawData);
       
-      console.log(`Extracted ${data.length} records for export`);
+      // Extract main entity from URL
+      const mainEntity = this.extractMainEntityFromUrl(url);
+      console.log(`Processing ${data.length} ${mainEntity} records for export`);
 
-      return this.exportRowsToExcel(res, data, {
-        fileName: fileName || 'exported_data',
-        sheetName: 'Data',
-        flattenNestedObjects: options?.flattenNestedObjects !== false,
+      return this.exportRowsToExcel(res, data, mainEntity, {
+        fileName: fileName || mainEntity || 'exported_data',
+        sheetName: mainEntity.charAt(0).toUpperCase() + mainEntity.slice(1),
       });
     } catch (error) {
       console.error('Export error:', error);
@@ -469,8 +625,6 @@ export class ExportService {
     res: any,
     options: {
       exportLimit?: number | string;
-      columns?: { header: string; key: string; width?: number }[];
-      flattenNestedObjects?: boolean;
     } = {},
   ) {
     const normalized = (moduleName || '').toLowerCase().trim() as ModuleName;
@@ -504,11 +658,9 @@ export class ExportService {
 
     const data = await repository.find(findOptions);
 
-    return this.exportRowsToExcel(res, data, {
+    return this.exportRowsToExcel(res, data, normalized, {
       fileName: normalized,
-      sheetName: normalized,
-      columns: options.columns,
-      flattenNestedObjects: options.flattenNestedObjects !== false,
+      sheetName: normalized.charAt(0).toUpperCase() + normalized.slice(1),
     });
   }
 
@@ -532,7 +684,6 @@ export class ExportService {
         this.httpService.get(fullUrl, { headers })
       );
   
-      // Return the entire response for processing
       return response.data;
   
     } catch (error) {

@@ -263,26 +263,7 @@ async getOutOfStockByUserBranchMobile(
         filter_threshold: safeThr,
       }));
 
-      await this.exportService.exportRowsToExcel(res, rowsForExport, {
-        sheetName: 'out_of_stock',
-        fileName: 'out_of_stock',
-        columns: [
-          { header: 'branch_id', key: 'branch_id', width: 24 },
-          { header: 'branch_name', key: 'branch_name', width: 28 },
-          { header: 'product_id', key: 'product_id', width: 24 },
-          { header: 'product_name', key: 'product_name', width: 32 },
-          { header: 'sku', key: 'sku', width: 18 },
-          { header: 'model', key: 'model', width: 18 },
-          { header: 'price', key: 'price', width: 14 },
-          { header: 'is_active', key: 'is_active', width: 12 },
-          { header: 'project', key: 'project', width: 20 },
-          { header: 'category_name', key: 'category_name', width: 24 },
-          { header: 'brand_name', key: 'brand_name', width: 24 },
-          { header: 'quantity', key: 'quantity', width: 14 },
-          { header: 'created_at', key: 'created_at', width: 24 },
-          { header: 'threshold', key: 'threshold', width: 14 },
-        ],
-      });
+
 
       return;
     }

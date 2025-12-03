@@ -6,14 +6,17 @@ import {
     IsDate, 
     IsBoolean, 
     IsOptional, 
-    IsUUID 
+    IsUUID, 
+    IsArray,
+    ArrayNotEmpty
   } from 'class-validator';
   import { Type } from 'class-transformer';
   import { SalesTargetType, SalesTargetStatus } from '../entities/sales-target.entity';
   
   export class CreateSalesTargetDto {
+    @IsOptional()
     @IsString()
-    name: string;
+    name?: string;
   
     @IsOptional()
     @IsString()
@@ -25,20 +28,24 @@ import {
     @IsNumber()
     targetAmount: number;
   
+    @IsOptional()
     @IsDate()
     @Type(() => Date)
-    startDate: Date;
-  
+    startDate?: Date;
+
+    @IsOptional()
     @IsDate()
     @Type(() => Date)
-    endDate: Date;
+    endDate?: Date;
   
     @IsOptional()
     @IsBoolean()
     autoRenew?: boolean;
   
-    @IsUUID()
-    branchId: string;
+    @IsArray()
+  @ArrayNotEmpty()
+  @IsUUID('4', { each: true })
+  branchIds: string[];
   }
   
   export class UpdateSalesTargetDto {

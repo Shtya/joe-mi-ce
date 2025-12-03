@@ -4,6 +4,7 @@ import { ExportService, ModuleName } from './export.service';
 export class ExportController {
   constructor(private readonly exportService: ExportService) {}
 
+ 
   @Get()
   async exportData(
     @Query('module') module: ModuleName,
@@ -15,8 +16,7 @@ export class ExportController {
       module, 
       res, 
       { 
-        exportLimit: limit,
-        flattenNestedObjects: true
+        exportLimit: limit
       }
     );
   }
@@ -44,10 +44,7 @@ export class ExportController {
       fullUrl, 
       res, 
       fileName, 
-      authHeader,
-      {
-        flattenNestedObjects: true
-      }
+      authHeader
     );
   }
 }
