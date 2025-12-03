@@ -1,7 +1,7 @@
 // sales-target.service.ts
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThanOrEqual, Between } from 'typeorm';
+import { Repository, LessThan, MoreThanOrEqual, Between, In } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { SalesTarget, SalesTargetType, SalesTargetStatus } from '../../entities/sales-target.entity';
 import { Branch } from '../../entities/branch.entity';
@@ -18,22 +18,110 @@ export class SalesTargetService {
     private readonly branchRepository: Repository<Branch>,
   ) {}
 
-  async create(createDto: CreateSalesTargetDto, createdBy?: string): Promise<SalesTarget> {
-    const branch = await this.branchRepository.findOne({ 
-      where: { id: createDto.branchId } 
-    });
-
-    if (!branch) {
-      throw new NotFoundException('Branch not found');
+  async create(createDto: CreateSalesTargetDto, createdBy?: string): Promise<SalesTarget[]> {
+    // Handle single branchId for backward compatibility
+    const branchIds = createDto.branchIds ;
+    
+    if (!branchIds.length) {
+      throw new BadRequestException('At least one branch ID is required');
     }
-
-    const salesTarget = this.salesTargetRepository.create({
-      ...createDto,
-      branch,
-      createdBy: createdBy ? { id: createdBy } : null,
+  
+    // Find all branches
+    const branches = await this.branchRepository.find({
+      where: { id: In(branchIds) }
     });
-
-    return await this.salesTargetRepository.save(salesTarget);
+  
+    if (branches.length !== branchIds.length) {
+      const foundIds = branches.map(b => b.id);
+      const missingIds = branchIds.filter(id => !foundIds.includes(id));
+      throw new NotFoundException(`Branches not found: ${missingIds.join(', ')}`);
+    }
+  
+    // Determine the target type
+    const targetType = createDto.type || SalesTargetType.QUARTERLY;
+    
+    // Get current date
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth();
+    
+    let startDate: Date;
+    let endDate: Date;
+  
+    // Helper function to set time to start of day (00:00:00.000)
+    const setStartOfDay = (date: Date): Date => {
+      const newDate = new Date(date);
+      newDate.setHours(0, 0, 0, 0);
+      return newDate;
+    };
+  
+    // Helper function to set time to end of day (23:59:59.999)
+    const setEndOfDay = (date: Date): Date => {
+      const newDate = new Date(date);
+      newDate.setHours(23, 59, 59, 999);
+      return newDate;
+    };
+  
+    if (targetType === SalesTargetType.MONTHLY) {
+      // Monthly: 1st to last day of current month
+      startDate = setStartOfDay(new Date(currentYear, currentMonth, 1));
+      endDate = setEndOfDay(new Date(currentYear, currentMonth + 1, 0));
+    } else {
+      // Quarterly: calculate quarter
+      const currentQuarter = Math.floor(currentMonth / 3);
+      const quarterStartMonth = currentQuarter * 3;
+      
+      // Set start date to 1st of quarter
+      startDate = setStartOfDay(new Date(currentYear, quarterStartMonth, 1));
+      // Set end date to last day of quarter
+      endDate = setEndOfDay(new Date(currentYear, quarterStartMonth + 3, 0));
+    }
+  
+    // Create sales targets for each branch
+    const salesTargets: SalesTarget[] = [];
+    
+    for (const branch of branches) {
+      // Generate branch-specific name and description
+      let targetName: string;
+      let description: string;
+  
+      if (targetType === SalesTargetType.MONTHLY) {
+        const monthYear = new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' });
+        targetName = createDto.name || `${branch.name} - Monthly Target - ${monthYear}`;
+        description = createDto.description || `Monthly sales target for ${branch.name} covering ${monthYear}`;
+      } else {
+        const currentQuarter = Math.floor(currentMonth / 3);
+        const quarterName = `Q${currentQuarter + 1}`;
+        const quarterStartMonthName = new Date(currentYear, Math.floor(currentMonth / 3) * 3, 1)
+          .toLocaleString('default', { month: 'short' });
+        const quarterEndMonthName = new Date(currentYear, Math.floor(currentMonth / 3) * 3 + 2, 1)
+          .toLocaleString('default', { month: 'short' });
+        
+        targetName = createDto.name || `${branch.name} - Quarterly Target - ${quarterName} ${currentYear}`;
+        description = createDto.description || `Quarterly sales target for ${branch.name} - ${quarterName} ${currentYear} (${quarterStartMonthName}-${quarterEndMonthName})`;
+      }
+  
+      // Use branch-specific target amount if available, otherwise use default
+      const targetAmount = createDto.targetAmount || branch.defaultSalesTargetAmount || 0;
+  
+      const salesTargetData = {
+        ...createDto,
+        name: targetName,
+        description,
+        startDate: createDto.startDate ? setStartOfDay(new Date(createDto.startDate)) : startDate,
+        endDate: createDto.endDate ? setEndOfDay(new Date(createDto.endDate)) : endDate,
+        targetAmount,
+        type: targetType,
+        branch,
+        createdBy: createdBy ? { id: createdBy } : null,
+      };
+  
+      const salesTarget = this.salesTargetRepository.create(salesTargetData);
+      salesTargets.push(salesTarget);
+    }
+  
+    // Save all sales targets
+    return await this.salesTargetRepository.save(salesTargets);
   }
 
   async findAll(query: any = {}): Promise<SalesTarget[]> {

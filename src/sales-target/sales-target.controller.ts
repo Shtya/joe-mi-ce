@@ -43,7 +43,7 @@ import { AuthGuard } from '../auth/auth.guard';
     async create(
       @Body() createDto: CreateSalesTargetDto,
       @Req() req: any
-    ): Promise<SalesTarget> {
+    ): Promise<SalesTarget[]> {
       const userId = req.user?.id;
       return await this.salesTargetService.create(createDto, userId);
     }
