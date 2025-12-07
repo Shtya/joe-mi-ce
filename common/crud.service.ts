@@ -846,4 +846,243 @@ if (search && searchFields?.length) {
     await workbook.xlsx.write(res);
     res.end();
   }
+  static async findAllWithSearchAndFilters<T>(
+    repository: Repository<T>,
+    entityName: string,
+    search?: string,
+    page: any = 1,
+    limit: any = 10,
+    sortBy?: string,
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    relations: string[] = [],
+    searchFields: string[] = [],
+    filters?: Record<string, any>
+  ): Promise<CustomPaginatedResponse<T>> {
+    
+    console.log('=== DEBUG: Starting findAllWithSearchAndFilters ===');
+    console.log('Filters received:', JSON.stringify(filters, null, 2));
+    console.log('Search:', search);
+    console.log('Search fields:', searchFields);
+    
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 10;
+    
+    if (isNaN(pageNumber) || isNaN(limitNumber) || pageNumber < 1 || limitNumber < 1) {
+      throw new BadRequestException('Pagination parameters must be valid numbers greater than 0.');
+    }
+    
+    if (!['ASC', 'DESC'].includes(sortOrder)) {
+      throw new BadRequestException("Sort order must be either 'ASC' or 'DESC'.");
+    }
+  
+    const skip = (pageNumber - 1) * limitNumber;
+    const qb = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
+  
+    // Get metadata
+    const meta = repository.metadata;
+    const colByProp = new Map(meta.columns.map(c => [c.propertyName, c]));
+    const colByDb = new Map(meta.columns.map(c => [c.databaseName, c]));
+  
+    // Helper functions
+    function resolveOwnColumnName(field: string): string | null {
+      const col = colByProp.get(field) || colByDb.get(field) || 
+                  (field === 'created_at' ? colByProp.get('createdAt') : null) || 
+                  (field === 'createdAt' ? colByDb.get('created_at') : null);
+      return col ? col.databaseName : null;
+    }
+  
+    function flatten(obj: any, prefix = ''): Record<string, any> {
+      const out: Record<string, any> = {};
+      if (!obj || typeof obj !== 'object') return out;
+      for (const [k, v] of Object.entries(obj)) {
+        const key = prefix ? `${prefix}.${k}` : k;
+        if (v && typeof v === 'object' && !Array.isArray(v)) {
+          Object.assign(out, flatten(v, key));
+        } else {
+          out[key] = v;
+        }
+      }
+      return out;
+    }
+  
+    // 1. Determine all relations needed
+    const relationPathsNeeded = new Set<string>();
+    
+    // Add requested relations
+    relations.forEach(rel => relationPathsNeeded.add(rel));
+    
+    // Check filters for nested paths
+    if (filters) {
+      const flatFilters = flatten(filters);
+      console.log('Flat filters:', flatFilters);
+      
+      for (const key of Object.keys(flatFilters)) {
+        if (key.includes('.')) {
+          const parts = key.split('.');
+          if (parts.length > 1) {
+            // Get relation path (remove the last part which is the column)
+            const relPath = parts.slice(0, -1).join('.');
+            relationPathsNeeded.add(relPath);
+          }
+        }
+      }
+    }
+    
+    console.log('Relations to join:', Array.from(relationPathsNeeded));
+  
+    // 2. Join all required relations
+    const relationsToJoin = Array.from(relationPathsNeeded);
+    const aliasMap = CRUD.joinNestedRelations(qb, repository, entityName, relationsToJoin);
+  
+    // 3. Helper to qualify field paths
+    function qualifyField(fieldPath: string): string {
+      if (!fieldPath.includes('.')) {
+        // Root entity field
+        const dbName = resolveOwnColumnName(fieldPath) || fieldPath;
+        return `${entityName}.${dbName}`;
+      }
+      
+      // Nested field (relation.field)
+      const parts = fieldPath.split('.');
+      const relationPath = parts.slice(0, -1).join('.');
+      const last = parts[parts.length - 1];
+      
+      // Get alias for the relation
+      const alias = aliasMap.get(relationPath);
+      
+      if (!alias) {
+        console.log(`WARNING: No alias found for relation path: ${relationPath}`);
+        // Try to create the alias manually
+        return `${relationPath}.${last}`;
+      }
+      
+      return `${alias}.${last}`;
+    }
+  
+    // Counter for unique parameter names
+    let paramCounter = 0;
+  
+    // 4. Apply filters (including nested filters)
+    if (filters && Object.keys(filters).length) {
+      const flatFilters = flatten(filters);
+      
+      console.log('Applying filters from flatFilters:', flatFilters);
+      
+      for (const [key, value] of Object.entries(flatFilters)) {
+        if (value === null || value === undefined || value === '') {
+          console.log(`Skipping filter ${key} with value: ${value}`);
+          continue;
+        }
+        
+        console.log(`Processing filter: ${key} = ${value}`);
+        
+        // Handle special operators
+        const parts = key.split('.');
+        const lastPart = parts[parts.length - 1];
+        const knownOps = ['like', 'ilike', 'gt', 'gte', 'lt', 'lte', 'ne', 'isnull'];
+        
+        let fieldPath = key;
+        let operator = 'eq'; // Default operator
+        
+        if (knownOps.includes(lastPart)) {
+          // Operator is specified (e.g., 'created_at.gte')
+          fieldPath = parts.slice(0, -1).join('.');
+          operator = lastPart;
+        }
+        
+        const qualified = qualifyField(fieldPath);
+        console.log(`Qualified field for ${fieldPath}: ${qualified}`);
+        
+        // Create a safe parameter name (no special characters except underscore)
+        paramCounter++;
+        const paramName = `param_${paramCounter}`;
+        
+        switch (operator) {
+          case 'like':
+            qb.andWhere(`${qualified} LIKE :${paramName}`, { [paramName]: `%${value}%` });
+            break;
+          case 'ilike':
+            qb.andWhere(`${qualified} ILIKE :${paramName}`, { [paramName]: `%${value}%` });
+            break;
+          case 'gt':
+            qb.andWhere(`${qualified} > :${paramName}`, { [paramName]: value });
+            break;
+          case 'gte':
+            qb.andWhere(`${qualified} >= :${paramName}`, { [paramName]: value });
+            break;
+          case 'lt':
+            qb.andWhere(`${qualified} < :${paramName}`, { [paramName]: value });
+            break;
+          case 'lte':
+            qb.andWhere(`${qualified} <= :${paramName}`, { [paramName]: value });
+            break;
+          case 'ne':
+            qb.andWhere(`${qualified} != :${paramName}`, { [paramName]: value });
+            break;
+          case 'isnull':
+            if (value === true || value === 'true' || value === 1) {
+              qb.andWhere(`${qualified} IS NULL`);
+            } else {
+              qb.andWhere(`${qualified} IS NOT NULL`);
+            }
+            break;
+          default:
+            // Default operator: equals
+            qb.andWhere(`${qualified} = :${paramName}`, { [paramName]: value });
+            break;
+        }
+        
+        console.log(`Added WHERE clause: ${qualified} = :${paramName}`);
+      }
+    }
+  
+    // 5. Apply search WITHIN the filtered results
+    if (search && searchFields?.length) {
+      console.log(`Applying search for "${search}" in fields:`, searchFields);
+      
+      const searchParamName = `searchParam`;
+      
+      qb.andWhere(
+        new Brackets(qb2 => {
+          for (const field of searchFields) {
+            try {
+              const qualified = qualifyField(field);
+              console.log(`Searching in field ${field} -> ${qualified}`);
+              // For text search, use ILIKE for case-insensitive matching
+              qb2.orWhere(`${qualified} ILIKE :${searchParamName}`);
+            } catch (error) {
+              // Skip invalid fields
+              console.warn(`Skipping invalid search field: ${field}`, error.message);
+            }
+          }
+        }),
+      ).setParameter(searchParamName, `%${search}%`);
+    }
+  
+    // 6. Apply sorting
+    if (sortBy) {
+      const qualified = qualifyField(sortBy);
+      qb.orderBy(qualified, sortOrder);
+    } else {
+      // Default sorting
+      const dbName = resolveOwnColumnName('created_at') || 'created_at';
+      qb.orderBy(`${entityName}.${dbName}`, sortOrder);
+    }
+  
+    // Debug: log the query
+    console.log('Generated SQL:', qb.getQuery());
+    console.log('Parameters:', qb.getParameters());
+  
+    // 7. Execute query
+    const [data, total] = await qb.getManyAndCount();
+    
+    console.log(`=== DEBUG: Found ${total} records ===`);
+    
+    return {
+      total_records: total,
+      current_page: pageNumber,
+      per_page: limitNumber,
+      records: data,
+    };
+  }
 }

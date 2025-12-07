@@ -74,7 +74,7 @@ export class JourneyController {
       limit,
       'fromDate', // sortBy
       'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','checkin'],
+      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift',],
       undefined, // searchFields (none for now)
       filters,
     );
@@ -135,7 +135,7 @@ export class JourneyController {
       limit,
       'date', // sortBy
       'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','checkin'],
+      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
       undefined, // searchFields
       filters,
     );
