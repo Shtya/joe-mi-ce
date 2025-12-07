@@ -63,10 +63,12 @@ export class JourneyService {
         user: { id: dto.userId },
         branch: { id: dto.branchId },
         shift: { id: dto.shiftId },
+      
         fromDate: LessThanOrEqual(toDate),
         toDate: MoreThanOrEqual(fromDate),
       },
     });
+   
     for (const plan of existingPlans) {
       const overlapDays = plan.days.filter(d => dto.days.includes(d));
       if (overlapDays.length > 0) {

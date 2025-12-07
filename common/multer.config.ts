@@ -1,5 +1,8 @@
 import { diskStorage } from 'multer';
 import { extname } from 'path';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { BadRequestException } from '@nestjs/common';
 
@@ -84,4 +87,49 @@ export const multerOptionsPdf = {
       cb(new Error('Unsupported file type'), false); // ❌ مرفوض
     }
   },
+  
+};
+export const multerOptionsCheckinTmp = {
+  storage: diskStorage({
+    destination: (req, file, cb) => {
+      const uploadDir = `${tmpdir()}/checkins`; // /tmp/checkins
+      if (!existsSync(uploadDir)) {
+        mkdirSync(uploadDir, { recursive: true }); // Create folder if missing
+      }
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const name = file.originalname.split('.')[0];
+      const extension = extname(file.originalname);
+      const randomName = Array(16)
+        .fill(null)
+        .map(() => Math.floor(Math.random() * 16).toString(16))
+        .join('');
+      cb(null, `${name}-${randomName}${extension}`);
+    },
+  }),
+  fileFilter: (req, file, cb) => cb(null, true),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+};
+export const multerOptionsFeedbackTmp = {
+  storage: diskStorage({
+    destination: (req, file, cb) => {
+      const uploadDir = `${tmpdir()}/feedback`; // /tmp/checkins
+      if (!existsSync(uploadDir)) {
+        mkdirSync(uploadDir, { recursive: true }); // Create folder if missing
+      }
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      const name = file.originalname.split('.')[0];
+      const extension = extname(file.originalname);
+      const randomName = Array(16)
+        .fill(null)
+        .map(() => Math.floor(Math.random() * 16).toString(16))
+        .join('');
+      cb(null, `${name}-${randomName}${extension}`);
+    },
+  }),
+  fileFilter: (req, file, cb) => cb(null, true),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 };

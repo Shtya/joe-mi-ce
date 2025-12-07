@@ -9,8 +9,9 @@ import { Permissions } from 'decorators/permissions.decorators';
 import { CRUD } from 'common/crud.service';
 import { JourneyStatus, JourneyType } from 'entities/all_plans.entity';
 import { AnyFilesInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
-import { checkinDocumentUploadOptions } from './upload.config';
+import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.config';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
+import {  multerOptionsCheckinTmp } from 'common/multer.config';
 
 @UseGuards(AuthGuard)
 @Controller('journeys')
@@ -23,7 +24,29 @@ export class JourneyController {
   async createPlan(@Body() dto: CreateJourneyPlanDto) {
     return this.journeyService.createPlan(dto);
   }
-
+  @Post('checkin-out')
+  @UseInterceptors(FileInterceptor('file', multerOptionsCheckinTmp))
+  async checkInOut(
+    @Req() req: any,
+    @Body() dto: CheckInOutDto,
+    @UploadedFile() file?: Express.Multer.File
+  ) {
+    if (file) {
+      const filePath = `/tmp/checkins/${file.filename}`;
+      if (dto.checkOutTime && !dto.checkInTime) {
+        dto.checkOutDocument = filePath;
+      } else {
+        dto.checkInDocument = filePath;
+      }
+    }
+  
+    if (!dto.userId) dto.userId = req.user.id;
+  
+    return this.journeyService.checkInOut(dto);
+  }
+  
+  
+  
   @Get('plans/project/:projectId')
   @Permissions(EPermission.JOURNEY_READ)
   async getPlans(@Query('') query: any, @Param('projectId') projectId: string, @Query('page') page: number = 1, @Query('limit') limit: number = 10, @Query('userId') userId?: string, @Query('fromDate') fromDate?: string, @Query('toDate') toDate?: string, @Query('search') search?: string) {
@@ -51,7 +74,7 @@ export class JourneyController {
       limit,
       'fromDate', // sortBy
       'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
+      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','checkin'],
       undefined, // searchFields (none for now)
       filters,
     );
@@ -112,7 +135,7 @@ export class JourneyController {
       limit,
       'date', // sortBy
       'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
+      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','checkin'],
       undefined, // searchFields
       filters,
     );
@@ -145,23 +168,7 @@ export class JourneyController {
   }
 
   // ===== Check-in / Check-out with file upload =====
-  @Post('checkin-out')
-  @Permissions(EPermission.CHECKIN_CREATE)
-  @UseInterceptors(FileInterceptor('file', checkinDocumentUploadOptions))
-  // @UseInterceptors(FileInterceptor('file', checkinDocumentUploadOptions) , LoggingInterceptor)
-  async checkInOut(@Req() req: any, @Body() dto: CheckInOutDto, @UploadedFile() file?: Express.Multer.File) {
-    if (file) {
-      const filePath = `/uploads/checkins/${file.filename}`;
-      if (dto.checkOutTime && !dto.checkInTime) {
-        dto.checkOutDocument = filePath;
-      } else {
-        dto.checkInDocument = filePath;
-      }
-    }
 
-    if (!dto.userId) dto.userId = req.user.id;
-    return this.journeyService.checkInOut(dto);
-  }
 
   @Get('attendance')
   @Permissions(EPermission.CHECKIN_READ)
