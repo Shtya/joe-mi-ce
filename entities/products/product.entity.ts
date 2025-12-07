@@ -1,5 +1,5 @@
 // product.entity.ts
-import { Entity, Column, OneToMany, Index, JoinColumn, ManyToOne, Unique } from 'typeorm';
+import { Entity, Column, OneToMany, Index, JoinColumn, ManyToOne, Unique, JoinTable, ManyToMany } from 'typeorm';
 import { Stock } from './stock.entity';
 import { Sale } from './sale.entity';
 import { Brand } from './brand.entity';
@@ -7,6 +7,7 @@ import { Category } from './category.entity';
 import { CoreEntity } from 'entities/core.entity';
 import { Project } from 'entities/project.entity';
 import { Audit } from 'entities/audit.entity';
+import { Branch } from 'entities/branch.entity';
 
 @Entity('products')
 @Index(['brand', 'category'])
@@ -59,4 +60,11 @@ export class Product extends CoreEntity {
 
   @OneToMany(() => Audit, audit => audit.branch)
   audits: Audit[];
+  @ManyToMany(() => Branch)
+  @JoinTable({
+    name: 'product_branches',
+    joinColumn: { name: 'product_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'branch_id', referencedColumnName: 'id' }
+  })
+  branches: Branch[];
 }

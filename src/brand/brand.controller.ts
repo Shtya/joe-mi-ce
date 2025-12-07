@@ -47,10 +47,10 @@ export class BrandController {
     const isSuper = req?.user?.role?.name === ERole.SUPER_ADMIN;
     const filters = isSuper ? undefined : { ownerUserId: req?.user?.id };
 
-    return CRUD.findAll(this.brandService.brandRepository, 'brand', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['name'], filters);
+    return CRUD.findAll(this.brandService.brandRepository, 'brand', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['categories'], ['name'], filters);
   }
 
-  @Get(':id')
+  @Get(':id') 
   @Permissions(EPermission.BRAND_READ)
   findOne(@Param('id') id: string) {
     return this.brandService.findOne(id);
