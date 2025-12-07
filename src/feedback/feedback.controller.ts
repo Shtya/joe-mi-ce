@@ -9,6 +9,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { feedbackUploadOptions } from 'src/journey/upload.config';
 import { CRUD } from 'common/crud.service';
 import { Feedback } from 'entities/feedback.entity';
+import { multerOptionsFeedbackTmp } from 'common/multer.config';
 
 @UseGuards(AuthGuard)
 @Controller('feedback')
@@ -16,7 +17,7 @@ export class FeedbackController {
   constructor(private readonly feedbackService: FeedbackService) {}
 
   @Post()
-  @UseInterceptors(FilesInterceptor('files', 10, feedbackUploadOptions))
+  @UseInterceptors(FilesInterceptor('files', 10, multerOptionsFeedbackTmp))
   async createFeedback(@UploadedFiles() files: Express.Multer.File[], @Body() dto: CreateFeedbackDto, @Req() req) {
     const attachmentUrls = files?.map(f => `/uploads/feedback/${f.filename}`) ?? [];
     return this.feedbackService.create(dto, attachmentUrls, req.user);

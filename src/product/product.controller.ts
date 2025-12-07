@@ -18,6 +18,40 @@ export class ProductController {
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
+  @Get()
+  @Permissions(EPermission.PRODUCT_READ)
+  findAll(@Query() q: any) {
+    // Parse filters manually
+    const filters: any = {};
+    
+    // Check for nested filter syntax
+    if (q['filters[project][id]']) {
+      filters.project = { id: q['filters[project][id]'] };
+    }
+    
+    // Or try dot notation
+    if (!filters.project && q['filters.project.id']) {
+      filters.project = { id: q['filters.project.id'] };
+    }
+    
+    console.log('Manually parsed filters:', filters);
+    
+    const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
+    const searchFields = ['name', 'model', 'sku'];
+    
+    return CRUD.findAll2(
+      this.productService.productRepository, 
+      'product', 
+      q.search, 
+      q.page, 
+      q.limit, 
+      q.sortBy, 
+      (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC', 
+      relations, 
+      searchFields, 
+      filters
+    );
+  }
   @Get("mobile/list/:categoryId/:brandId")
   @Permissions(EPermission.BRAND_READ)
   findAllForMobile(
@@ -27,19 +61,6 @@ export class ProductController {
   @Query() query: PaginationQueryDto,
   ) {
     return this.productService.findAllForMobile(query, categoryId ,brandId);
-  }
-  @Get()
-  @Permissions(EPermission.PRODUCT_READ)
-  findAll(@Query() q: any) {
-
-   const filters = { ...q.filters}
-   const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
-
-
-   const searchFields = ['name', 'model', 'sku'];
-       return CRUD.findAll2(
-        this.productService.productRepository, 'product', q.search, q.page, q.limit, q.sortBy, (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC', relations, searchFields, filters
-      );
   }
 
   @Get(':id')
@@ -59,4 +80,26 @@ export class ProductController {
   remove(@Param('id') id: string) {
     return CRUD.softDelete(this.productService.productRepository, 'product', id);
   }
+}
+// In findAll2, replace the flatten function with this debug version:
+function flatten(obj: any, prefix = ''): Record<string, any> {
+  console.log('Flattening:', obj, 'prefix:', prefix);
+  const out: Record<string, any> = {};
+  if (!obj || typeof obj !== 'object') {
+    console.log('Not an object, returning empty');
+    return out;
+  }
+  for (const [k, v] of Object.entries(obj)) {
+    console.log(`Processing key "${k}" with value:`, v);
+    const key = prefix ? `${prefix}.${k}` : k;
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      console.log(`Recursing into "${k}"`);
+      Object.assign(out, flatten(v, key));
+    } else {
+      console.log(`Setting ${key} = ${v}`);
+      out[key] = v;
+    }
+  }
+  console.log('Flatten result:', out);
+  return out;
 }

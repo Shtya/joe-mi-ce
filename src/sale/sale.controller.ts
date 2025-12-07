@@ -1,5 +1,5 @@
 // sale.controller.ts
-import { Controller, Get, Post, Body, Param, Patch, Delete, Query, Res, UseGuards, Req, Put } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, Query, Res, UseGuards, Req, Put, Header } from '@nestjs/common';
 import { SaleService } from './sale.service';
 import { CreateSaleDto, UpdateSaleDto } from 'dto/sale.dto';
 import { CRUD } from 'common/crud.service';
@@ -19,19 +19,10 @@ export class SaleController {
     return CRUD.exportEntityToExcel(this.saleService.saleRepo, 'sale', res, { exportLimit: limit });
   }
 
-  @Post()
-  @Permissions(EPermission.SALE_CREATE)
-  create(@Body() dto: CreateSaleDto) {
-    return this.saleService.create(dto);
-  }
-
-  @Put(':id')
-  @Permissions(EPermission.SALE_UPDATE)
-  update(@Param('id') id: string, @Body() dto: UpdateSaleDto) {
-    return this.saleService.update(id, dto);
-  }
-
   @Get()
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
+@Header('Pragma', 'no-cache')
+@Header('Expires', '0')
   @Permissions(EPermission.SALE_READ)
   findAll(@Query() query: any , @Req() req:any) {
 		// const mergedFilters: any = {
@@ -47,6 +38,19 @@ export class SaleController {
 
     return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], {projectId : req.user.project.id , ...query.filters});
   }
+  @Post()
+  @Permissions(EPermission.SALE_CREATE)
+  create(@Body() dto: CreateSaleDto) {
+    return this.saleService.create(dto);
+  }
+
+  @Put(':id')
+  @Permissions(EPermission.SALE_UPDATE)
+  update(@Param('id') id: string, @Body() dto: UpdateSaleDto) {
+    return this.saleService.update(id, dto);
+  }
+
+
 
   // 🔹 Get sale by ID
   @Get(':id')
