@@ -46,39 +46,58 @@ export class JourneyController {
   }
   
   
-  
   @Get('plans/project/:projectId')
-  @Permissions(EPermission.JOURNEY_READ)
-  async getPlans(@Query('') query: any, @Param('projectId') projectId: string, @Query('page') page: number = 1, @Query('limit') limit: number = 10, @Query('userId') userId?: string, @Query('fromDate') fromDate?: string, @Query('toDate') toDate?: string, @Query('search') search?: string) {
-    const filters: any = {
-      projectId,
-      ...query.filters,
-    };
+@Permissions(EPermission.JOURNEY_READ)
+async getPlans(
+  @Query('') query: any,
+  @Param('projectId') projectId: string,
+  @Query('page') page: number = 1,
+  @Query('limit') limit: number = 10,
+  @Query('userId') userId?: string,
+  @Query('fromDate') fromDate?: string,
+  @Query('toDate') toDate?: string,
+  @Query('search') search?: string
+) {
+  const filters: any = {
+    projectId,
+    ...query.filters,
+  };
 
-    if (userId) {
-      filters.user = { id: userId }; // → user.id = :userId
-    }
+  if (userId) {
+    filters.user = { id: userId };
+  }
 
+  // Handle date filtering - if no dates provided, default to all data up to today
+  if (fromDate || toDate) {
+    // Use provided dates if any
     if (fromDate) {
       filters.fromDate = fromDate;
     }
     if (toDate) {
       filters.toDate = toDate;
     }
-
-    return CRUD.findAllRelation(
-      this.journeyService.journeyPlanRepo,
-      'plan', // root alias
-      search,
-      page,
-      limit,
-      'fromDate', // sortBy
-      'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift',],
-      undefined, // searchFields (none for now)
-      filters,
-    );
+  } else {
+    // No dates provided - default to all data from the beginning until today
+    // Set toDate to today
+    const today = new Date();
+    const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
+    filters.toDate = todayString;
+    // fromDate remains undefined, which means "from the beginning"
   }
+
+  return CRUD.findAllRelation(
+    this.journeyService.journeyPlanRepo,
+    'plan',
+    search,
+    page,
+    limit,
+    'fromDate',
+    'DESC',
+    ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
+    undefined,
+    filters,
+  );
+}
 
   @Get('plans/:id')
   @Permissions(EPermission.JOURNEY_READ)

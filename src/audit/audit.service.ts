@@ -22,190 +22,196 @@ export class AuditsService {
     private dataSource: DataSource,
   ) {}
 
-  async create(dto: CreateAuditDto, promoterId: string): Promise<any> {
+  async create(dto: CreateAuditDto, promoterId: string) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
-
+  
     try {
-      // جلب المروج والمنتج مع العلاقات
+      // -------------------------------
+      // Load promoter + product
+      // -------------------------------
       const [promoter, product] = await Promise.all([
-        this.userRepo.findOne({ 
+        this.userRepo.findOne({
           where: { id: promoterId },
-          relations: ['branch', 'branch.project']
+          relations: ['branch', 'branch.project'],
         }),
-        this.productRepo.findOne({ 
+        this.productRepo.findOne({
           where: { id: dto.product_id },
-          relations: ['brand', 'category']
-        })
+          relations: ['brand', 'category'],
+        }),
       ]);
-
+  
       if (!promoter) throw new NotFoundException('Promoter not found');
       if (!product) throw new NotFoundException('Product not found');
-
-      // الحصول على فرع المروج
-      const branchId = dto.branch_id;
+  
+      // -------------------------------
+      // Load branch
+      // -------------------------------
       const branch = await this.branchRepo.findOne({
-        where: { id: branchId },
-        relations: ['project']
+        where: { id: dto.branch_id },
+        relations: ['project'],
       });
+  
       if (!branch) throw new NotFoundException('Branch not found');
-
-      // التحقق من عدم تكرار المراجعة في نفس اليوم
-      await this.preventDuplicateAuditToday(promoterId, dto.product_id, branch.id, dto.audit_date);
-
-      // إنشاء كائن المراجعة الرئيسي
+  
+      // -------------------------------
+      // Prevent duplicate audit
+      // -------------------------------
+      await this.preventDuplicateAuditToday(
+        promoterId,
+        dto.product_id,
+        branch.id,
+        dto.audit_date,
+      );
+  
+      // -------------------------------
+      // Create main audit
+      // -------------------------------
       const auditData: Partial<Audit> = {
         productId: dto.product_id,
         branchId: branch.id,
         promoterId: promoterId,
-        
-        // الإجابات على الأسئلة المطلوبة
+  
         is_available: dto.is_available,
         current_price: dto.current_price,
         current_discount: dto.current_discount || 0,
         discount_reason: dto.discount_reason || null,
-        
-
+  
         audit_date: dto.audit_date || new Date().toISOString().split('T')[0],
-        
-        // معلومات المنتج من قاعدة البيانات
+  
         product_name: product.name,
         product_brand: product.brand?.name || null,
         product_category: product.category?.name || null,
-        
-        // العلاقات
-        branch: branch,
-        promoter: promoter,
-        product: product,
-        projectId: branch.project?.id,
+  
+        branch,
+        promoter,
+        product,
+        projectId: dto.projectId || promoter.project_id || branch.project?.id || null,
       };
-
+  
       const audit = this.repo.create(auditData);
       const savedAudit = await queryRunner.manager.save(audit);
-
-      // معالجة المنافسين
-      let competitorsCount = 0;
-      let availableCompetitorsCount = 0;
-
-      if (dto.competitors && dto.competitors.length > 0) {
-        // التحقق من صحة المنافسين
-        const competitorIds = dto.competitors.map(c => c.competitor_id);
-        
-        // Get all valid competitors
+ 
+      if (dto.competitors?.length > 0) {
+        const competitorIds = dto.competitors.map((c) => c.competitor_id);
+  
+        // 1️⃣ Validate competitor IDs
         const validCompetitors = await this.competitorRepo.find({
-          where: { id: In(competitorIds) }
+          where: { id: In(competitorIds) },
         });
-        
-        // Check if all competitors exist
-        const validCompetitorIds = new Set(validCompetitors.map(c => c.id));
-        const missingCompetitorIds = competitorIds.filter(id => !validCompetitorIds.has(id));
-        
-        if (missingCompetitorIds.length > 0) {
-          // Get competitor names for better error message
-          const missingCompetitors = await this.competitorRepo.find({
-            where: { id: In(missingCompetitorIds) },
-            select: ['id', 'name']
-          });
-          
+  
+        const validIdsSet = new Set(validCompetitors.map((c) => c.id));
+        const missingIds = competitorIds.filter((id) => !validIdsSet.has(id));
+  
+        if (missingIds.length > 0) {
           throw new NotFoundException({
             message: 'One or more competitors not found',
-            missing_competitors: missingCompetitorIds,
-            total_competitors_requested: competitorIds.length,
-            valid_competitors_found: validCompetitors.length,
-            invalid_competitor_ids: missingCompetitorIds,
-            details: `The following competitor IDs are invalid or not found: ${missingCompetitorIds.join(', ')}`
+            invalid_competitors: missingIds,
           });
         }
-        
-        // Also check for duplicate competitor IDs in the request
-        const duplicateCompetitorIds = competitorIds.filter((id, index, array) => 
-          array.indexOf(id) !== index
+  
+        // 2️⃣ Validate duplicates
+        const duplicates = competitorIds.filter(
+          (id, idx, arr) => arr.indexOf(id) !== idx,
         );
-        
-        if (duplicateCompetitorIds.length > 0) {
+  
+        if (duplicates.length > 0) {
           throw new BadRequestException({
-            message: 'Duplicate competitor IDs in the request',
-            duplicate_ids: duplicateCompetitorIds,
-            details: `Each competitor should be unique in the request. Duplicate IDs: ${duplicateCompetitorIds.join(', ')}`
+            message: 'Duplicate competitor IDs',
+            duplicate_ids: duplicates,
           });
         }
-        
-        // التحقق من صحة المنافسين التاريخيين
-        const historicalCompetitors = await this.getHistoricalCompetitors(dto.product_id, branch.id);
-        
-        // دمج المنافسين الجدد مع التاريخيين
-        const mergedCompetitors = this.mergeCompetitors(dto.competitors, historicalCompetitors);
-        
-        // حفظ كل منافس كـ AuditCompetitor
-        let competitorsCount = 0;
-        let availableCompetitorsCount = 0;
-        
-        for (const compDto of mergedCompetitors) {
-          // تأكد أن المنافس موجود في قاعدة البيانات
-          if (!validCompetitorIds.has(compDto.competitor_id)) {
-            // هذا يجب ألا يحدث أبداً بعد الفحص الأول، لكن نحن نتحقق مرة أخرى
-            throw new NotFoundException(`Competitor with ID ${compDto.competitor_id} not found in the database`);
-          }
-          
-          // التحقق من البيانات المطلوبة للمنافس
-          if (compDto.is_available === undefined) {
+  
+        // 3️⃣ Load historical competitors
+        const historical = await this.getHistoricalCompetitors(
+          dto.product_id,
+          branch.id,
+        );
+  
+        // 4️⃣ Merge new + historical competitors
+        const mergedCompetitors = this.mergeCompetitors(
+          dto.competitors,
+          historical,
+        );
+  
+        // 5️⃣ Save competitors
+        for (const comp of mergedCompetitors) {
+          if (comp.is_available === undefined) {
             throw new BadRequestException({
-              message: `Missing required field for competitor ${compDto.competitor_id}`,
-              competitor_id: compDto.competitor_id,
-              details: 'is_available field is required for each competitor'
+              message: `Missing is_available for competitor ${comp.competitor_id}`,
             });
           }
-          
-          // إذا كان المنتج متوفراً، يجب أن يحتوي على سعر
-          if (compDto.is_available === true && compDto.price === undefined) {
+  
+          if (comp.is_available === true && comp.price === undefined) {
             throw new BadRequestException({
-              message: `Missing price for available competitor ${compDto.competitor_id}`,
-              competitor_id: compDto.competitor_id,
-              details: 'Price is required when competitor is available'
+              message: `Missing price for competitor ${comp.competitor_id}`,
             });
           }
-          
-          const auditCompetitor = this.auditCompetitorRepo.create({
+  
+          const competitor = this.auditCompetitorRepo.create({
             audit: savedAudit,
             audit_id: savedAudit.id,
-            competitor_id: compDto.competitor_id,
-            price: compDto.price,
-            discount: compDto.discount,
-            is_available: compDto.is_available,
-            is_national: compDto.is_national,
-            discount_reason: compDto.discount_reason,
-            observed_at: compDto.observed_at ? new Date(compDto.observed_at) : new Date(),
+            competitor_id: comp.competitor_id,
+            price: comp.price,
+            discount: comp.discount,
+            is_available: comp.is_available,
+            is_national: comp.is_national,
+            discount_reason: comp.discount_reason,
+            observed_at: comp.observed_at
+              ? new Date(comp.observed_at)
+              : new Date(),
             audit_date: savedAudit.audit_date,
           });
-      
-          await queryRunner.manager.save(AuditCompetitor, auditCompetitor);
-          
-          competitorsCount++;
-          if (compDto.is_available) {
-            availableCompetitorsCount++;
-          }
+  
+          await queryRunner.manager.save(AuditCompetitor, competitor);
         }
       }
-    }
-       catch (err) {
+  
+      // -------------------------------
+      // Load full audit to return
+      // -------------------------------
+      const fullAudit = await queryRunner.manager.findOne(Audit, {
+        where: { id: savedAudit.id },
+        relations: [
+          'product',
+          'product.brand',
+          'product.category',
+          'branch',
+          'branch.project',
+          'promoter',
+          'auditCompetitors',
+          'auditCompetitors.competitor',
+        ],
+      });
+  
+      // Commit transaction
+      await queryRunner.commitTransaction();
+  
+      return fullAudit;
+    } catch (err) {
       await queryRunner.rollbackTransaction();
-      
+  
       if (err?.code === '23505') {
-        throw new ConflictException('Cannot create another audit for the same product in the same branch on the same day.');
+        throw new ConflictException(
+          'Cannot create another audit for the same product in this branch today.',
+        );
       }
-      
-      if (err instanceof NotFoundException || 
-          err instanceof ConflictException || 
-          err instanceof BadRequestException) {
+  
+      if (
+        err instanceof NotFoundException ||
+        err instanceof BadRequestException ||
+        err instanceof ConflictException
+      ) {
         throw err;
       }
-      
+  
       throw new BadRequestException(`Failed to create audit: ${err.message}`);
     } finally {
       await queryRunner.release();
     }
   }
+  
 
   private async preventDuplicateAuditToday(
     promoterId: string,

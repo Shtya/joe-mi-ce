@@ -17,479 +17,291 @@ export class AuditExportService {
   ) {}
 
   async exportToExcel(query: any, req: any): Promise<Buffer> {
-    // Get user with project info
-    const user = await this.userRepo.findOne({ 
-      where: { id: req.user.id }, 
-      relations: ['project', 'branch'] 
+
+    // Fetch logged-in user including project
+    const user = await this.userRepo.findOne({
+      where: { id: req.user.id },
+      relations: ['project'],
     });
-    
-    // Build where conditions
-    const whereConditions: any = {};
-    const relations = ['branch', 'promoter', 'product', 'product.brand', 'product.category'];
-    
-    // Date range filtering
+  
+    if (!user?.project?.id) {
+      throw new Error("User does not belong to a project");
+    }
+  
+    // --- Build Query ---
+    const qb = this.auditRepo.createQueryBuilder('audit')
+      .leftJoinAndSelect('audit.branch', 'branch')
+      .leftJoinAndSelect('branch.city', 'city')
+      .leftJoinAndSelect('city.region', 'region')
+      .leftJoinAndSelect('branch.project', 'project')
+      .leftJoinAndSelect('audit.promoter', 'promoter')
+      .leftJoinAndSelect('audit.product', 'product')
+      .leftJoinAndSelect('product.brand', 'brand')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('audit.auditCompetitors', 'auditCompetitors')
+      .leftJoinAndSelect('auditCompetitors.competitor', 'competitor');
+  
+    // 🔥 ALWAYS FILTER BY USER'S PROJECT
+    qb.andWhere('project.id = :pid', { pid: user.project.id });
+  
+    // Date filtering
     if (query.from_date && query.to_date) {
-      whereConditions.audit_date = Between(query.from_date, query.to_date);
+      qb.andWhere('audit.audit_date BETWEEN :from AND :to', {
+        from: query.from_date,
+        to: query.to_date,
+      });
     } else if (query.from_date) {
-      whereConditions.audit_date = Between(query.from_date, new Date().toISOString().split('T')[0]);
+      qb.andWhere('audit.audit_date >= :from', { from: query.from_date });
     } else if (query.to_date) {
-      whereConditions.audit_date = Between('2000-01-01', query.to_date);
+      qb.andWhere('audit.audit_date <= :to', { to: query.to_date });
     }
-    
-    // Basic filters
-    if (query.branch_id) whereConditions.branchId = query.branch_id;
-    if (query.promoter_id) whereConditions.promoterId = query.promoter_id;
-    if (query.product_id) whereConditions.productId = query.product_id;
-    if (query.is_national !== undefined) whereConditions.is_national = query.is_national;
-    if (query.status) whereConditions.status = query.status;
-    
-    // If user has a project and no project_id is provided in query, filter by user's project
-    // Since Audit doesn't have direct project relation, we need to filter through branch
-    let audits = [];
-    
-    if (user?.project?.id && !query.project_id) {
-      // User has a project - filter audits through branch.project
-      // Use query builder to join and filter by project
-      const queryBuilder = this.auditRepo.createQueryBuilder('audit')
-        .leftJoinAndSelect('audit.branch', 'branch')
-        .leftJoinAndSelect('audit.promoter', 'promoter')
-        .leftJoinAndSelect('audit.product', 'product')
-        .leftJoinAndSelect('product.brand', 'brand')
-        .leftJoinAndSelect('product.category', 'category')
-        .leftJoinAndSelect('branch.project', 'branchProject');
-      
-      // Build where conditions for query builder
-      let qbWhere = '1=1'; // Start with always true condition
-      
-      if (Object.keys(whereConditions).length > 0) {
-        // Convert whereConditions to query builder conditions
-        if (whereConditions.audit_date) {
-          qbWhere += ` AND audit.audit_date BETWEEN '${whereConditions.audit_date.value[0]}' AND '${whereConditions.audit_date.value[1]}'`;
-        }
-        
-        if (whereConditions.branchId) {
-          qbWhere += ` AND branch.id = '${whereConditions.branchId}'`;
-        }
-        
-        if (whereConditions.promoterId) {
-          qbWhere += ` AND promoter.id = '${whereConditions.promoterId}'`;
-        }
-        
-        if (whereConditions.productId) {
-          qbWhere += ` AND product.id = '${whereConditions.productId}'`;
-        }
-        
-        if (whereConditions.status) {
-          qbWhere += ` AND audit.status = '${whereConditions.status}'`;
-        }
-        
-        if (whereConditions.is_national !== undefined) {
-          qbWhere += ` AND audit.is_national = ${whereConditions.is_national}`;
-        }
-      }
-      
-      // Add project filter
-      qbWhere += ` AND branchProject.id = '${user.project.id}'`;
-      
-      // Add brand and category filters from query
-      if (query.brand_id) {
-        qbWhere += ` AND brand.id = '${query.brand_id}'`;
-      }
-      
-      if (query.category_id) {
-        qbWhere += ` AND category.id = '${query.category_id}'`;
-      }
-      
-      if (query.brand_name) {
-        qbWhere += ` AND brand.name ILIKE '%${query.brand_name}%'`;
-      }
-      
-      if (query.category_name) {
-        qbWhere += ` AND category.name ILIKE '%${query.category_name}%'`;
-      }
-      
-      // Apply where clause
-      queryBuilder.where(qbWhere);
-      
-      // Order by
-      queryBuilder.orderBy('audit.audit_date', 'DESC');
-      queryBuilder.addOrderBy('audit.created_at', 'DESC');
-      
-      // Get all audits
-      audits = await queryBuilder.getMany();
-      
-    } else {
-      // No project filter needed or project_id provided in query
-      // Use simple find method
-      const findOptions: any = {
-        where: whereConditions,
-        relations: relations,
-        order: { audit_date: 'DESC', created_at: 'DESC' }
-      };
-      
-      // If project_id is provided in query, we need query builder
-      if (query.project_id) {
-        const queryBuilder = this.auditRepo.createQueryBuilder('audit')
-          .leftJoinAndSelect('audit.branch', 'branch')
-          .leftJoinAndSelect('audit.promoter', 'promoter')
-          .leftJoinAndSelect('audit.product', 'product')
-          .leftJoinAndSelect('product.brand', 'brand')
-          .leftJoinAndSelect('product.category', 'category')
-          .leftJoinAndSelect('branch.project', 'branchProject');
-        
-        let qbWhere = '1=1';
-        
-        // Add basic conditions
-        if (Object.keys(whereConditions).length > 0) {
-          if (whereConditions.audit_date) {
-            qbWhere += ` AND audit.audit_date BETWEEN '${whereConditions.audit_date.value[0]}' AND '${whereConditions.audit_date.value[1]}'`;
-          }
-          
-          if (whereConditions.branchId) {
-            qbWhere += ` AND branch.id = '${whereConditions.branchId}'`;
-          }
-          
-          if (whereConditions.promoterId) {
-            qbWhere += ` AND promoter.id = '${whereConditions.promoterId}'`;
-          }
-          
-          if (whereConditions.productId) {
-            qbWhere += ` AND product.id = '${whereConditions.productId}'`;
-          }
-          
-          if (whereConditions.status) {
-            qbWhere += ` AND audit.status = '${whereConditions.status}'`;
-          }
-          
-          if (whereConditions.is_national !== undefined) {
-            qbWhere += ` AND audit.is_national = ${whereConditions.is_national}`;
-          }
-        }
-        
-        // Add project filter from query
-        qbWhere += ` AND branchProject.id = '${query.project_id}'`;
-        
-        // Add brand and category filters
-        if (query.brand_id) {
-          qbWhere += ` AND brand.id = '${query.brand_id}'`;
-        }
-        
-        if (query.category_id) {
-          qbWhere += ` AND category.id = '${query.category_id}'`;
-        }
-        
-        if (query.brand_name) {
-          qbWhere += ` AND brand.name ILIKE '%${query.brand_name}%'`;
-        }
-        
-        if (query.category_name) {
-          qbWhere += ` AND category.name ILIKE '%${query.category_name}%'`;
-        }
-        
-        queryBuilder.where(qbWhere);
-        queryBuilder.orderBy('audit.audit_date', 'DESC');
-        queryBuilder.addOrderBy('audit.created_at', 'DESC');
-        
-        audits = await queryBuilder.getMany();
-      } else {
-        // Simple find without project filtering
-        audits = await this.auditRepo.find(findOptions);
-      }
-    }
-    
-    // Create Excel file
+  
+    // Extra filters
+    if (query.branch_id) qb.andWhere('branch.id = :branch', { branch: query.branch_id });
+    if (query.promoter_id) qb.andWhere('promoter.id = :promoter', { promoter: query.promoter_id });
+    if (query.product_id) qb.andWhere('product.id = :product', { product: query.product_id });
+    if (query.status) qb.andWhere('audit.status = :status', { status: query.status });
+    if (query.is_national !== undefined)
+      qb.andWhere('audit.is_national = :nat', { nat: query.is_national });
+  
+    // Brand + Category filters
+    if (query.brand_id) qb.andWhere('brand.id = :brandId', { brandId: query.brand_id });
+    if (query.category_id) qb.andWhere('category.id = :catId', { catId: query.category_id });
+    if (query.brand_name)
+      qb.andWhere('brand.name ILIKE :bname', { bname: `%${query.brand_name}%` });
+    if (query.category_name)
+      qb.andWhere('category.name ILIKE :cname', { cname: `%${query.category_name}%` });
+  
+    // Sorting
+    qb.orderBy('audit.audit_date', 'DESC')
+      .addOrderBy('audit.created_at', 'DESC');
+  
+    const audits = await qb.getMany();
+  
+    // --- Excel ---
     const workbook = new ExcelJS.Workbook();
-    
-    // Add English sheet
     this.createEnglishSheet(workbook, audits);
-    
-    // Add Arabic sheet
     this.createArabicSheet(workbook, audits);
   
-    // Generate file
-    const buffer = await workbook.xlsx.writeBuffer();
-    return Buffer.from(buffer);
+    const uint = await workbook.xlsx.writeBuffer();
+    const nodeBuffer = Buffer.from(uint);  // valid conversion
+    return nodeBuffer;
+    
   }
 
 // audit-export.service.ts (updated Excel export methods)
 private createEnglishSheet(workbook: ExcelJS.Workbook, audits: Audit[]): void {
     const worksheet = workbook.addWorksheet('Audit Report - English');
   
-    // Headers in English
     const headers = [
       'Date',
       'Auditor',
       'City',
+      'Region',
       'Branch',
       'Product Name',
       'Brand',
       'Category',
-      
-      // Main product info
-      'Available?',
+  
+      'Available',
       'Price',
       'Discount %',
       'Discount Reason',
-      'National?',
-      'Notes',
-      
-      // Competitor info
+     
+  
       'Total Competitors',
       'Available Competitors',
-      
-      // Competitor columns (up to 10 competitors)
+  
       ...Array.from({ length: 10 }, (_, i) => [
         `Comp ${i + 1} Name`,
         `Comp ${i + 1} Price`,
         `Comp ${i + 1} Discount`,
         `Comp ${i + 1} Available`,
         `Comp ${i + 1} National`,
-        `Comp ${i + 1} Discount Reason`
+        `Comp ${i + 1} Discount Reason`,
       ]).flat(),
-      
-      'Status',
-      'Audit ID'
     ];
   
-    // Add headers
     const headerRow = worksheet.addRow(headers);
-    
-    // Format headers
+  
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: '2E75B6' }
+        fgColor: { argb: '2E75B6' },
       };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
     });
   
-    // Add data
     audits.forEach(audit => {
       const competitors = audit.auditCompetitors || [];
-      
-      // Prepare competitor data
+        console.log('Competitors:', competitors);
+      const totalCompetitors = competitors.length;
+      const availableCompetitors = competitors.filter(c => c.is_available).length;
+  
       const compData = [];
+  
       for (let i = 0; i < 10; i++) {
-        if (competitors[i]) {
+        const c = competitors[i];
+  
+        if (c) {
           compData.push(
-            competitors[i].competitor?.name || `Competitor ${i + 1}`,
-            competitors[i].price || 0,
-            competitors[i].discount || 0,
-            competitors[i].is_available ? 'Yes' : 'No',
-            competitors[i].is_national ? 'Yes' : 'No',
-            competitors[i].discount_reason || ''
+            c.competitor?.name || '',
+            c.price ?? '',
+            c.discount ?? '',
+            c.is_available ? 'Yes' : 'No',
+            c.is_national ? 'Yes' : 'No',
+            c.discount_reason || '',
           );
         } else {
           compData.push('', '', '', '', '', '');
         }
       }
   
-      // Create row
       const row = [
         audit.audit_date,
         audit.promoter?.name || '',
         audit.branch?.city?.name || '',
+        audit.branch?.city?.region?.name || '',
         audit.branch?.name || '',
         audit.product_name || '',
         audit.product_brand || '',
         audit.product_category || '',
-        
-        // Main product answers
+  
         audit.is_available ? 'Yes' : 'No',
-        audit.current_price || 0,
-        audit.current_discount || 0,
+        audit.current_price ?? 0,
+        audit.current_discount ?? 0,
         audit.discount_reason || '',
-    
-        
-        // Competitor info
-        audit.competitors_count || 0,
-        audit.available_competitors_count || 0,
-        
-        // Competitor data
+       
+  
+        totalCompetitors,
+        availableCompetitors,
+  
         ...compData,
-        
-        audit.id
       ];
   
-      const dataRow = worksheet.addRow(row);
-      
-      // Format even rows
-      if (dataRow.number % 2 === 0) {
-        dataRow.eachCell((cell) => {
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'F2F2F2' }
-          };
-        });
-      }
+      worksheet.addRow(row);
     });
   
-    // Auto-size columns
-    worksheet.columns.forEach((column) => {
-      let maxLength = 0;
+    worksheet.columns.forEach(column => {
+      let maxLength = 12;
       column.eachCell({ includeEmpty: true }, (cell) => {
-        const cellLength = cell.value ? cell.value.toString().length : 0;
-        maxLength = Math.max(maxLength, cellLength);
+        const length = cell.value ? cell.value.toString().length : 0;
+        maxLength = Math.max(maxLength, length);
       });
-      column.width = Math.min(maxLength + 2, 30);
+      column.width = maxLength + 2;
     });
   }
+  
   
   private createArabicSheet(workbook: ExcelJS.Workbook, audits: Audit[]): void {
     const worksheet = workbook.addWorksheet('تقرير المراجعة - عربي');
   
-    // Headers in Arabic
     const headers = [
       'التاريخ',
       'المدقق',
       'المدينة',
+      'المنطقة',
       'الفرع',
       'اسم المنتج',
       'العلامة التجارية',
       'الفئة',
-      
-      // Main product info
+  
       'متوفر؟',
       'السعر',
       'نسبة الخصم',
       'سبب الخصم',
-      'محلي؟',
-      'ملاحظات',
-      
-      // Competitor info
+     
+  
       'عدد المنافسين',
-      'المنافسين المتوفرين',
-      
-      // Competitor columns
+      'عدد المتوفرين',
+  
       ...Array.from({ length: 10 }, (_, i) => [
         `اسم المنافس ${i + 1}`,
         `سعر المنافس ${i + 1}`,
         `خصم المنافس ${i + 1}`,
-        `متوفر ${i + 1}؟`,
-        `محلي ${i + 1}؟`,
-        `سبب خصم ${i + 1}`
+        `متوفر ${i + 1}?`,
+        `محلي ${i + 1}?`,
+        `سبب الخصم ${i + 1}`,
       ]).flat(),
-      
-      'الحالة',
-      'رقم المراجعة'
     ];
   
-    // Add headers
     const headerRow = worksheet.addRow(headers);
-    
-    // Format Arabic headers
+  
     headerRow.eachCell((cell) => {
-      cell.font = { 
-        bold: true, 
-        color: { argb: 'FFFFFF' },
-        name: 'Arial'
-      };
+      cell.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Arial' };
       cell.fill = {
         type: 'pattern',
         pattern: 'solid',
-        fgColor: { argb: '2E75B6' }
+        fgColor: { argb: '2E75B6' },
       };
-      cell.alignment = { 
-        vertical: 'middle', 
-        horizontal: 'center',
-        readingOrder: 'rtl'
-      };
-      cell.border = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle', readingOrder: 'rtl' };
     });
   
-    // Add data
-    audits.forEach((audit, index) => {
+    audits.forEach(audit => {
       const competitors = audit.auditCompetitors || [];
-      
-      // Prepare competitor data
+  
+      const totalCompetitors = competitors.length;
+      const availableCompetitors = competitors.filter(c => c.is_available).length;
+  
       const compData = [];
+  
       for (let i = 0; i < 10; i++) {
-        if (competitors[i]) {
+        const c = competitors[i];
+  
+        if (c) {
           compData.push(
-            competitors[i].competitor?.name || `منافس ${i + 1}`,
-            competitors[i].price || 0,
-            competitors[i].discount || 0,
-            competitors[i].is_available ? 'نعم' : 'لا',
-            competitors[i].is_national ? 'نعم' : 'لا',
-            competitors[i].discount_reason || ''
+            c.competitor?.name || '',
+            c.price ?? '',
+            c.discount ?? '',
+            c.is_available ? 'نعم' : 'لا',
+            c.is_national ? 'نعم' : 'لا',
+            c.discount_reason || '',
           );
         } else {
           compData.push('', '', '', '', '', '');
         }
       }
   
-      // Create row
       const row = [
         audit.audit_date,
         audit.promoter?.name || '',
         audit.branch?.city?.name || '',
+        audit.branch?.city?.region?.name || '',
         audit.branch?.name || '',
         audit.product_name || '',
         audit.product_brand || '',
         audit.product_category || '',
-        
-        // Main product answers
+  
         audit.is_available ? 'نعم' : 'لا',
-        audit.current_price || 0,
-        audit.current_discount || 0,
+        audit.current_price ?? 0,
+        audit.current_discount ?? 0,
         audit.discount_reason || '',
-   
-        
-        // Competitor info
-        audit.competitors_count || 0,
-        audit.available_competitors_count || 0,
-        
-        // Competitor data
+  
+  
+        totalCompetitors,
+        availableCompetitors,
+  
         ...compData,
-        
-        audit.id
       ];
   
-      const dataRow = worksheet.addRow(row);
-      
-      // Format Arabic text direction
-      dataRow.eachCell((cell) => {
-        cell.alignment = { 
-          horizontal: 'right',
-          readingOrder: 'rtl'
-        };
+      const rowObj = worksheet.addRow(row);
+  
+      rowObj.eachCell(cell => {
+        cell.alignment = { horizontal: 'right', readingOrder: 'rtl' };
       });
-      
-      // Format even rows
-      if (index % 2 === 0) {
-        dataRow.eachCell((cell) => {
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'F2F2F2' }
-          };
-        });
-      }
     });
   
-    // Auto-size columns
-    worksheet.columns.forEach((column) => {
-      let maxLength = 0;
+    worksheet.columns.forEach(column => {
+      let maxLength = 12;
       column.eachCell({ includeEmpty: true }, (cell) => {
-        const cellLength = cell.value ? cell.value.toString().length : 0;
-        maxLength = Math.max(maxLength, cellLength);
+        const length = cell.value ? cell.value.toString().length : 0;
+        maxLength = Math.max(maxLength, length);
       });
-      column.width = Math.min(maxLength + 2, 30);
+      column.width = maxLength + 2;
     });
   }
+  
 
 }

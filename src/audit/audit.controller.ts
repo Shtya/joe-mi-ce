@@ -71,7 +71,7 @@ export class AuditsController {
     const mergedFilters: any = {
       ...parsedFilters,
     };
-    console.log(user.project.id)
+  
     if (user?.project?.id && !project_id) {
       mergedFilters.projectId = user.project.id;
     }
