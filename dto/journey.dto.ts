@@ -15,13 +15,6 @@ export class CreateJourneyPlanDto {
   @IsString({ each: true })
   days: string[];
 
-  @IsOptional()
-  @IsDateString()
-  fromDate?: string;
-
-  @IsOptional()
-  @IsDateString()
-  toDate?: string;
 }
 
 export class CreateUnplannedJourneyDto {

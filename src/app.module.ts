@@ -89,6 +89,7 @@ import { SalesTargetModule } from './sales-target/sales-target.module';
     ProjectStatsModule,
     NotificationModule,
     SalesTargetModule,
+    
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],

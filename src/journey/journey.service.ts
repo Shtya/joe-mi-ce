@@ -55,8 +55,8 @@ export class JourneyService {
     if (!branch.project) {
       throw new BadRequestException('Branch has no project assigned');
     }
-    const fromDate = dto.fromDate || dayjs().format('YYYY-MM-DD');
-    const toDate = dto.toDate || '9999-12-31';
+    const fromDate =  dayjs().format('YYYY-MM-DD');
+    const toDate =  '9999-12-31';
 
     const existingPlans = await this.journeyPlanRepo.find({
       where: {

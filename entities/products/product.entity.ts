@@ -67,4 +67,5 @@ export class Product extends CoreEntity {
     inverseJoinColumn: { name: 'branch_id', referencedColumnName: 'id' }
   })
   branches: Branch[];
+  origin_country: string;
 }

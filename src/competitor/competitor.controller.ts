@@ -23,14 +23,14 @@ export class CompetitorController {
   @Get()
   @Permissions(EPermission.COMPETITOR_READ)
   async getCompetitors(@Query() query) {
-    return CRUD.findAll(this.competitorService.competitorRepo, 'competitors', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['project'], ['name']);
+    return CRUD.findAll(this.competitorService.competitorRepo, 'competitor', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['project'], ['name']);
   }
 
   // Get competitors by project
   @Get('by-project/:projectId')
   @Permissions(EPermission.COMPETITOR_READ)
   async getCompetitorsByProject(@Param('projectId') projectId: UUID, @Query() query) {
-    return CRUD.findAll(this.competitorService.competitorRepo, 'competitors', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['project'], ['name'], { project: { id: projectId } });
+    return CRUD.findAll(this.competitorService.competitorRepo, 'competitor', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['project'], ['name'], { project: { id: projectId } });
   }
 
   // Get a specific competitor by ID
@@ -51,6 +51,6 @@ export class CompetitorController {
   @Delete(':id')
   @Permissions(EPermission.COMPETITOR_DELETE)
   async deleteCompetitor(@Param('id') id: string) {
-    return CRUD.softDelete(this.competitorService.competitorRepo, 'competitors', id);
+    return CRUD.softDelete(this.competitorService.competitorRepo, 'competitor', id);
   }
 }
