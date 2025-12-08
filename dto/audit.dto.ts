@@ -1,124 +1,200 @@
-import {
-  IsBoolean,
-  IsOptional,
-  IsNumber,
-  IsString,
-  IsUUID,
-  IsArray,
-  IsEnum,
-  IsDateString,
-  ValidateNested,
-  IsUrl,
-  IsInt,
-  Min,
+// dto/audit.dto.ts
+import { 
+  IsString, IsNumber, IsBoolean, IsOptional, IsArray, 
+  IsEnum, IsDateString, IsUUID, Min, Max, ValidateNested 
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AuditStatus } from 'entities/audit.entity';
 
-class CompetitorDto {
-  @IsNumber()
-  Availability: number;
-
-  @IsString()
-  competitor_id: string;
-
-  @IsNumber()
-  competitor_price: number;
-
-  @IsNumber()
-  competitor_discount: number;
-
-  @IsArray()
-  images: string[];
-
-  @IsDateString()
-  observed_at: string;
-}
-
 export class CreateAuditDto {
-  @IsUUID()
-  branch_id: string;
-
-  @IsUUID()
-  promoter_id: string;
-
   @IsUUID()
   product_id: string;
 
-  @IsString()
-  product_name: string;
+  @IsUUID()
+  branch_id: string;
 
-  @IsOptional() @IsString()
-  product_brand?: string;
+  @IsBoolean()
+  is_available: boolean;
 
-  @IsOptional() @IsString()
-  product_category?: string;
-
-  @IsOptional() @IsBoolean()
-  is_available?: boolean;
-
-  @IsOptional() @IsNumber()
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
   current_price?: number;
 
-  @IsOptional() @IsNumber()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
   current_discount?: number;
 
-  @IsOptional() @IsString()
+  @IsString()
+  @IsOptional()
+  discount_reason?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  is_national?: boolean;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AuditCompetitorDto)
+  competitors?: AuditCompetitorDto[];
+
+  @IsString()
+  @IsOptional()
   notes?: string;
 
-  @IsOptional()
-  @IsArray()
-  image_urls?: string[];
-
-  @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => CompetitorDto)
-  competitors?: CompetitorDto[];
-
-  @IsOptional()
-  @IsEnum(AuditStatus)
-  status?: AuditStatus;
-
-  // للسماح بإنشاء تدقيق لتاريخ سابق (اختياري)
-  @IsOptional()
   @IsDateString()
-  audit_date?: string; // YYYY-MM-DD
+  @IsOptional()
+  audit_date?: string;
+
+  @IsString()
+  @IsOptional()
+  projectId?: string;
 }
 
+export class UpdateAuditDto {
+  @IsBoolean()
+  @IsOptional()
+  is_available?: boolean;
 
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  current_price?: number;
 
-import { PartialType } from '@nestjs/mapped-types';
-export class UpdateAuditDto extends PartialType(CreateAuditDto) {}
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  current_discount?: number;
+
+  @IsString()
+  @IsOptional()
+  discount_reason?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  is_national?: boolean;
+
+  @IsArray()
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => AuditCompetitorDto)
+  competitors?: AuditCompetitorDto[];
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsDateString()
+  @IsOptional()
+  audit_date?: string;
+
+  @IsEnum(AuditStatus)
+  @IsOptional()
+  status?: AuditStatus;
+}
+
+export class AuditCompetitorDto {
+  @IsUUID()
+  competitor_id: string;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  price?: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  discount?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  is_available?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  is_national?: boolean;
+
+  @IsString()
+  @IsOptional()
+  discount_reason?: string;
+
+  @IsDateString()
+  @IsOptional()
+  observed_at?: string;
+}
 
 export class QueryAuditsDto {
-  @IsOptional() @IsEnum(AuditStatus)
-  status?: AuditStatus;
+  @IsString()
+  @IsOptional()
+  search?: string;
 
-  @IsOptional() @IsUUID()
-  product_id?: string;
-
-  @IsOptional() @IsDateString()
-  from_date?: string; // YYYY-MM-DD
-
-  @IsOptional() @IsDateString()
-  to_date?: string; // YYYY-MM-DD
-
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
+  @IsNumber()
+  @IsOptional()
   page?: number = 1;
 
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1)
-  limit?: number = 20;
-}
+  @IsNumber()
+  @IsOptional()
+  limit?: number = 10;
 
+  @IsString()
+  @IsOptional()
+  sortBy?: string = 'created_at';
 
-export class UpdateAuditStatusDto {
-  @IsEnum(AuditStatus)
-  status: AuditStatus;
+  @IsString()
+  @IsOptional()
+  sortOrder?: 'ASC' | 'DESC' = 'DESC';
 
-  @IsOptional() @IsUUID()
-  reviewed_by_id?: string;
+  @IsString()
+  @IsOptional()
+  fromDate?: string;
 
-  @IsOptional() @IsDateString()
-  reviewed_at?: string; // ISO date string
+  @IsString()
+  @IsOptional()
+  toDate?: string;
+
+  @IsString()
+  @IsOptional()
+  status?: AuditStatus;
+
+  @IsUUID()
+  @IsOptional()
+  branch_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  promoter_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  product_id?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  is_national?: boolean;
+
+  @IsUUID()
+  @IsOptional()
+  brand_id?: string;
+
+  @IsUUID()
+  @IsOptional()
+  category_id?: string;
+
+  @IsString()
+  @IsOptional()
+  brand_name?: string;
+
+  @IsString()
+  @IsOptional()
+  category_name?: string;
+
+  @IsUUID()
+  @IsOptional()
+  project_id?: string;
 }

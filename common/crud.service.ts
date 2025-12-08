@@ -859,11 +859,7 @@ if (search && searchFields?.length) {
     filters?: Record<string, any>
   ): Promise<CustomPaginatedResponse<T>> {
     
-    console.log('=== DEBUG: Starting findAllWithSearchAndFilters ===');
-    console.log('Filters received:', JSON.stringify(filters, null, 2));
-    console.log('Search:', search);
-    console.log('Search fields:', searchFields);
-    
+
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
     
@@ -914,7 +910,6 @@ if (search && searchFields?.length) {
     // Check filters for nested paths
     if (filters) {
       const flatFilters = flatten(filters);
-      console.log('Flat filters:', flatFilters);
       
       for (const key of Object.keys(flatFilters)) {
         if (key.includes('.')) {
@@ -928,7 +923,6 @@ if (search && searchFields?.length) {
       }
     }
     
-    console.log('Relations to join:', Array.from(relationPathsNeeded));
   
     // 2. Join all required relations
     const relationsToJoin = Array.from(relationPathsNeeded);
@@ -951,7 +945,7 @@ if (search && searchFields?.length) {
       const alias = aliasMap.get(relationPath);
       
       if (!alias) {
-        console.log(`WARNING: No alias found for relation path: ${relationPath}`);
+    
         // Try to create the alias manually
         return `${relationPath}.${last}`;
       }
@@ -966,15 +960,13 @@ if (search && searchFields?.length) {
     if (filters && Object.keys(filters).length) {
       const flatFilters = flatten(filters);
       
-      console.log('Applying filters from flatFilters:', flatFilters);
-      
+ 
       for (const [key, value] of Object.entries(flatFilters)) {
         if (value === null || value === undefined || value === '') {
-          console.log(`Skipping filter ${key} with value: ${value}`);
+      
           continue;
         }
         
-        console.log(`Processing filter: ${key} = ${value}`);
         
         // Handle special operators
         const parts = key.split('.');
@@ -991,7 +983,6 @@ if (search && searchFields?.length) {
         }
         
         const qualified = qualifyField(fieldPath);
-        console.log(`Qualified field for ${fieldPath}: ${qualified}`);
         
         // Create a safe parameter name (no special characters except underscore)
         paramCounter++;
@@ -1032,13 +1023,11 @@ if (search && searchFields?.length) {
             break;
         }
         
-        console.log(`Added WHERE clause: ${qualified} = :${paramName}`);
       }
     }
   
     // 5. Apply search WITHIN the filtered results
     if (search && searchFields?.length) {
-      console.log(`Applying search for "${search}" in fields:`, searchFields);
       
       const searchParamName = `searchParam`;
       
@@ -1047,7 +1036,6 @@ if (search && searchFields?.length) {
           for (const field of searchFields) {
             try {
               const qualified = qualifyField(field);
-              console.log(`Searching in field ${field} -> ${qualified}`);
               // For text search, use ILIKE for case-insensitive matching
               qb2.orWhere(`${qualified} ILIKE :${searchParamName}`);
             } catch (error) {
@@ -1070,13 +1058,10 @@ if (search && searchFields?.length) {
     }
   
     // Debug: log the query
-    console.log('Generated SQL:', qb.getQuery());
-    console.log('Parameters:', qb.getParameters());
-  
+
     // 7. Execute query
     const [data, total] = await qb.getManyAndCount();
     
-    console.log(`=== DEBUG: Found ${total} records ===`);
     
     return {
       total_records: total,

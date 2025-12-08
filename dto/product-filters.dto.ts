@@ -26,10 +26,10 @@ export class ProductFilterQueryDto {
   @IsOptional() @IsBooleanString()
   isActive?: string; // 'true' | 'false'
 
-  @IsOptional() @IsNumberString()
+  @IsOptional() 
   minPrice?: string;
 
-  @IsOptional() @IsNumberString()
+  @IsOptional() 
   maxPrice?: string;
 
   @IsOptional() @IsString()
@@ -41,9 +41,9 @@ export class ProductFilterQueryDto {
   @IsOptional() @IsIn(['ASC', 'DESC'])
   sortOrder?: 'ASC' | 'DESC';
 
-  @IsOptional() @IsNumberString()
+  @IsOptional() 
   page?: string; // default 1
 
-  @IsOptional() @IsNumberString()
+  @IsOptional() 
   limit?: string; // default 10 (capped 100)
 }

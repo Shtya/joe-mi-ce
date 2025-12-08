@@ -6,11 +6,15 @@ import { User } from 'entities/user.entity';
 import { AuditsController } from './audit.controller';
 import { AuditsService } from './audit.service';
 import { Product } from 'entities/products/product.entity';
+import { AuditExportService } from './audit-export.service';
+import { Brand } from 'entities/products/brand.entity';
+import { Competitor } from 'entities/competitor.entity';
+import { AuditCompetitor } from 'entities/audit-competitor.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Audit, Branch, User , Product])],
+  imports: [TypeOrmModule.forFeature([Audit, Branch, User , Product,Brand,Competitor,AuditCompetitor])],
   controllers: [AuditsController],
-  providers: [AuditsService],
+  providers: [AuditsService,AuditExportService],
   exports: [AuditsService],
 })
 export class AuditsModule {}

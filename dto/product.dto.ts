@@ -1,18 +1,26 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsArray, ValidateNested, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsArray, ValidateNested, IsUUID, Min, IsPositive } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class StockDto {
+export class StockDto {
   @IsOptional()
   @IsUUID()
   branch_id?: string;
 
   @IsNumber()
+  @Min(0)
+  @IsPositive()
   quantity: number;
 
   @IsOptional()
   @IsBoolean()
   all_branches?: boolean;
+
+  // Add validation to ensure either branch_id OR all_branches is provided
+  constructor() {
+ 
+    // You can add custom validation decorators if needed
+  }
 }
 
 export class CreateProductDto {
@@ -25,9 +33,12 @@ export class CreateProductDto {
   description?: string;
 
   @IsNumber()
-  price?: number;
+  @Min(0)
+  price: number;
 
+  @IsOptional()
   @IsNumber()
+  @Min(0)
   discount?: number;
 
   @IsOptional()
@@ -48,7 +59,7 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsBoolean()
-  is_active?: boolean;
+  is_active?: boolean = true;
 
   @IsUUID()
   @IsNotEmpty()
@@ -64,9 +75,32 @@ export class CreateProductDto {
 
   @IsOptional()
   @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => StockDto)
   stock?: StockDto[];
 }
 
+// Add custom validator for StockDto
+export function ValidateStock() {
+  return function (object: any, propertyName: string) {
+    const validate = function (value: StockDto[]) {
+      if (!value) return true;
+      
+      for (const stock of value) {
+        if (!stock.all_branches && !stock.branch_id) {
+          throw new Error('Either branch_id must be provided or all_branches must be true');
+        }
+        if (stock.all_branches && stock.branch_id) {
+          throw new Error('Cannot specify both branch_id and all_branches=true');
+        }
+      }
+      return true;
+    };
+    
+    // Register the validator
+    // You can use class-validator's @Validate decorator with a custom class
+  };
+}
 export class UpdateProductDto extends PartialType(CreateProductDto) {}
 
 export class GetProductsByBranchDto {

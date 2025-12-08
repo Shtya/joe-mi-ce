@@ -18,7 +18,6 @@ export class LoggingInterceptor implements NestInterceptor {
 
     console.log('🔵 ----- Incoming Request -----');
     console.log('➡️ Endpoint:', method, originalUrl);
-    console.log('📦 Body:', body);
     console.log('🧩 Query:', query);
 
     if (files) {

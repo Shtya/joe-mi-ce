@@ -80,26 +80,5 @@ export class ProductController {
   remove(@Param('id') id: string) {
     return CRUD.softDelete(this.productService.productRepository, 'product', id);
   }
-}
-// In findAll2, replace the flatten function with this debug version:
-function flatten(obj: any, prefix = ''): Record<string, any> {
-  console.log('Flattening:', obj, 'prefix:', prefix);
-  const out: Record<string, any> = {};
-  if (!obj || typeof obj !== 'object') {
-    console.log('Not an object, returning empty');
-    return out;
-  }
-  for (const [k, v] of Object.entries(obj)) {
-    console.log(`Processing key "${k}" with value:`, v);
-    const key = prefix ? `${prefix}.${k}` : k;
-    if (v && typeof v === 'object' && !Array.isArray(v)) {
-      console.log(`Recursing into "${k}"`);
-      Object.assign(out, flatten(v, key));
-    } else {
-      console.log(`Setting ${key} = ${v}`);
-      out[key] = v;
-    }
-  }
-  console.log('Flatten result:', out);
-  return out;
+  
 }
