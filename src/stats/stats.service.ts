@@ -11,7 +11,7 @@ import { Competitor } from 'entities/competitor.entity';
 import { Shift } from 'entities/employee/shift.entity';
 import { Journey, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
 import { CheckIn } from 'entities/all_plans.entity'; // same file
-import { Audit, AuditStatus } from 'entities/audit.entity';
+import { Audit } from 'entities/audit.entity';
 import { Sale } from 'entities/products/sale.entity';
 import { Stock } from 'entities/products/stock.entity';
 import { Feedback } from 'entities/feedback.entity';
@@ -185,7 +185,6 @@ export class ProjectStatsService {
     const auditsByStatus: Record<string, number> = {};
     let auditsTotal = 0;
     auditByStatus.forEach(row => {
-      const status = row.status as AuditStatus;
       const count = Number(row.count) || 0;
       auditsByStatus[status] = count;
       auditsTotal += count;
@@ -304,7 +303,6 @@ export class ProjectStatsService {
       },
       audits: {
         total: auditsTotal,
-        byStatus: auditsByStatus as any,
         withImages: auditsWithImages,
       },
       sales: {

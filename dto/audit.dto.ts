@@ -4,7 +4,7 @@ import {
   IsEnum, IsDateString, IsUUID, Min, Max, ValidateNested 
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { AuditStatus } from 'entities/audit.entity';
+import { DiscountReason } from 'entities/audit.entity';
 
 export class CreateAuditDto {
   @IsUUID()
@@ -27,23 +27,20 @@ export class CreateAuditDto {
   @IsOptional()
   current_discount?: number;
 
+  @IsOptional()
+  @IsEnum(DiscountReason)
+  discount_reason?: DiscountReason;
   @IsString()
   @IsOptional()
-  discount_reason?: string;
-
-  @IsBoolean()
-  @IsOptional()
-  is_national?: boolean;
-
+  discount_details?: string;
+ 
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => AuditCompetitorDto)
   competitors?: AuditCompetitorDto[];
 
-  @IsString()
-  @IsOptional()
-  notes?: string;
+
 
   @IsDateString()
   @IsOptional()
@@ -70,13 +67,12 @@ export class UpdateAuditDto {
   @IsOptional()
   current_discount?: number;
 
+  @IsOptional()
+  @IsEnum(DiscountReason)
+  discount_reason?: DiscountReason;
   @IsString()
   @IsOptional()
-  discount_reason?: string;
-
-  @IsBoolean()
-  @IsOptional()
-  is_national?: boolean;
+  discount_details?: string;
 
   @IsArray()
   @IsOptional()
@@ -84,17 +80,12 @@ export class UpdateAuditDto {
   @Type(() => AuditCompetitorDto)
   competitors?: AuditCompetitorDto[];
 
-  @IsString()
-  @IsOptional()
-  notes?: string;
 
   @IsDateString()
   @IsOptional()
   audit_date?: string;
 
-  @IsEnum(AuditStatus)
-  @IsOptional()
-  status?: AuditStatus;
+
 }
 
 export class AuditCompetitorDto {
@@ -119,11 +110,15 @@ export class AuditCompetitorDto {
   @IsBoolean()
   @IsOptional()
   is_national?: boolean;
-
   @IsString()
   @IsOptional()
-  discount_reason?: string;
-
+  origin?: string;
+  @IsOptional()
+  @IsEnum(DiscountReason)
+  discount_reason?: DiscountReason;
+  @IsString()
+  @IsOptional()
+  discount_details?: string;
   @IsDateString()
   @IsOptional()
   observed_at?: string;
@@ -158,9 +153,6 @@ export class QueryAuditsDto {
   @IsOptional()
   toDate?: string;
 
-  @IsString()
-  @IsOptional()
-  status?: AuditStatus;
 
   @IsUUID()
   @IsOptional()
@@ -174,9 +166,6 @@ export class QueryAuditsDto {
   @IsOptional()
   product_id?: string;
 
-  @IsBoolean()
-  @IsOptional()
-  is_national?: boolean;
 
   @IsUUID()
   @IsOptional()

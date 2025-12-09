@@ -2,13 +2,13 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CreateAuditDto, UpdateAuditDto } from 'dto/audit.dto';
-import { Audit, AuditStatus } from 'entities/audit.entity';
+import { Audit, DiscountReason } from 'entities/audit.entity';
 import { Branch } from 'entities/branch.entity';
 import { Product } from 'entities/products/product.entity';
 import { User } from 'entities/user.entity';
 import { Competitor } from 'entities/competitor.entity';
 import { AuditCompetitor } from 'entities/audit-competitor.entity';
-import { Repository, LessThanOrEqual, In, DataSource } from 'typeorm';
+import { Repository, LessThanOrEqual, In, DataSource, Between } from 'typeorm';
 
 @Injectable()
 export class AuditsService {
@@ -66,7 +66,7 @@ export class AuditsService {
       );
   
       // -------------------------------
-      // Create main audit
+      // Create main audit with new fields
       // -------------------------------
       const auditData: Partial<Audit> = {
         productId: dto.product_id,
@@ -76,8 +76,6 @@ export class AuditsService {
         is_available: dto.is_available,
         current_price: dto.current_price,
         current_discount: dto.current_discount || 0,
-        discount_reason: dto.discount_reason || null,
-  
         audit_date: dto.audit_date || new Date().toISOString().split('T')[0],
   
         product_name: product.name,
@@ -89,8 +87,15 @@ export class AuditsService {
         product,
         projectId: dto.projectId || promoter.project_id || branch.project?.id || null,
       };
-  
+
+      // Create audit instance
       const audit = this.repo.create(auditData);
+
+      // Set discount reason for main audit if provided
+      if (dto.discount_reason) {
+        audit.setDiscountReason(dto.discount_reason, dto.discount_details);
+      }
+  
       const savedAudit = await queryRunner.manager.save(audit);
  
       if (dto.competitors?.length > 0) {
@@ -135,12 +140,10 @@ export class AuditsService {
           historical,
         );
   
-        // 5️⃣ Save competitors
+        // 5️⃣ Save competitors with origin and discount details
         for (const comp of mergedCompetitors) {
           if (comp.is_available === undefined) {
-            throw new BadRequestException({
-              message: `Missing is_available for competitor ${comp.competitor_id}`,
-            });
+            comp.is_available = false;
           }
   
           if (comp.is_available === true && comp.price === undefined) {
@@ -148,8 +151,9 @@ export class AuditsService {
               message: `Missing price for competitor ${comp.competitor_id}`,
             });
           }
-  
-          const competitor = this.auditCompetitorRepo.create({
+         
+          // Create audit competitor
+          const auditCompetitor = this.auditCompetitorRepo.create({
             audit: savedAudit,
             audit_id: savedAudit.id,
             competitor_id: comp.competitor_id,
@@ -158,15 +162,32 @@ export class AuditsService {
             is_available: comp.is_available,
             is_national: comp.is_national,
             discount_reason: comp.discount_reason,
+            discount_details: comp.discount_details,
+            origin: comp.origin,
             observed_at: comp.observed_at
               ? new Date(comp.observed_at)
               : new Date(),
             audit_date: savedAudit.audit_date,
           });
+
+          // Set origin for competitor
+          if (comp.is_national !== undefined) {
+            auditCompetitor.setOrigin(comp.is_national, comp.origin);
+          }
+
+          // Set discount reason for competitor
+          if (comp.discount_reason) {
+            auditCompetitor.setDiscountReason(comp.discount_reason, comp.discount_details);
+          }
   
-          await queryRunner.manager.save(AuditCompetitor, competitor);
+          await queryRunner.manager.save(AuditCompetitor, auditCompetitor);
         }
       }
+  
+      // -------------------------------
+      // Calculate competitor counts
+      // -------------------------------
+      await this.loadCompetitorsForAudits([savedAudit]);
   
       // -------------------------------
       // Load full audit to return
@@ -268,7 +289,9 @@ export class AuditsService {
             discount: ac.discount,
             is_available: ac.is_available,
             is_national: ac.is_national,
+            origin: ac.origin,
             discount_reason: ac.discount_reason,
+            discount_details: ac.discount_details,
             observed_at: ac.observed_at
           });
           seenCompetitorIds.add(ac.competitor_id);
@@ -307,12 +330,19 @@ export class AuditsService {
     try {
       const audit = await this.findOne(id);
 
-      
+      // Update basic fields
       if (dto.is_available !== undefined) audit.is_available = dto.is_available;
       if (dto.current_price !== undefined) audit.current_price = dto.current_price;
       if (dto.current_discount !== undefined) audit.current_discount = dto.current_discount;
-      if (dto.discount_reason !== undefined) audit.discount_reason = dto.discount_reason;
       if (dto.audit_date !== undefined) audit.audit_date = dto.audit_date;
+
+      // Update discount reason for main audit if changed
+      if (dto.discount_reason !== undefined) {
+        audit.setDiscountReason(dto.discount_reason, dto.discount_details);
+      } else if (dto.discount_details !== undefined && audit.discount_reason === DiscountReason.OTHER) {
+        // Update details only if reason is "Other"
+        audit.discount_details = dto.discount_details;
+      }
 
       // تحديث المنافسين
       if (dto.competitors !== undefined) {
@@ -330,6 +360,7 @@ export class AuditsService {
 
           if (!competitor) continue;
 
+          // Create audit competitor
           const auditCompetitor = this.auditCompetitorRepo.create({
             audit: audit,
             audit_id: audit.id,
@@ -339,9 +370,20 @@ export class AuditsService {
             is_available: compDto.is_available !== undefined ? compDto.is_available : true,
             is_national: compDto.is_national,
             discount_reason: compDto.discount_reason,
+            discount_details: compDto.discount_details,
             observed_at: compDto.observed_at ? new Date(compDto.observed_at) : new Date(),
             audit_date: audit.audit_date,
           });
+
+          // Set origin for competitor
+          if (compDto.is_national !== undefined) {
+            auditCompetitor.setOrigin(compDto.is_national, compDto.origin);
+          }
+
+          // Set discount reason for competitor
+          if (compDto.discount_reason) {
+            auditCompetitor.setDiscountReason(compDto.discount_reason, compDto.discount_details);
+          }
 
           await queryRunner.manager.save(AuditCompetitor, auditCompetitor);
           
@@ -351,14 +393,14 @@ export class AuditsService {
           }
         }
 
-        audit.competitors_count = competitorsCount;
-        audit.available_competitors_count = availableCompetitorsCount;
+        
       }
 
-      const updatedAudit = await queryRunner.manager.save(Audit, audit);
+      // Calculate competitor counts
+      await queryRunner.manager.save(Audit, audit);
       await queryRunner.commitTransaction();
 
-      return this.findOne(updatedAudit.id);
+      return this.findOne(id);
 
     } catch (err) {
       await queryRunner.rollbackTransaction();
@@ -388,8 +430,7 @@ export class AuditsService {
     
     if (!audit) throw new NotFoundException('Audit not found');
     
-    // استدعاء دالة المساعد للحصول على المنافسين كمصفوفة
-    audit.auditCompetitors = audit.getCompetitors();
+    // Calculate competitor counts
     
     return audit;
   }
@@ -408,7 +449,9 @@ export class AuditsService {
       discount: ac.discount,
       is_available: ac.is_available,
       is_national: ac.is_national,
+      origin: ac.origin,
       discount_reason: ac.discount_reason,
+      discount_details: ac.discount_details,
       observed_at: ac.observed_at
     }));
   }
@@ -434,7 +477,9 @@ export class AuditsService {
         discount: ac.discount,
         is_available: ac.is_available,
         is_national: ac.is_national,
+        origin: ac.origin,
         discount_reason: ac.discount_reason,
+        discount_details: ac.discount_details,
         observed_at: ac.observed_at
       });
       return acc;
@@ -443,7 +488,6 @@ export class AuditsService {
     // إضافة المنافسين لكل مراجعة
     audits.forEach(audit => {
       audit.auditCompetitors = competitorsByAuditId[audit.id] || [];
-      audit.calculateCompetitorCounts();
     });
   }
 
@@ -481,7 +525,7 @@ export class AuditsService {
     const limit = filters?.limit || 10;
     const skip = (page - 1) * limit;
     
-    // بناء الاستعلام للمنتجات - مصحح
+    // بناء الاستعلام للمنتجات
     const queryBuilder = this.productRepo.createQueryBuilder('product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
@@ -557,9 +601,9 @@ export class AuditsService {
           current_price: todayAudit.current_price,
           current_discount: todayAudit.current_discount,
           discount_reason: todayAudit.discount_reason,
+          discount_details: todayAudit.discount_details,
           competitors: todayAudit.auditCompetitors || [],
-          competitors_count: todayAudit.competitors_count,
-          available_competitors_count: todayAudit.available_competitors_count,
+
           created_at: todayAudit.created_at
         } : undefined
       };
@@ -575,5 +619,78 @@ export class AuditsService {
   }
 
   // دالة إضافية للحصول على تحليل المنافسين
-  
+  async getCompetitorAnalysis(productId: string, branchId: string, days: number = 30): Promise<any> {
+    const endDate = new Date().toISOString().split('T')[0];
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    const startDateStr = startDate.toISOString().split('T')[0];
+
+    const audits = await this.repo.find({
+      where: {
+        productId,
+        branchId,
+        audit_date: Between(startDateStr, endDate)
+      },
+      relations: ['auditCompetitors', 'auditCompetitors.competitor'],
+      order: { audit_date: 'DESC' }
+    });
+
+    const analysis = {
+      total_audits: audits.length,
+      average_price: null as number | null,
+      average_discount: null as number | null,
+      competitor_trends: {} as Record<string, any>,
+      availability_rate: null as number | null
+    };
+
+    if (audits.length > 0) {
+      const prices = audits.filter(a => a.current_price !== null).map(a => a.current_price!);
+      const discounts = audits.filter(a => a.current_discount !== null).map(a => a.current_discount!);
+      
+      analysis.average_price = prices.length > 0 ? 
+        prices.reduce((sum, price) => sum + price, 0) / prices.length : null;
+      analysis.average_discount = discounts.length > 0 ? 
+        discounts.reduce((sum, discount) => sum + discount, 0) / discounts.length : null;
+      analysis.availability_rate = audits.filter(a => a.is_available).length / audits.length;
+    }
+
+    // تحليل المنافسين
+    const competitorStats = new Map<string, any>();
+    
+    audits.forEach(audit => {
+      audit.auditCompetitors?.forEach(comp => {
+        const competitorId = comp.competitor_id;
+        if (!competitorStats.has(competitorId)) {
+          competitorStats.set(competitorId, {
+            competitor: comp.competitor,
+            total_mentions: 0,
+            available_count: 0,
+            average_price: 0,
+            price_sum: 0,
+            price_count: 0
+          });
+        }
+        
+        const stats = competitorStats.get(competitorId)!;
+        stats.total_mentions++;
+        if (comp.is_available) {
+          stats.available_count++;
+        }
+        if (comp.price) {
+          stats.price_sum += comp.price;
+          stats.price_count++;
+        }
+      });
+    });
+
+    // حساب المعدلات
+    competitorStats.forEach(stats => {
+      stats.availability_rate = stats.total_mentions > 0 ? stats.available_count / stats.total_mentions : 0;
+      stats.average_price = stats.price_count > 0 ? stats.price_sum / stats.price_count : null;
+    });
+
+    analysis.competitor_trends = Object.fromEntries(competitorStats);
+
+    return analysis;
+  }
 }

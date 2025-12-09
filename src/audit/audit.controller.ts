@@ -2,7 +2,7 @@
 import { Controller, Post, Get, Patch, Delete, Param, Body, Query, ParseUUIDPipe, Req, UseGuards, Res, HttpStatus, NotFoundException } from '@nestjs/common';
 import { Response } from 'express';
 import { CreateAuditDto, QueryAuditsDto, UpdateAuditDto } from 'dto/audit.dto';
-import { Audit } from 'entities/audit.entity';
+import { Audit, DiscountReason } from 'entities/audit.entity';
 import { AuditsService } from './audit.service';
 import { AuditExportService } from './audit-export.service';
 import { CRUD } from 'common/crud.service';
@@ -18,7 +18,27 @@ export class AuditsController {
     private readonly service: AuditsService,
     private readonly exportService: AuditExportService,
   ) {}
+  @Get('discount-reasons')
+  @Permissions(EPermission.AUDIT_READ)
+  async getDiscountReasons() {
+    // Discount reasons with Arabic and English translation
+  
+    return {
+      discount_reasons: this.exportService.getTranslatedDiscountReasons()
+        };
+  }
+  
+  @Get('countries')
+  @Permissions(EPermission.AUDIT_READ)
+  async getCountries() {
+    // Countries with Arabic and English names
+    const countries = this.exportService.getTranslatedCountries();
 
+    // Remove "local"
+    const filtered = countries.filter(c => c.value !== 'local');
+  
+    return { countries: filtered };
+  }
   @Post()
   @Permissions(EPermission.AUDIT_CREATE)
   async create(@Req() req: any, @Body() dto: CreateAuditDto) {
@@ -43,6 +63,7 @@ export class AuditsController {
       promoter_id,
       product_id,
       is_national,
+
       brand_id,
       category_id,
       brand_name,

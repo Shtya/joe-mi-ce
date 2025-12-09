@@ -1,6 +1,6 @@
 // src/projects/dto/project-stats.dto.ts
 import { JourneyStatus, JourneyType } from 'entities/all_plans.entity';
-import { AuditStatus } from 'entities/audit.entity';
+
 
 export interface ProjectStatsDto {
   project: {
@@ -34,7 +34,6 @@ export interface ProjectStatsDto {
 
   audits: {
     total: number;
-    byStatus: { [key in AuditStatus]?: number };
     withImages: number;
   };
 
