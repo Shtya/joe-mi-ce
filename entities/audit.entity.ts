@@ -6,12 +6,14 @@ import { Branch } from './branch.entity';
 import { Product } from './products/product.entity';
 import { AuditCompetitor } from './audit-competitor.entity';
 
-export enum AuditStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-  SUBMITTED = 'submitted',
-  REVIEWED = 'reviewed',
+
+// Enum for discount reasons
+export enum DiscountReason {
+  NATIONAL_DAY = 'National Day',
+  FOUNDING_DAY = 'Founding Day',
+  MEGA_SALE = 'Mega Sale',
+  BLACK_FRIDAY = 'Black Friday',
+  OTHER = 'Other'
 }
 
 @Entity({ name: 'audits' })
@@ -34,8 +36,16 @@ export class Audit extends CoreEntity {
   })
   current_discount: number | null;
 
+  @Column({ 
+    type: 'enum', 
+    enum: DiscountReason, 
+    nullable: true 
+  })
+  discount_reason: DiscountReason | null;
+
   @Column({ type: 'text', nullable: true })
-  discount_reason: string | null;
+  discount_details: string | null;
+
 
 
   @ManyToOne(() => User, user => user.audits, { eager: false })
@@ -68,18 +78,12 @@ export class Audit extends CoreEntity {
   @Column({ nullable: true })
   product_category: string | null;
 
-
   @OneToMany(() => AuditCompetitor, auditCompetitor => auditCompetitor.audit, { 
     cascade: true,
     eager: false 
   })
   auditCompetitors: AuditCompetitor[];
 
-  @Column({ default: 0 })
-  competitors_count: number;
-
-  @Column({ default: 0 })
-  available_competitors_count: number;
 
   @Column({ type: 'timestamp', nullable: true })
   reviewed_at: Date | null;
@@ -90,7 +94,19 @@ export class Audit extends CoreEntity {
   @Column({ type: 'date', default: () => 'CURRENT_DATE' })
   audit_date: string;
 
+  // Method to set origin based on national status and country
+ 
 
+  // Method to set discount reason with details for "Other"
+  setDiscountReason(reason: DiscountReason, details?: string): void {
+    this.discount_reason = reason;
+    
+    if (reason === DiscountReason.OTHER && details) {
+      this.discount_details = details;
+    } else if (reason !== DiscountReason.OTHER) {
+      this.discount_details = null;
+    }
+  }
 
   // Helper method to get competitors as array
   getCompetitors(): any[] {
@@ -102,24 +118,11 @@ export class Audit extends CoreEntity {
       price: ac.price,
       discount: ac.discount,
       is_available: ac.is_available,
-  
       observed_at: ac.observed_at
     }));
   }
 
-  // Helper method to calculate counts
-  calculateCompetitorCounts(): void {
-    if (!this.auditCompetitors) {
-      this.competitors_count = 0;
-      this.available_competitors_count = 0;
-      return;
-    }
 
-    this.competitors_count = this.auditCompetitors.length;
-    this.available_competitors_count = this.auditCompetitors
-      .filter(ac => ac.is_available)
-      .length;
-  }
 }
 
 const ColumnNumericTransformer = {

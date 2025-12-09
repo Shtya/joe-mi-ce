@@ -1,7 +1,7 @@
 // entities/audit-competitor.entity.ts
 import { Entity, Column, ManyToOne, JoinColumn, Unique, Index } from 'typeorm';
 import { CoreEntity } from './core.entity';
-import { Audit } from './audit.entity';
+import { Audit, DiscountReason } from './audit.entity';
 import { Competitor } from './competitor.entity';
 
 @Entity('audit_competitors')
@@ -35,13 +35,50 @@ export class AuditCompetitor extends CoreEntity {
   @Column({ type: 'boolean', nullable: true })
   is_national: boolean | null;
 
+  @Column({ type: 'text', nullable: true })
+  origin: string | null;    
+  
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   observed_at: Date;
 
-  // You can also store audit_date for easier querying
   @Column({ type: 'date', nullable: true })
   audit_date: string;
-  @Column({ type: 'text', nullable: true })
+
+  // Use varchar instead of enum to avoid conflicts
+  @Column({ 
+    type: 'varchar', 
+    length: 50,
+    nullable: true,
+    default: null
+  })
   discount_reason: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  discount_details: string | null;
+
+  setOrigin(isNational: boolean, origin?: string): void {
+    if (isNational) {
+      this.origin = 'local';
+    } else if (origin) {
+      this.origin = origin;
+    } else {
+      this.origin = null;
+    }
+  }
+
+  setDiscountReason(reason: DiscountReason, details?: string): void {
+    this.discount_reason = reason;
+    
+    if (reason === DiscountReason.OTHER && details) {
+      this.discount_details = details;
+    } else if (reason !== DiscountReason.OTHER) {
+      this.discount_details = null;
+    }
+  }
+
+  // Helper method to get typed discount reason
+  getDiscountReason(): DiscountReason | null {
+    if (!this.discount_reason) return null;
+    return this.discount_reason as DiscountReason;
+  }
 }

@@ -46,6 +46,7 @@ export class JourneyController {
   }
   
   
+  
   @Get('plans/project/:projectId')
 @Permissions(EPermission.JOURNEY_READ)
 async getPlans(
@@ -85,6 +86,7 @@ async getPlans(
     // fromDate remains undefined, which means "from the beginning"
   }
 
+  
   return CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
     'plan',
