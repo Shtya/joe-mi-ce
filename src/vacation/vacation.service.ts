@@ -239,13 +239,43 @@ export class VacationService {
     page: number = 1,
     limit: number = 10,
     sortBy: string = 'created_at',
-    sortOrder: 'ASC' | 'DESC' = 'DESC'
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    
   ): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
     try {
       const skip = (page - 1) * limit;
       
       const [vacations, total] = await this.vacationRepo.findAndCount({
         where: whereConditions,
+        relations: ['user', 'branch', 'vacationDates'],
+        order: { [sortBy]: sortOrder },
+        skip,
+        take: limit,
+      });
+
+      const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
+      return new PaginatedResponseDto(data, total, page, limit);
+    } catch (error) {
+      throw new InternalServerErrorException('Failed to fetch vacations');
+    }
+  }
+  async getVacationsWithPaginationProject(
+    whereConditions: any = {},
+    page: number = 1,
+    limit: number = 10,
+    sortBy: string = 'created_at',
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    req:any
+  ): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
+    try {
+      const skip = (page - 1) * limit;
+      const user = await this.userRepo.findOne({ where: { id: req.user.id },relations:['project'] });
+      if (!user) {
+        throw new NotFoundException(`User with id ${req.user.id} not found`);
+      }
+
+      const [vacations, total] = await this.vacationRepo.findAndCount({
+        where: {...whereConditions, user: {project: {id:  user.project.id}} },
         relations: ['user', 'branch', 'vacationDates'],
         order: { [sortBy]: sortOrder },
         skip,

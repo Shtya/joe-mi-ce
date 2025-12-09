@@ -138,14 +138,15 @@ export class VacationController {
   // 🔹 Get all vacations (summary)
   @Get()
   @Permissions(EPermission.VACATION_READ)
-  async getAllVacations(@Query() query: VacationQueryDto) {
+  async getAllVacations(@Query() query: VacationQueryDto,@Req() req:any) {
     const transformedQuery = this.transformQueryParams(query);
-    return await this.vacationService.getVacationsWithPagination(
+    return await this.vacationService.getVacationsWithPaginationProject(
       {},
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
-      transformedQuery.sortOrder
+      transformedQuery.sortOrder,
+      req
     );
   }
 
