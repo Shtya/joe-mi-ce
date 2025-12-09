@@ -253,6 +253,14 @@ export class ExportService {
       /token/i,         // Contains "token"
       /secret/i,        // Contains "secret"
       /key$/i,          // Ends with "key"
+      /project/i  ,
+      /project\s+/i,        // "project" followed by space(s) (for "project name", "project manager")
+/^\s*project\s+/i, 
+/project_/i,          // Contains "project_"
+/_project_/i,         // Contains "_project_" (sandwiched)
+/^project_/i,         // Starts with "project_"
+/Project[A-Z]/i,
+
     ];
 
     // Fields to explicitly include even if they might match patterns above
@@ -260,7 +268,7 @@ export class ExportService {
       'name', 'title', 'description', 'price', 'cost', 'discount', 'quantity',
       'model', 'sku', 'code', 'image_url', 'logo_url', 'url', 'is_high_priority',
       'priority', 'status', 'branch', 'location', 'email', 'phone', 'address',
-      'type', 'category', 'brand', 'project', 'stock', 'amount', 'total',
+      'type', 'category', 'brand', 'stock', 'amount', 'total',
       'date', 'time', 'start_date', 'end_date', 'duration', 'notes', 'comments',
       'rating', 'score', 'percentage', 'rate', 'value', 'size', 'weight', 'dimensions'
     ];
