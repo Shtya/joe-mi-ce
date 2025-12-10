@@ -108,3 +108,73 @@ export class GetProductsByBranchDto {
   @IsNotEmpty()
   branch_id: string;
 }
+
+
+export class ImportProductRowDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsNumber()
+  price?: number;
+
+  @IsOptional()
+  @IsNumber()
+  discount?: number;
+
+  @IsOptional()
+  @IsString()
+  model?: string;
+
+  @IsOptional()
+  @IsString()
+  sku?: string;
+
+  @IsOptional()
+  @IsString()
+  image_url?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  is_high_priority?: boolean;
+
+  @IsString()
+  @IsNotEmpty()
+  category_name: string;
+
+  @IsOptional()
+  @IsString()
+  brand_name?: string;
+
+  @IsOptional()
+  @IsString()
+  origin_country?: string;
+
+  @IsOptional()
+  @IsNumber()
+  quantity?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  all_branches?: boolean;
+
+  @IsOptional()
+  @IsString()
+  branches?: string; // "Branch 1, Branch 2, Branch 3"
+}
+
+export class ImportProductsDto {
+  @IsString()
+  @IsNotEmpty()
+  project_id: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ImportProductRowDto)
+  products: ImportProductRowDto[];
+}

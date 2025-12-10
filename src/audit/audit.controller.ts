@@ -1,5 +1,5 @@
 // audits.controller.ts
-import { Controller, Post, Get, Patch, Delete, Param, Body, Query, ParseUUIDPipe, Req, UseGuards, Res, HttpStatus, NotFoundException } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Delete, Param, Body, Query, ParseUUIDPipe, Req, UseGuards, Res, HttpStatus, NotFoundException, Headers } from '@nestjs/common';
 import { Response } from 'express';
 import { CreateAuditDto, QueryAuditsDto, UpdateAuditDto } from 'dto/audit.dto';
 import { Audit, DiscountReason } from 'entities/audit.entity';
@@ -20,24 +20,40 @@ export class AuditsController {
   ) {}
   @Get('discount-reasons')
   @Permissions(EPermission.AUDIT_READ)
-  async getDiscountReasons() {
-    // Discount reasons with Arabic and English translation
-  
+  async getDiscountReasons(@Headers('lang') langHeader?: string) {
+    const allReasons = this.exportService.getTranslatedDiscountReasons();
+    
+    // Default to English if no header
+    const lang = (langHeader || 'en').toLowerCase();
+    const useArabic = lang === 'ar';
+    
+    const filteredReasons = allReasons.map(reason => ({
+      value: reason.value,
+      label: useArabic ? reason.label_ar : reason.label_en
+    }));
+    
     return {
-      discount_reasons: this.exportService.getTranslatedDiscountReasons()
-        };
+      discount_reasons: filteredReasons
+    };
   }
-  
+
   @Get('countries')
   @Permissions(EPermission.AUDIT_READ)
-  async getCountries() {
-    // Countries with Arabic and English names
-    const countries = this.exportService.getTranslatedCountries();
-
-    // Remove "local"
-    const filtered = countries.filter(c => c.value !== 'local');
+  async getCountries(@Headers('lang') langHeader: string) {
+    const allCountries = this.exportService.getTranslatedCountries();
+    
+    // Default to English if no header
+    const lang = (langHeader || 'en').toLowerCase();
+    const useArabic = lang === 'ar';
+    
+    const filteredCountries = allCountries
+      .filter(c => c.value !== 'local')
+      .map(country => ({
+        value: country.value,
+        label: useArabic ? country.label_ar : country.label_en
+      }));
   
-    return { countries: filtered };
+    return { countries: filteredCountries };
   }
   @Post()
   @Permissions(EPermission.AUDIT_CREATE)

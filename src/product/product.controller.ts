@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query, ParseUUIDPipe } from '@nestjs/common';
-import { CreateProductDto, GetProductsByBranchDto, UpdateProductDto } from 'dto/product.dto';
+import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query, ParseUUIDPipe, Res, HttpStatus, UseInterceptors, BadRequestException, UploadedFile, Req } from '@nestjs/common';
+import { Response } from 'express';
+import * as fs from 'fs';
+import { CreateProductDto, GetProductsByBranchDto, ImportProductsDto, UpdateProductDto } from 'dto/product.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { CRUD } from 'common/crud.service';
 import { PaginationQueryDto } from 'dto/pagination.dto';
@@ -7,7 +9,11 @@ import { ProductService } from 'src/product/product.service';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { ProductFilterQueryDto } from 'dto/product-filters.dto';
-
+import { FileInterceptor } from '@nestjs/platform-express';
+import { multerOptions } from 'common/multer.config';
+import { parse } from 'papaparse';
+import * as ExcelJS from 'exceljs';
+  
 @UseGuards(AuthGuard)
 @Controller('products')
 export class ProductController {
@@ -18,6 +24,138 @@ export class ProductController {
   create(@Body() createProductDto: CreateProductDto) {
     return this.productService.create(createProductDto);
   }
+  @Get('import/template')
+  @Permissions(EPermission.PRODUCT_CREATE)
+  async downloadTemplate(
+    @Req() req: any,
+    @Res() res: Response
+  ) {
+    try {
+      const user = await this.productService.userRepository.findOne({where:{id:req.user.id}, relations:['project']});
+      const projectId = user.project.id
+      const buffer = await this.productService.generateImportTemplate(projectId); 
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=product-import-template-${projectId}.csv`);
+      res.send(buffer);
+    } catch (error) {
+      res.status(HttpStatus.BAD_REQUEST).json({
+        message: error.message
+      });
+    }
+  }
+
+  /**
+   * Import products from file
+   */
+  @Post('import')
+  @Permissions(EPermission.PRODUCT_CREATE)
+ @UseInterceptors(FileInterceptor('file', multerOptions))
+  async importProducts(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+
+  ) {
+    const user = await this.productService.userRepository.findOne({where:{id:req.user.id}, relations:['project']});
+
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const filePath = file.path;
+    let products: any[] = [];
+
+    try {
+      // Parse file based on type
+      if (file.mimetype.includes('csv')) {
+        // Parse CSV
+        const csvContent = fs.readFileSync(filePath, 'utf-8');
+        const result = parse(csvContent, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (header) => header.trim().toLowerCase().replace(/\s+/g, '_'),
+          transform: (value) => value?.toString().trim() || ''
+        });
+        
+        products = result.data.filter(row => row.name); // Filter out empty rows
+      } else {
+        // Parse Excel
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const worksheet = workbook.getWorksheet(1);
+        
+        if (!worksheet) {
+          throw new BadRequestException('Excel file has no data');
+        }
+
+        const headers: string[] = [];
+        worksheet.getRow(1).eachCell((cell, colNumber) => {
+          headers[colNumber - 1] = cell.value?.toString().trim().toLowerCase().replace(/\s+/g, '_') || '';
+        });
+
+        for (let i = 2; i <= worksheet.rowCount; i++) {
+          const row = worksheet.getRow(i);
+          const product: any = {};
+          let hasData = false;
+          
+          headers.forEach((header, index) => {
+            const cellValue = row.getCell(index + 1).value;
+            if (cellValue !== null && cellValue !== undefined) {
+              product[header] = cellValue.toString().trim();
+              hasData = true;
+            }
+          });
+          
+          if (hasData && product.name) {
+            products.push(product);
+          }
+        }
+      }
+
+      // Clean up temp file
+      fs.unlinkSync(filePath);
+
+      // Prepare import data
+      const importDto: ImportProductsDto = {
+        project_id: user.project.id,
+        products: products.map(row => {
+          // Map column names (flexible mapping)
+          const mapColumn = (possibleNames: string[], defaultValue: any = undefined) => {
+            for (const name of possibleNames) {
+              if (row[name] !== undefined) return row[name];
+            }
+            return defaultValue;
+          };
+
+          return {
+            name: mapColumn(['name', 'product_name', 'product']),
+            description: mapColumn(['description', 'desc']),
+            price: parseFloat(mapColumn(['price', 'price_amount']) || '0'),
+            discount: parseFloat(mapColumn(['discount', 'discount_percent', 'discount_%']) || '0'),
+            model: mapColumn(['model', 'model_number']),
+            sku: mapColumn(['sku', 'product_code']),
+            image_url: mapColumn(['image_url', 'image', 'image_link']),
+            is_high_priority: ['true', '1', 'yes'].includes((mapColumn(['is_high_priority', 'high_priority', 'priority']) || '').toLowerCase()),
+            category_name: mapColumn(['category_name', 'category', 'product_category']),
+            brand_name: mapColumn(['brand_name', 'brand', 'manufacturer']),
+            origin_country: mapColumn(['origin_country', 'country', 'made_in']),
+            quantity: parseInt(mapColumn(['quantity', 'stock', 'stock_quantity']) || '0'),
+            all_branches: ['true', '1', 'yes'].includes((mapColumn(['all_branches', 'all_branch', 'allbranches']) || '').toLowerCase()),
+            branches: mapColumn(['branches', 'branch_names', 'branch'])
+          };
+        }).filter(product => product.name && product.category_name) // Must have name and category
+      };
+
+      // Import products
+      return await this.productService.importProducts(importDto);
+    } catch (error) {
+      // Clean up temp file on error
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      throw error;
+    }
+  }
+
   @Get()
   @Permissions(EPermission.PRODUCT_READ)
   findAll(@Query() q: any) {

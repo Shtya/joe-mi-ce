@@ -41,11 +41,11 @@ export class CheckInOutDto {
 
   @IsOptional()
   @IsDateString()
-  checkInTime?: Date;
+  checkInTime?: string;
 
   @IsOptional()
   @IsDateString()
-  checkOutTime?: Date;
+  checkOutTime?: string;
 
   @IsString()
   geo: string; 
