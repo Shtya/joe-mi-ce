@@ -12,7 +12,7 @@ import { AnyFilesInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/
 import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.config';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
-
+import { Raw } from 'typeorm';
 @UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
@@ -120,46 +120,65 @@ async getPlans(
     return this.journeyService.createUnplannedJourney(dto, req.user);
   }
 
-  // ===== Journeys listing (for dashboard) =====
+
+
+
+
   @Get('project/:projectId')
   @Permissions(EPermission.JOURNEY_READ)
-  async getJourneys(@Param('projectId') projectId: string, @Query('') query: any, @Query('page') page: number = 1, @Query('limit') limit: number = 10, @Query('userId') userId?: string, @Query('branchId') branchId?: string, @Query('shiftId') shiftId?: string, @Query('type') type?: JourneyType, @Query('status') status?: JourneyStatus, @Query('date') date?: string, @Query('search') search?: string) {
+  async getJourneys(
+    @Param('projectId') projectId: string,
+    @Query('') query: any,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
+    @Query('userId') userId?: string,
+    @Query('branchId') branchId?: string,
+    @Query('shiftId') shiftId?: string,
+    @Query('type') type?: JourneyType,
+    @Query('status') status?: JourneyStatus,
+    @Query('date') _date?: string,
+    @Query('search') search?: string,
+  ) {
     const filters: any = {
       projectId,
       ...query.filters,
     };
-
-    if (userId) {
-      filters.user = { id: userId }; // → journey_user.id = :userId
-    }
-    if (branchId) {
-      filters.branch = { id: branchId }; // → journey_branch.id = :branchId
-    }
-    if (shiftId) {
-      filters.shift = { id: shiftId }; // → journey_shift.id = :shiftId
-    }
-    if (type) {
-      filters.type = type; // enum filter
-    }
-    if (status) {
-      filters.status = status; // enum filter
-    }
-    if (date) {
-      filters.date = date; // exact date
-    }
-
+  
+    if (userId) filters.user = { id: userId };
+    if (branchId) filters.branch = { id: branchId };
+    if (shiftId) filters.shift = { id: shiftId };
+    if (type) filters.type = type;
+    if (status) filters.status = status;
+  
+    // ⭐ DO NOT USE journey.date — use simple key "date"
+    filters.date = Raw(alias => `${alias} <= :today`, {
+      today: new Date(),
+    });
     return CRUD.findAllRelation(
       this.journeyService.journeyRepo,
-      'journey', // root alias
-      search, // optional search (currently no searchFields, so can be undefined)
+      'journey',
+      search,
       page,
       limit,
-      'date', // sortBy
+      'date',
       'DESC',
       ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
-      undefined, // searchFields
-      filters,
+      undefined,
+      {
+        projectId,
+        ...query.filters,
+        ...(userId ? { user: { id: userId } } : {}),
+        ...(branchId ? { branch: { id: branchId } } : {}),
+        ...(shiftId ? { shift: { id: shiftId } } : {}),
+        ...(type ? { type } : {}),
+        ...(status ? { status } : {}),
+      },
+      // NEW: extra where logic
+      qb => {
+        qb.andWhere('journey.date <= :today', { today: new Date() });
+      }
     );
+    
   }
 
   @Get('supervisor/checkins')

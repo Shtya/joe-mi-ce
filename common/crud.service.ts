@@ -510,7 +510,7 @@ if (search && searchFields?.length) {
     };
   }
 
-  static async findAllRelation<T>(repository: Repository<T>, entityName: string, search?: string, page: any = 1, limit: any = 10, sortBy?: string, sortOrder: 'ASC' | 'DESC' = 'DESC', relations?: string[], searchFields?: string[], filters?: Record<string, any>): Promise<CustomPaginatedResponse<T>> {
+  static async findAllRelation<T>(repository: Repository<T>, entityName: string, search?: string, page: any = 1, limit: any = 10, sortBy?: string, sortOrder: 'ASC' | 'DESC' = 'DESC', relations?: string[], searchFields?: string[], filters?: Record<string, any>, extraWhere?: (qb: SelectQueryBuilder<T>) => void ): Promise<CustomPaginatedResponse<T>> {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
@@ -518,13 +518,16 @@ if (search && searchFields?.length) {
       throw new BadRequestException('Pagination parameters must be valid numbers greater than 0.');
     }
 
+    
     if (!['ASC', 'DESC'].includes(sortOrder)) {
       throw new BadRequestException("Sort order must be either 'ASC' or 'DESC'.");
     }
 
     const skip = (pageNumber - 1) * limitNumber;
     const query = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
-
+    if (extraWhere) {
+      extraWhere(query);
+    }
     function flatten(obj: any, prefix = ''): Record<string, any> {
       let result: Record<string, any> = {};
       Object.entries(obj).forEach(([key, value]) => {
@@ -544,12 +547,22 @@ if (search && searchFields?.length) {
       Object.entries(flatFilters).forEach(([flatKey, value]) => {
         if (value === null || value === undefined || value === '') return;
 
+        // ❗ Block internal or unsafe parameter keys
+        const forbidden = ['getsql', 'getquery', 'constructor', 'tostring', 'entity'];
+        if (forbidden.some(f => flatKey.toLowerCase().includes(f))) {
+          return; // skip dangerous keys
+        }
+      
         // 🔹 Special date filters on created_at (date only)
         // filters[start_date]  => DATE(created_at) >= start_date
         // filters[end_date]    => DATE(created_at) <= end_date
         // filters[created_at]  => DATE(created_at) = created_at (same day)
-        const paramKey = flatKey.replace(/\./g, '_');
-
+        const paramKey = flatKey
+        .replace(/\./g, '_')      // replace dots
+        .replace(/\[/g, '_')      // replace [
+        .replace(/\]/g, '_')      // replace ]
+        .replace(/[^a-zA-Z0-9_]/g, ''); // remove anything invalid
+      
         if (flatKey === 'start_date') {
           query.andWhere(`DATE(${entityName}.created_at) >= :${paramKey}`, {
             [paramKey]: value, // expect 'YYYY-MM-DD'
