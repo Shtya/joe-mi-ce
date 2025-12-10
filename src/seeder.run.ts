@@ -482,6 +482,15 @@ async function runSeeder() {
     // await seedUsers(dataSource);
 
     // await seedPermissions(dataSource);
+    await seedPermissions(dataSource);
+    await seedRoles(dataSource);
+    await seedUsers(dataSource);
+
+    // Optional
+    await seedCountries(dataSource);
+    await seedRegions(dataSource);
+    await seedCities(dataSource);
+    await seedChains(dataSource);
 		await seedSuperAdminRole(dataSource);
 
     // await seedCountries(dataSource);
