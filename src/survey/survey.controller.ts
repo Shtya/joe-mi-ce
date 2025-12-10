@@ -58,7 +58,8 @@ export class SurveyController {
   @Get(':id')
   @Permissions(EPermission.SURVEY_READ)
   findOne(@Param('id') id: string) {
-    return CRUD.findOne(this.surveyService.surveyRepo, 'survey', id, ['questions']);
+    return CRUD.findOne(this.surveyService.surveyRepo, 'survey', id, ['questions','questions.answers','feedbacks.user',
+      'feedbacks.branch']);
   }
 
   // 🔹 Update survey
