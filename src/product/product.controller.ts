@@ -69,14 +69,14 @@ export class ProductController {
       if (file.mimetype.includes('csv')) {
         // Parse CSV
         const csvContent = fs.readFileSync(filePath, 'utf-8');
-        const result = parse(csvContent, {
+        const result = parse<any>(csvContent, {
           header: true,
           skipEmptyLines: true,
           transformHeader: (header) => header.trim().toLowerCase().replace(/\s+/g, '_'),
           transform: (value) => value?.toString().trim() || ''
         });
         
-        products = result.data.filter(row => row.name); // Filter out empty rows
+        products = result.data.filter((row: any) => row.name); // Filter out empty rows
       } else {
         // Parse Excel
         const workbook = new ExcelJS.Workbook();

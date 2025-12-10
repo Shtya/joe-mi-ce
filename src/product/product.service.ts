@@ -12,7 +12,6 @@ import { ProductFilterQueryDto } from 'dto/product-filters.dto';
 import { CRUD } from 'common/crud.service';
 import { PaginationQueryDto } from 'dto/pagination.dto';
 import * as ExcelJS from 'exceljs';
-import { unparse } from 'papaparse';
 import { User } from 'entities/user.entity';
 
 @Injectable()
