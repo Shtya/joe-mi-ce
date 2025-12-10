@@ -1,6 +1,7 @@
 import { Entity, Column, OneToMany, ManyToOne, JoinColumn } from 'typeorm';
 import { CoreEntity } from './core.entity';
 import { User } from './user.entity';
+import { SurveyFeedback, SurveyFeedbackAnswer } from './survey-feedback.entity';
 
 export enum SurveyQuestionType {
   TEXT = 'text',
@@ -18,7 +19,8 @@ export class Survey extends CoreEntity {
 
   @Column({ default: 'active' })
   status: 'active' | 'inactive';
-
+  @OneToMany(() => SurveyFeedback, feedback => feedback.survey, { cascade: true })
+  feedbacks: SurveyFeedback[];
   @OneToMany(() => SurveyQuestion, q => q.survey, { cascade: true, eager: true })
   questions: SurveyQuestion[];
 
@@ -43,4 +45,12 @@ export class SurveyQuestion extends CoreEntity {
 
   @ManyToOne(() => Survey, survey => survey.questions)
   survey: Survey;
+
+  @OneToMany(
+    () => SurveyFeedbackAnswer,
+    answer => answer.question,
+    { cascade: false }
+  )
+  answers: SurveyFeedbackAnswer[];
+
 }
