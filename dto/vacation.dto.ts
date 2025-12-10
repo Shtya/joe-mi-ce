@@ -176,7 +176,7 @@ export class VacationSummaryResponseDto {
   constructor(vacation: any) {
     this.id = vacation.id;
     this.userId = vacation.user?.id;
-    this.userName = `${vacation.user?.first_name || ''} ${vacation.user?.last_name || ''}`.trim();
+    this.userName = `${vacation.user?.username}`
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
     this.reason = vacation.reason;

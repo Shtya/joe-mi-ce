@@ -48,115 +48,48 @@ export class JourneyService {
       this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
     ]);
   
-    if (!user) throw new NotFoundException('User not found for given userId');
-    if (!branch) throw new NotFoundException('Branch not found for given branchId');
-    if (!shift) throw new NotFoundException('Shift not found for given shiftId');
+    if (!user) throw new NotFoundException('User not found');
+    if (!branch) throw new NotFoundException('Branch not found');
+    if (!shift) throw new NotFoundException('Shift not found');
   
     if (!branch.project) {
       throw new BadRequestException('Branch has no project assigned');
     }
-    const fromDate =  dayjs().format('YYYY-MM-DD');
-    const toDate =  '9999-12-31';
-
-    const existingPlans = await this.journeyPlanRepo.find({
+  
+    // ❗ Check if same plan already exists
+    const existing = await this.journeyPlanRepo.find({
       where: {
         user: { id: dto.userId },
         branch: { id: dto.branchId },
         shift: { id: dto.shiftId },
-      
-        fromDate: LessThanOrEqual(toDate),
-        toDate: MoreThanOrEqual(fromDate),
       },
     });
-   
-    for (const plan of existingPlans) {
-      const overlapDays = plan.days.filter(d => dto.days.includes(d));
-      if (overlapDays.length > 0) {
+  
+    for (const plan of existing) {
+      const overlap = plan.days.filter(d => dto.days.includes(d));
+      if (overlap.length > 0) {
         throw new ConflictException({
-          message: 'Conflict with existing plan days',
-          conflict: {
-            fromDate: plan.fromDate,
-            toDate: plan.toDate,
-            overlappingDays: overlapDays,
-          },
+          message: "Conflict with existing plan days",
+          overlappingDays: overlap
         });
       }
     }
+  
     const newPlan = this.journeyPlanRepo.create({
       user,
       branch,
       shift,
       projectId: branch.project.id,
-      fromDate,
-      toDate,
       days: dto.days,
       createdBy: user,
     });
   
     const savedPlan = await this.journeyPlanRepo.save(newPlan);
   
-    // ✅ Create journey records for each day in the plan range
-    await this.createJourneysFromPlan(savedPlan);
-  
     return savedPlan;
   }
-  private async createJourneysFromPlan(plan: JourneyPlan) {
-    const start = dayjs(plan.fromDate);
-    const end = dayjs(plan.toDate);
   
-    const totalDays = [];
-    const planDaysUpper = new Set(plan.days.map(d => d.toUpperCase()));
-  
-    // Build list of valid dates
-    for (let d = start; d.isBefore(end) || d.isSame(end); d = d.add(1, 'day')) {
-      const dayStr = d.format('YYYY-MM-DD');
-      const dayName = d.format('dddd').toUpperCase();
-  
-      if (planDaysUpper.has(dayName)) {
-        totalDays.push(dayStr);
-      }
-    }
-  
-    if (!totalDays.length) return;
-  
-    // 🔍 Query all existing journeys for these dates
-    const existingJourneys = await this.journeyRepo.find({
-      where: {
-        user: { id: plan.user.id },
-        date: In(totalDays),
-      },
-    });
-  
-    const existingDates = new Set(existingJourneys.map(j => j.date));
-  
-    // Prepare new journey objects
-    const journeysToCreate = totalDays
-      .filter(date => !existingDates.has(date))
-      .map(date => ({
-        user: plan.user,
-        branch: plan.branch,
-        shift: plan.shift,
-        date,
-        type: JourneyType.PLANNED,
-        status: JourneyStatus.ABSENT,
-        projectId: plan.projectId,
-        journeyPlan: plan,
-        createdBy: plan.createdBy,
-      }));
-  
-    // Bulk insert
-    if (journeysToCreate.length > 0) {
-      const entities = this.journeyRepo.create(journeysToCreate);
-      await this.journeyRepo.save(entities);
-    }
-  
-    // Link existing journeys to plan (if missing)
-    const toUpdate = existingJourneys.filter(j => !j.journeyPlan);
-    if (toUpdate.length > 0) {
-      for (const j of toUpdate) j.journeyPlan = plan;
-      await this.journeyRepo.save(toUpdate);
-    }
-  }
+ 
   
   // ===== الرحلات الطارئة =====
   async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
@@ -374,29 +307,33 @@ export class JourneyService {
   }
 
   // ===== الكرون جوب =====
-  async createJourneysForTomorrow(): Promise<{
-    createdCount: number;
-    date: string;
-  }> {
+  async createJourneysForTomorrow() {
     const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
-    const dayName = dayjs(tomorrow).format('dddd').toLowerCase();
-
-    const plans = await this.journeyPlanRepo.createQueryBuilder('plan').leftJoinAndSelect('plan.user', 'user').leftJoinAndSelect('plan.branch', 'branch').leftJoinAndSelect('branch.project', 'project').leftJoinAndSelect('plan.shift', 'shift').where('plan.fromDate <= :tomorrow', { tomorrow }).andWhere('plan.toDate >= :tomorrow', { tomorrow }).andWhere(':dayName = ANY(plan.days)', { dayName }).getMany();
-
+    const dayName = dayjs(tomorrow).format('dddd').toUpperCase();
+  
+    // get all plans matching tomorrow's day
+    const plans = await this.journeyPlanRepo
+      .createQueryBuilder("plan")
+      .leftJoinAndSelect("plan.user", "user")
+      .leftJoinAndSelect("plan.branch", "branch")
+      .leftJoinAndSelect("branch.project", "project")
+      .leftJoinAndSelect("plan.shift", "shift")
+      .where(":dayName = ANY(plan.days)", { dayName })
+      .getMany();
+  
     let createdCount = 0;
-
+  
     for (const plan of plans) {
       const exists = await this.journeyRepo.findOne({
         where: {
           user: { id: plan.user.id },
           shift: { id: plan.shift.id },
           date: tomorrow,
-          type: JourneyType.PLANNED,
         },
       });
-
+  
       if (exists) continue;
-
+  
       const journey = this.journeyRepo.create({
         user: plan.user,
         branch: plan.branch,
@@ -407,13 +344,14 @@ export class JourneyService {
         status: JourneyStatus.ABSENT,
         journeyPlan: plan,
       });
-
+  
       await this.journeyRepo.save(journey);
       createdCount++;
     }
-
+  
     return { createdCount, date: tomorrow };
   }
+  
 
   // ===== الدوال المساعدة =====
   private isWithinGeofence(branch: Branch, geo: any): boolean {

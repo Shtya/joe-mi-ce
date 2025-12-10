@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { CreateProductDto, StockDto, UpdateProductDto } from 'dto/product.dto';
+import { CreateProductDto, ImportProductRowDto, ImportProductsDto, StockDto, UpdateProductDto } from 'dto/product.dto';
 import { Branch } from 'entities/branch.entity';
 import { Brand } from 'entities/products/brand.entity';
 import { Category } from 'entities/products/category.entity';
@@ -11,12 +11,17 @@ import { Brackets, ILike, Repository } from 'typeorm';
 import { ProductFilterQueryDto } from 'dto/product-filters.dto';
 import { CRUD } from 'common/crud.service';
 import { PaginationQueryDto } from 'dto/pagination.dto';
+import * as ExcelJS from 'exceljs';
+import { unparse } from 'papaparse';
+import { User } from 'entities/user.entity';
 
 @Injectable()
 export class ProductService {
   constructor(
     @InjectRepository(Product)
     public productRepository: Repository<Product>,
+    @InjectRepository(User)
+    public userRepository: Repository<User>,
     @InjectRepository(Project)
     public projectRepository: Repository<Project>,
     @InjectRepository(Brand)
@@ -238,4 +243,366 @@ export class ProductService {
       };
     }
   }
+
+  async generateImportTemplate(projectId: string): Promise<Buffer> {
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId },
+      relations: ['branches'],
+    });
+  
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+  
+    const availableBranches = project.branches?.map(b => b.name) || [];
+    const branchExample = availableBranches.length > 0
+      ? availableBranches.slice(0, 3).join(', ')
+      : 'Main Branch, Branch 2, Branch 3';
+  
+    const sampleProducts = [
+      {
+        name: 'iPhone 15 Pro',
+        description: 'Latest iPhone model',
+        price: 999.99,
+        discount: 0,
+        model: 'IP15P-256',
+        sku: 'APP-IP15P-256',
+        image_url: 'https://example.com/iphone.jpg',
+        is_high_priority: 'true',
+        category_name: 'Smartphones',
+        brand_name: 'Apple',
+        quantity: 100,
+        all_branches: 'true',
+        branches: ''
+      },
+      {
+        name: 'Galaxy S24',
+        description: 'Samsung flagship phone',
+        price: 899.99,
+        discount: 10,
+        model: 'GS24-256',
+        sku: 'SAM-GS24-256',
+        image_url: 'https://example.com/galaxy.jpg',
+        is_high_priority: 'false',
+        category_name: 'Smartphones',
+        brand_name: 'Samsung',
+        quantity: 50,
+        all_branches: 'false',
+        branches: branchExample
+      },
+      {
+        name: 'Wireless Earbuds',
+        description: 'Noise cancelling',
+        price: 199.99,
+        discount: 15,
+        model: 'WB-NC',
+        sku: 'SON-WB-NC',
+        image_url: 'https://example.com/earbuds.jpg',
+        is_high_priority: 'true',
+        category_name: 'Audio',
+        brand_name: 'Sony',
+        quantity: 30,
+        all_branches: 'false',
+        branches: availableBranches[0] || 'Main Branch'
+      }
+    ];
+  
+    const columns = [
+      { key: 'name', header: 'name' },
+      { key: 'description', header: 'description' },
+      { key: 'price', header: 'price' },
+      { key: 'discount', header: 'discount' },
+      { key: 'model', header: 'model' },
+      { key: 'sku', header: 'sku' },
+      { key: 'image_url', header: 'image_url' },
+      { key: 'is_high_priority', header: 'is_high_priority' },
+      { key: 'category_name', header: 'category_name' },
+      { key: 'brand_name', header: 'brand_name' },
+      { key: 'quantity', header: 'quantity' },
+      { key: 'all_branches', header: 'all_branches' },
+      { key: 'branches', header: 'branches' },
+    ];
+  
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Import Template');
+  
+    // ✅ Define columns BEFORE adding rows
+    sheet.columns = columns;
+  
+    // Insert data rows
+    sampleProducts.forEach(prod => sheet.addRow(prod));
+  
+    // Apply numeric formats (now works because columns exist)
+    sheet.getColumn('price').numFmt = '#,##0.00';
+    sheet.getColumn('discount').numFmt = '#,##0.00';
+    sheet.getColumn('quantity').numFmt = '0';
+  
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+  
+  /**
+   * Import products from CSV/Excel
+   */
+  async importProducts(dto: ImportProductsDto): Promise<{ success: number; failed: number; errors: string[] }> {
+    const project = await this.projectRepository.findOne({
+      where: { id: dto.project_id },
+      relations: ['branches']
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${dto.project_id} not found`);
+    }
+
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [] as string[]
+    };
+
+    // Process products one by one
+    for (let i = 0; i < dto.products.length; i++) {
+      try {
+        await this.processImportRow(dto.products[i], project);
+        results.success++;
+      } catch (error) {
+        results.failed++;
+        results.errors.push(`Row ${i + 1}: ${error.message}`);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Process a single import row
+   */
+  private async processImportRow(productData: ImportProductRowDto, project: Project): Promise<void> {
+    // Find or create category
+    let category = await this.categoryRepository.findOne({
+      where: {
+        name: ILike(productData.category_name),
+       
+      }
+    });
+
+    if (!category) {
+      throw new NotFoundException(`Category "${productData.category_name}" not found in this project`);
+    }
+
+    // Find or create brand (if provided)
+    let brand: Brand | undefined;
+    if (productData.brand_name) {
+      brand = await this.brandRepository.findOne({
+        where: {
+          name: ILike(productData.brand_name),
+       
+        }
+      });
+
+      if (!brand) {
+        throw new NotFoundException(`Brand "${productData.brand_name}" not found in this project`);
+      }
+    }
+
+    // Check for existing product with same name in this project
+    const existingProduct = await this.productRepository.findOne({
+      where: {
+        name: productData.name,
+        project: { id: project.id }
+      }
+    });
+
+    if (existingProduct) {
+      throw new ConflictException(`Product "${productData.name}" already exists in this project`);
+    }
+
+    // Create product
+    const product = this.productRepository.create({
+      name: productData.name,
+      description: productData.description,
+      price: productData.price,
+      discount: productData.discount || 0,
+      model: productData.model,
+      sku: productData.sku,
+      image_url: productData.image_url,
+      is_high_priority: productData.is_high_priority || false,
+      is_active: true,
+      project,
+      category,
+      brand
+    });
+
+    const savedProduct = await this.productRepository.save(product);
+
+    // Handle stock assignment
+    await this.assignStock(savedProduct, project, productData);
+  }
+
+  /**
+   * Assign stock to branches
+   */
+  private async assignStock(product: Product, project: Project, productData: ImportProductRowDto): Promise<void> {
+    const quantity = productData.quantity || 0;
+    
+    // If no quantity specified, don't create stock records
+    if (quantity <= 0) {
+      return;
+    }
+
+    const stockToInsert: Partial<Stock>[] = [];
+    const availableBranches = project.branches || [];
+
+    // Case 1: All branches
+    if (productData.all_branches) {
+      if (availableBranches.length === 0) {
+        throw new BadRequestException('Project has no branches to assign stock to');
+      }
+
+      // Add stock for all branches
+      for (const branch of availableBranches) {
+        stockToInsert.push({
+          branch,
+          product,
+          quantity
+        });
+      }
+    }
+    // Case 2: Specific branches
+    else if (productData.branches && productData.branches.trim()) {
+      // Parse branch names
+      const requestedBranchNames = productData.branches
+        .split(',')
+        .map(name => name.trim())
+        .filter(name => name.length > 0);
+
+      if (requestedBranchNames.length === 0) {
+        throw new BadRequestException('Please specify at least one branch name');
+      }
+
+      // Validate all requested branches exist
+      for (const branchName of requestedBranchNames) {
+        const branch = availableBranches.find(
+          b => b.name.toLowerCase() === branchName.toLowerCase()
+        );
+
+        if (!branch) {
+          throw new NotFoundException(
+            `Branch "${branchName}" not found. Available: ${availableBranches.map(b => b.name).join(', ')}`
+          );
+        }
+
+        stockToInsert.push({
+          branch,
+          product,
+          quantity
+        });
+      }
+    }
+    // Case 3: No branch specified (default to no stock)
+    else {
+      // Don't create stock records if no branches specified
+      return;
+    }
+
+    // Insert all stock records
+    if (stockToInsert.length > 0) {
+      await this.stockRepository.save(stockToInsert);
+    }
+  }
+
+  /**
+   * Export products to Excel
+   */
+  async exportProducts(projectId: string, filters?: any): Promise<Buffer> {
+    const queryBuilder = this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.brand', 'brand')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.stock', 'stock')
+      .leftJoinAndSelect('stock.branch', 'branch')
+      .where('product.project_id = :projectId', { projectId });
+
+    // Apply filters if provided
+    if (filters) {
+      if (filters.category_id) {
+        queryBuilder.andWhere('product.category_id = :categoryId', { 
+          categoryId: filters.category_id 
+        });
+      }
+      if (filters.brand_id) {
+        queryBuilder.andWhere('product.brand_id = :brandId', { 
+          brandId: filters.brand_id 
+        });
+      }
+      if (filters.search) {
+        queryBuilder.andWhere(
+          '(product.name ILIKE :search OR product.sku ILIKE :search OR product.model ILIKE :search)',
+          { search: `%${filters.search}%` }
+        );
+      }
+    }
+
+    const products = await queryBuilder.getMany();
+
+    // Create Excel workbook
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Products');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'ID', key: 'id', width: 36 },
+      { header: 'Name', key: 'name', width: 30 },
+      { header: 'Description', key: 'description', width: 40 },
+      { header: 'Price', key: 'price', width: 15 },
+      { header: 'Discount %', key: 'discount', width: 12 },
+      { header: 'Model', key: 'model', width: 20 },
+      { header: 'SKU', key: 'sku', width: 20 },
+      { header: 'Brand', key: 'brand', width: 20 },
+      { header: 'Category', key: 'category', width: 20 },
+      { header: 'Total Stock', key: 'total_stock', width: 15 },
+      { header: 'Active', key: 'is_active', width: 10 },
+      { header: 'High Priority', key: 'is_high_priority', width: 15 },
+      { header: 'Created At', key: 'created_at', width: 20 },
+    ];
+
+    // Style header row
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+
+    // Add data rows
+    products.forEach(product => {
+      const totalStock = product.stock?.reduce((sum, s) => sum + s.quantity, 0) || 0;
+      
+      worksheet.addRow({
+        id: product.id,
+        name: product.name,
+        description: product.description || '',
+        price: product.price,
+        discount: product.discount,
+        model: product.model || '',
+        sku: product.sku || '',
+        brand: product.brand?.name || '',
+        category: product.category?.name,
+        total_stock: totalStock,
+        is_active: product.is_active ? 'Yes' : 'No',
+        is_high_priority: product.is_high_priority ? 'Yes' : 'No',
+        created_at: product.created_at.toISOString().split('T')[0]
+      });
+    });
+
+    // Format currency cells
+    worksheet.getColumn('price').numFmt = '#,##0.00';
+
+    // Write to buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
 }

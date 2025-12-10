@@ -37,12 +37,6 @@ export class JourneyPlan extends CoreEntity {
   @Column({ type: 'uuid', nullable: true })
   projectId: string;
 
-  @Column({ type: 'date', default: () => 'CURRENT_DATE' })
-  fromDate: string;
-
-  @Column({ type: 'date', nullable: true })
-  toDate: string;
-
   @Column({ type: 'text', array: true })
   days: string[];
 }

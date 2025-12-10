@@ -126,49 +126,39 @@ export const seedRoles = async (dataSource: DataSource) => {
 export const seedUsers = async (dataSource: DataSource) => {
   const userRepository = dataSource.getRepository(User);
   const roleRepository = dataSource.getRepository(Role);
-  const adminPassword = process.env.ADMIN_PASS;
-  const hashPass = await argon.hash(adminPassword);
 
-  const role = await roleRepository.findOne({ where: { name: ERole.SUPER_ADMIN } });
-  const roleAdmin = await roleRepository.findOne({ where: { name: ERole.PROJECT_ADMIN } });
-  const roleSupervisor = await roleRepository.findOne({ where: { name: ERole.SUPERVISOR } });
-  const rolePromoter = await roleRepository.findOne({ where: { name: ERole.PROMOTER } });
+  console.log("🚀 Seeding users...");
 
-  if (!role) {
-    throw new Error(`Role ${ERole.SUPER_ADMIN} not found!`);
+  const roles = await roleRepository.find();
+  if (roles.length === 0) {
+    throw new Error("⚠️ No roles found. Seed roles first.");
   }
 
-  const users = [
-    {
-      name: 'JOE_MI_CE',
-      username: process.env.ADMIN_USERNAME,
-      password: hashPass,
-      role: role, // Assign the full role object
-    },
-    {
-      name: 'admin account',
-      username: 'admin username',
-      password: '123456',
-      role: roleAdmin, // Assign the full role object
-    },
-    {
-      name: 'supervisor',
-      username: 'supervisor username',
-      password: '123456',
-      role: roleSupervisor, // Assign the full role object
-    },
-    {
-      name: 'promoter',
-      username: 'promoter username',
-      password: '123456',
-      role: rolePromoter, // Assign the full role object
-    },
-  ];
+  await userRepository.delete({});
 
-  // Save the user with the full role object
-  await userRepository.save(users as any);
-  console.log('✅ Seeded 20 users');
+  const users = [];
+
+  for (const role of roles) {
+    // convert "super_admin" → "superadmin"
+    const username = role.name.toLowerCase().replace(/_/g, "");
+
+    const hashedPassword = await argon.hash("123456");
+
+    users.push(
+      userRepository.create({
+        name: `${role.name} User`,
+        username,
+        password: hashedPassword,
+        role
+      })
+    );
+  }
+
+  await userRepository.save(users);
+
+  console.log(`✅ Seeded ${users.length} users with simple usernames.`);
 };
+
 
 export const seedCountries = async (dataSource: DataSource) => {
   const countryRepository = dataSource.getRepository(Country);
