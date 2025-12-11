@@ -35,12 +35,10 @@ export class CreateVacationDto {
 }
 
 export class UpdateDateStatusDto {
-  @IsString()
-  @IsNotEmpty()
-  date: string;
+
 
   @IsEnum(['approved', 'rejected'])
-  status: 'approved' | 'rejected';
+  overall_status: 'approved' | 'rejected';
 
   @IsUUID()
   @IsOptional()

@@ -26,7 +26,7 @@ export class Vacation extends CoreEntity {
 
   @Column({
     type: 'enum',
-    enum: ['pending', 'partially_approved', 'approved', 'rejected'],
+    enum: ['pending',  'approved', 'rejected'],
     default: 'pending',
   })
   overall_status: string;
