@@ -72,7 +72,6 @@ export class VacationService {
         this.vacationDateRepo.create({
           vacation: savedVacation,
           date,
-          status: 'pending'
         })
       );
 
@@ -93,7 +92,7 @@ export class VacationService {
   async updateDateStatus(vacationId: string, dto: UpdateDateStatusDto) {
     try {
       const vacation = await this.vacationRepo.findOne({
-        where: { id: vacationId },
+        where: { id: vacationId, },
         relations: ['vacationDates']
       });
 
@@ -101,12 +100,7 @@ export class VacationService {
         throw new NotFoundException(`Vacation with id ${vacationId} not found`);
       }
 
-      const formattedDate = this.formatDateString(dto.date);
-      const vacationDate = vacation.vacationDates.find(vd => vd.date === formattedDate);
 
-      if (!vacationDate) {
-        throw new BadRequestException(`Date ${formattedDate} not found in vacation request`);
-      }
 
       const processedBy = dto.processedById ? 
         await this.userRepo.findOne({ where: { id: dto.processedById } }) : 
@@ -116,13 +110,11 @@ export class VacationService {
         throw new NotFoundException(`User with id ${dto.processedById} not found`);
       }
 
-      vacationDate.status = dto.status;
-      vacationDate.processedBy = processedBy;
-      vacationDate.processed_at = new Date();
-      vacationDate.rejection_reason = dto.rejectionReason;
+      vacation.overall_status = dto.overall_status;
+      vacation.processedBy = processedBy;
+    
+      vacation.rejection_reason = dto.rejectionReason;
 
-      await this.vacationDateRepo.save(vacationDate);
-      await this.calculateOverallStatus(vacationId);
 
       return this.getVacationById(vacationId);
     } catch (error) {
@@ -133,51 +125,6 @@ export class VacationService {
     }
   }
 
-  // Update multiple dates status
-  async updateMultipleDatesStatus(vacationId: string, dto: UpdateMultipleDatesStatusDto) {
-    try {
-      const vacation = await this.vacationRepo.findOne({
-        where: { id: vacationId },
-        relations: ['vacationDates']
-      });
-
-      if (!vacation) {
-        throw new NotFoundException(`Vacation with id ${vacationId} not found`);
-      }
-
-      const processedBy = dto.processedById ? 
-        await this.userRepo.findOne({ where: { id: dto.processedById } }) : 
-        null;
-
-      if (dto.processedById && !processedBy) {
-        throw new NotFoundException(`User with id ${dto.processedById} not found`);
-      }
-
-      for (const updateDto of dto.dateUpdates) {
-        const formattedDate = this.formatDateString(updateDto.date);
-        const vacationDate = vacation.vacationDates.find(vd => vd.date === formattedDate);
-
-        if (!vacationDate) {
-          throw new BadRequestException(`Date ${formattedDate} not found in vacation request`);
-        }
-
-        vacationDate.status = updateDto.status;
-        vacationDate.processedBy = processedBy;
-        vacationDate.processed_at = new Date();
-        vacationDate.rejection_reason = updateDto.rejectionReason;
-
-        await this.vacationDateRepo.save(vacationDate);
-      }
-
-      await this.calculateOverallStatus(vacationId);
-      return this.getVacationById(vacationId);
-    } catch (error) {
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to update date statuses');
-    }
-  }
 
   // Get vacation by ID - Simple response with dates
   async getVacationById(id: string) {
@@ -342,7 +289,7 @@ export class VacationService {
         .createQueryBuilder('vacationDate')
         .leftJoinAndSelect('vacationDate.vacation', 'vacation')
         .where('vacation.user_id = :userId', { userId })
-        .andWhere('vacationDate.status = :status', { status: 'approved' })
+        .andWhere('vacation.overall_status = :overall_status', { status: 'approved' })
         .andWhere('vacationDate.date BETWEEN :startDate AND :endDate', { 
           startDate: start, 
           endDate: end 
@@ -359,31 +306,7 @@ export class VacationService {
     }
   }
 
-  // Private helper methods
-  private async calculateOverallStatus(vacationId: string): Promise<void> {
-    const vacation = await this.vacationRepo.findOne({
-      where: { id: vacationId },
-      relations: ['vacationDates']
-    });
 
-    if (!vacation) return;
-
-    const totalDates = vacation.vacationDates.length;
-    const approvedCount = vacation.vacationDates.filter(vd => vd.status === 'approved').length;
-    const rejectedCount = vacation.vacationDates.filter(vd => vd.status === 'rejected').length;
-
-    if (approvedCount === totalDates) {
-      vacation.overall_status = 'approved';
-    } else if (rejectedCount === totalDates) {
-      vacation.overall_status = 'rejected';
-    } else if (approvedCount > 0 || rejectedCount > 0) {
-      vacation.overall_status = 'partially_approved';
-    } else {
-      vacation.overall_status = 'pending';
-    }
-
-    await this.vacationRepo.save(vacation);
-  }
 
   private transformAndValidateDates(dates: any): string[] {
     if (!dates) {

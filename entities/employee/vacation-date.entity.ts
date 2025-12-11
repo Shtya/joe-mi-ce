@@ -13,20 +13,6 @@ export class VacationDate extends CoreEntity {
   @Column('date')
   date: string;
 
-  @Column({
-    type: 'enum',
-    enum: ['pending', 'approved', 'rejected'],
-    default: 'pending',
-  })
-  status: string;
 
-  @ManyToOne(() => User, { nullable: true })
-  @JoinColumn({ name: 'processed_by' })
-  processedBy: User;
 
-  @Column({ type: 'timestamp', nullable: true })
-  processed_at: Date;
-
-  @Column({ type: 'text', nullable: true })
-  rejection_reason: string;
 }

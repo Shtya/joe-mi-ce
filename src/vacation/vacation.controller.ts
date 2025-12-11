@@ -75,15 +75,6 @@ export class VacationController {
     return await this.vacationService.updateDateStatus(id, dto);
   }
 
-  // 🔹 Update multiple dates status
-  @Patch(':id/dates-status')
-  @Permissions(EPermission.VACATION_UPDATE)
-  async updateMultipleDatesStatus(
-    @Param('id') id: string,
-    @Body() dto: UpdateMultipleDatesStatusDto
-  ) {
-    return await this.vacationService.updateMultipleDatesStatus(id, dto);
-  }
   @Get('for-mobile')
   @Permissions(EPermission.VACATION_READ)
   async getVacationsForMobile(
