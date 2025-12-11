@@ -329,11 +329,13 @@ export class AuthService {
       },
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,
-        expiresIn:  process.env.JWT_EXPIRE,
+        expiresIn:  process.env.JWT_EXPIRE || 
+        '2d',
       }),
       refresh_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_REFRESH_SECRET,
-        expiresIn:  process.env.JWT_EXPIRE,
+        expiresIn:  process.env.JWT_EXPIRE || 
+        '2d',
       }),
     };
   }
