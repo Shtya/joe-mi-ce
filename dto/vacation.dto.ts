@@ -15,7 +15,7 @@ import { Type } from 'class-transformer';
 
 export class CreateVacationDto {
   
-  @IsEmpty()
+  @IsUUID()
   userId: string;
 
   @IsUUID()
