@@ -20,12 +20,12 @@ export class ProjectController {
     if (req.user.role?.name !== 'super_admin') {
       throw new ForbiddenException('Only super admin can view all projects');
     }
-  
+
     return CRUD.findAll(this.projectService.projectRepo, 'project', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['branches', 'products', 'owner'], ['name', 'username','mobile'], query.filters);
   }
 
   // 🔹 Get teams of a specific project
- 
+
   @Get(':projectId/teams')
   @Permissions(EPermission.PROJECT_READ)
   async getTeamsByProject(
@@ -35,10 +35,10 @@ export class ProjectController {
   ) {
     console.log('=== DEBUG QUERY PARSING ===');
     console.log('Full query object:', JSON.stringify(query, null, 2));
-    
+
     // Parse bracket notation manually
     const parsedFilters = {};
-    
+
     Object.keys(query).forEach(key => {
       if (key.includes('[') && key.includes(']')) {
         // Parse keys like "filters[role][name]"
@@ -49,21 +49,20 @@ export class ProjectController {
         parsedFilters[key] = query[key];
       }
     });
-    
     console.log('Parsed filters:', JSON.stringify(parsedFilters, null, 2));
-    
+
     // Extract filters object
     let filters = parsedFilters['filters'] || {};
-    
+
     // Add project_id
     filters = { ...filters, project_id: projectId };
-    
+
     console.log('Final filters:', JSON.stringify(filters, null, 2));
-    
+
     // Instead of using findAllWithSearchAndFilters, use the simpler approach:
     return this.getFilteredTeams(projectId, filters, parsedFilters, query);
   }
-  
+
   private async getFilteredTeams(
     projectId: string,
     filters: any,
@@ -75,21 +74,21 @@ export class ProjectController {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
     const skip = (pageNumber - 1) * limitNumber;
-    
+
     // Create query builder
     const qb = this.projectService.userRepo.createQueryBuilder('users')
       .leftJoinAndSelect('users.role', 'role')
       .skip(skip)
       .take(limitNumber);
-    
+
     // Apply project_id filter
     qb.andWhere('users.project_id = :projectId', { projectId });
-    
+
     // Apply role.name filter if present
     if (filters.role?.id) {
       qb.andWhere('role.id = :roleName', { roleName: filters.role.id });
     }
-    
+
     // Apply search if present
     const search = parsedFilters['search'] || query.search;
     if (search) {
@@ -101,15 +100,15 @@ export class ProjectController {
         })
       );
     }
-    
+
     // Apply sorting
     const sortBy = parsedFilters['sortBy'] || query.sortBy || 'created_at';
     const sortOrder = parsedFilters['sortOrder'] || query.sortOrder || 'DESC';
     qb.orderBy(`users.${sortBy}`, sortOrder);
-    
+
     // Execute query
     const [records, total] = await qb.getManyAndCount();
-    
+
     return {
       total_records: total,
       current_page: pageNumber,
@@ -117,29 +116,29 @@ export class ProjectController {
       records,
     };
   }
-  
+
   // Helper method to parse bracket notation
   private parseBracketNotation(key: string): string[] {
     const parts = key.split('[');
     const path = [];
-    
+
     for (const part of parts) {
       const cleaned = part.replace(/\]/g, '');
       if (cleaned) {
         path.push(cleaned);
       }
     }
-    
+
     return path;
   }
-  
+
   // Helper method to set nested value
   private setNestedValue(obj: any, path: string[], value: any) {
     let current = obj;
-    
+
     for (let i = 0; i < path.length; i++) {
       const isLast = i === path.length - 1;
-      
+
       if (isLast) {
         current[path[i]] = value;
       } else {

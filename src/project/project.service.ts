@@ -67,7 +67,7 @@ export class ProjectService extends BaseService<Project> {
 
     const projects = await this.projectRepo.find({
       where: { id: userId?.project?.id },
-      relations: ['owner', 'shifts', 'branches', 'products', 'branches.journeys', 'branches.supervisor', 'branches.team', 'branches.stock'],
+      relations: ['owner'],
     });
 
     if (!projects || projects.length === 0) {
