@@ -8,6 +8,7 @@ import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { ExportService } from 'src/export/export.service';
 import { PaginationQueryDto } from 'dto/pagination.dto';
+import { LessThanOrEqual } from 'typeorm';
 
 @UseGuards(AuthGuard)
 @Controller('stock')
@@ -42,7 +43,7 @@ async getStocksByUserBranchMobile(
 @UseGuards(AuthGuard)
 async createStockMobile(
   @Req() req: any,
- 
+
   @Body() createStockDto: CreateStockDto
 ) {
   const userId = req.user.id;
@@ -219,7 +220,6 @@ async getOutOfStockByUserBranchMobile(
   ) {
     const thrNum = Number(threshold);
     const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
-
     let filters: Record<string, any> = filtersQuery && typeof filtersQuery === 'object' ? { ...filtersQuery } : {};
 
     filters = this.normalizeFilters(filters);
@@ -230,10 +230,10 @@ async getOutOfStockByUserBranchMobile(
       };
     }
 
-    if (safeThr > 0 && filters.quantity_to === undefined) {
-      filters.quantity_to = safeThr;
-    }
-
+if (safeThr >= 0 && filters.quantity_to === undefined) {
+  console.log('Applying quantity filter for out-of-stock:', safeThr);
+  filters.quantity = LessThanOrEqual(safeThr);
+}
     const list = await CRUD.findAllRelation(this.stockService.stockRepo, 'stock', search, page, limit, sortBy, sortOrder, ['product', 'product.category', 'product.brand', 'branch', 'branch.project'], undefined, filters);
 
     // 🔄 flatten for response / export

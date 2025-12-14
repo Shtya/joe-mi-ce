@@ -2,6 +2,7 @@ import { Response } from 'express';
 import * as ExcelJS from 'exceljs';
 import { Repository, Brackets, SelectQueryBuilder } from 'typeorm';
 import { BadRequestException } from '@nestjs/common';
+import { FindOperator } from 'typeorm';
 
 export interface CustomPaginatedResponse<T> {
   total_records: number;
@@ -518,7 +519,7 @@ if (search && searchFields?.length) {
       throw new BadRequestException('Pagination parameters must be valid numbers greater than 0.');
     }
 
-    
+
     if (!['ASC', 'DESC'].includes(sortOrder)) {
       throw new BadRequestException("Sort order must be either 'ASC' or 'DESC'.");
     }
@@ -528,18 +529,28 @@ if (search && searchFields?.length) {
     if (extraWhere) {
       extraWhere(query);
     }
-    function flatten(obj: any, prefix = ''): Record<string, any> {
-      let result: Record<string, any> = {};
-      Object.entries(obj).forEach(([key, value]) => {
-        const prefixedKey = prefix ? `${prefix}.${key}` : key;
-        if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-          Object.assign(result, flatten(value, prefixedKey));
-        } else {
-          result[prefixedKey] = value;
-        }
-      });
-      return result;
+
+function flatten(obj: any, prefix = ''): Record<string, any> {
+  let result: Record<string, any> = {};
+
+  Object.entries(obj).forEach(([key, value]) => {
+    const prefixedKey = prefix ? `${prefix}.${key}` : key;
+
+    // ✅ DO NOT FLATTEN TypeORM operators
+    if (value instanceof FindOperator) {
+      result[prefixedKey] = value;
+      return;
     }
+
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      Object.assign(result, flatten(value, prefixedKey));
+    } else {
+      result[prefixedKey] = value;
+    }
+  });
+
+  return result;
+}
 
     if (filters && Object.keys(filters).length > 0) {
       const flatFilters = flatten(filters);
@@ -552,7 +563,7 @@ if (search && searchFields?.length) {
         if (forbidden.some(f => flatKey.toLowerCase().includes(f))) {
           return; // skip dangerous keys
         }
-      
+
         // 🔹 Special date filters on created_at (date only)
         // filters[start_date]  => DATE(created_at) >= start_date
         // filters[end_date]    => DATE(created_at) <= end_date
@@ -562,7 +573,7 @@ if (search && searchFields?.length) {
         .replace(/\[/g, '_')      // replace [
         .replace(/\]/g, '_')      // replace ]
         .replace(/[^a-zA-Z0-9_]/g, ''); // remove anything invalid
-      
+
         if (flatKey === 'start_date') {
           query.andWhere(`DATE(${entityName}.created_at) >= :${paramKey}`, {
             [paramKey]: value, // expect 'YYYY-MM-DD'
@@ -585,6 +596,23 @@ if (search && searchFields?.length) {
           return;
         }
 
+if (value instanceof FindOperator) {
+  const paramKey = flatKey.replace(/\./g, '_');
+
+  if (value.type === 'lessThanOrEqual') {
+    query.andWhere(`${entityName}.${flatKey} <= :${paramKey}`, {
+      [paramKey]: value.value,
+    });
+    return;
+  }
+
+  if (value.type === 'moreThanOrEqual') {
+    query.andWhere(`${entityName}.${flatKey} >= :${paramKey}`, {
+      [paramKey]: value.value,
+    });
+    return;
+  }
+}
         // 🔹 Range filters: "<field>_from" / "<field>_to"
         // e.g. audit_date_from / audit_date_to
         const isFrom = flatKey.endsWith('_from');
@@ -871,35 +899,35 @@ if (search && searchFields?.length) {
     searchFields: string[] = [],
     filters?: Record<string, any>
   ): Promise<CustomPaginatedResponse<T>> {
-    
+
 
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
-    
+
     if (isNaN(pageNumber) || isNaN(limitNumber) || pageNumber < 1 || limitNumber < 1) {
       throw new BadRequestException('Pagination parameters must be valid numbers greater than 0.');
     }
-    
+
     if (!['ASC', 'DESC'].includes(sortOrder)) {
       throw new BadRequestException("Sort order must be either 'ASC' or 'DESC'.");
     }
-  
+
     const skip = (pageNumber - 1) * limitNumber;
     const qb = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
-  
+
     // Get metadata
     const meta = repository.metadata;
     const colByProp = new Map(meta.columns.map(c => [c.propertyName, c]));
     const colByDb = new Map(meta.columns.map(c => [c.databaseName, c]));
-  
+
     // Helper functions
     function resolveOwnColumnName(field: string): string | null {
-      const col = colByProp.get(field) || colByDb.get(field) || 
-                  (field === 'created_at' ? colByProp.get('createdAt') : null) || 
+      const col = colByProp.get(field) || colByDb.get(field) ||
+                  (field === 'created_at' ? colByProp.get('createdAt') : null) ||
                   (field === 'createdAt' ? colByDb.get('created_at') : null);
       return col ? col.databaseName : null;
     }
-  
+
     function flatten(obj: any, prefix = ''): Record<string, any> {
       const out: Record<string, any> = {};
       if (!obj || typeof obj !== 'object') return out;
@@ -913,17 +941,17 @@ if (search && searchFields?.length) {
       }
       return out;
     }
-  
+
     // 1. Determine all relations needed
     const relationPathsNeeded = new Set<string>();
-    
+
     // Add requested relations
     relations.forEach(rel => relationPathsNeeded.add(rel));
-    
+
     // Check filters for nested paths
     if (filters) {
       const flatFilters = flatten(filters);
-      
+
       for (const key of Object.keys(flatFilters)) {
         if (key.includes('.')) {
           const parts = key.split('.');
@@ -935,12 +963,12 @@ if (search && searchFields?.length) {
         }
       }
     }
-    
-  
+
+
     // 2. Join all required relations
     const relationsToJoin = Array.from(relationPathsNeeded);
     const aliasMap = CRUD.joinNestedRelations(qb, repository, entityName, relationsToJoin);
-  
+
     // 3. Helper to qualify field paths
     function qualifyField(fieldPath: string): string {
       if (!fieldPath.includes('.')) {
@@ -948,59 +976,59 @@ if (search && searchFields?.length) {
         const dbName = resolveOwnColumnName(fieldPath) || fieldPath;
         return `${entityName}.${dbName}`;
       }
-      
+
       // Nested field (relation.field)
       const parts = fieldPath.split('.');
       const relationPath = parts.slice(0, -1).join('.');
       const last = parts[parts.length - 1];
-      
+
       // Get alias for the relation
       const alias = aliasMap.get(relationPath);
-      
+
       if (!alias) {
-    
+
         // Try to create the alias manually
         return `${relationPath}.${last}`;
       }
-      
+
       return `${alias}.${last}`;
     }
-  
+
     // Counter for unique parameter names
     let paramCounter = 0;
-  
+
     // 4. Apply filters (including nested filters)
     if (filters && Object.keys(filters).length) {
       const flatFilters = flatten(filters);
-      
- 
+
+
       for (const [key, value] of Object.entries(flatFilters)) {
         if (value === null || value === undefined || value === '') {
-      
+
           continue;
         }
-        
-        
+
+
         // Handle special operators
         const parts = key.split('.');
         const lastPart = parts[parts.length - 1];
         const knownOps = ['like', 'ilike', 'gt', 'gte', 'lt', 'lte', 'ne', 'isnull'];
-        
+
         let fieldPath = key;
         let operator = 'eq'; // Default operator
-        
+
         if (knownOps.includes(lastPart)) {
           // Operator is specified (e.g., 'created_at.gte')
           fieldPath = parts.slice(0, -1).join('.');
           operator = lastPart;
         }
-        
+
         const qualified = qualifyField(fieldPath);
-        
+
         // Create a safe parameter name (no special characters except underscore)
         paramCounter++;
         const paramName = `param_${paramCounter}`;
-        
+
         switch (operator) {
           case 'like':
             qb.andWhere(`${qualified} LIKE :${paramName}`, { [paramName]: `%${value}%` });
@@ -1035,15 +1063,15 @@ if (search && searchFields?.length) {
             qb.andWhere(`${qualified} = :${paramName}`, { [paramName]: value });
             break;
         }
-        
+
       }
     }
-  
+
     // 5. Apply search WITHIN the filtered results
     if (search && searchFields?.length) {
-      
+
       const searchParamName = `searchParam`;
-      
+
       qb.andWhere(
         new Brackets(qb2 => {
           for (const field of searchFields) {
@@ -1059,7 +1087,7 @@ if (search && searchFields?.length) {
         }),
       ).setParameter(searchParamName, `%${search}%`);
     }
-  
+
     // 6. Apply sorting
     if (sortBy) {
       const qualified = qualifyField(sortBy);
@@ -1069,13 +1097,13 @@ if (search && searchFields?.length) {
       const dbName = resolveOwnColumnName('created_at') || 'created_at';
       qb.orderBy(`${entityName}.${dbName}`, sortOrder);
     }
-  
+
     // Debug: log the query
 
     // 7. Execute query
     const [data, total] = await qb.getManyAndCount();
-    
-    
+
+
     return {
       total_records: total,
       current_page: pageNumber,
