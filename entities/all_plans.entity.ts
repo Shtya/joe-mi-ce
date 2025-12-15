@@ -1,10 +1,10 @@
 // ===== الكيانات الأساسية =====
-import { Entity, Column, ManyToOne, JoinColumn, OneToOne, Relation } from 'typeorm';
+import { Entity, Column, ManyToOne, JoinColumn, OneToOne, Relation, OneToMany } from 'typeorm';
 import { CoreEntity } from 'entities/core.entity';
 import { User } from './user.entity';
 import { Branch } from './branch.entity';
 import { Shift } from './employee/shift.entity';
- 
+
 export enum JourneyType {
   PLANNED = 'planned',
   UNPLANNED = 'unplanned',
@@ -39,6 +39,9 @@ export class JourneyPlan extends CoreEntity {
 
   @Column({ type: 'text', array: true })
   days: string[];
+
+  @OneToMany(() => Journey, journey => journey.journeyPlan)
+  journeys: Relation<Journey[]>;
 }
 
 @Entity('journeys')
