@@ -39,14 +39,14 @@ export class JourneyController {
         dto.checkInDocument = filePath;
       }
     }
-  
+
     if (!dto.userId) dto.userId = req.user.id;
-  
+
     return this.journeyService.checkInOut(dto);
   }
-  
-  
-  
+
+
+
   @Get('plans/project/:projectId')
 @Permissions(EPermission.JOURNEY_READ)
 async getPlans(
@@ -55,8 +55,7 @@ async getPlans(
   @Query('page') page: number = 1,
   @Query('limit') limit: number = 10,
   @Query('userId') userId?: string,
-  @Query('fromDate') fromDate?: string,
-  @Query('toDate') toDate?: string,
+
   @Query('search') search?: string
 ) {
   const filters: any = {
@@ -68,32 +67,17 @@ async getPlans(
     filters.user = { id: userId };
   }
 
-  // Handle date filtering - if no dates provided, default to all data up to today
-  if (fromDate || toDate) {
-    // Use provided dates if any
-    if (fromDate) {
-      filters.fromDate = fromDate;
-    }
-    if (toDate) {
-      filters.toDate = toDate;
-    }
-  } else {
-    // No dates provided - default to all data from the beginning until today
-    // Set toDate to today
-    const today = new Date();
-    const todayString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
-    filters.toDate = todayString;
-    // fromDate remains undefined, which means "from the beginning"
-  }
+
 
   
+
   return CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
     'plan',
     search,
     page,
     limit,
-    'fromDate',
+    '',
     'DESC',
     ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
     undefined,
@@ -143,13 +127,13 @@ async getPlans(
       projectId,
       ...query.filters,
     };
-  
+
     if (userId) filters.user = { id: userId };
     if (branchId) filters.branch = { id: branchId };
     if (shiftId) filters.shift = { id: shiftId };
     if (type) filters.type = type;
     if (status) filters.status = status;
-  
+
     // ⭐ DO NOT USE journey.date — use simple key "date"
     filters.date = Raw(alias => `${alias} <= :today`, {
       today: new Date(),
@@ -178,7 +162,7 @@ async getPlans(
         qb.andWhere('journey.date <= :today', { today: new Date() });
       }
     );
-    
+
   }
 
   @Get('supervisor/checkins')
