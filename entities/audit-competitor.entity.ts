@@ -32,12 +32,10 @@ export class AuditCompetitor extends CoreEntity {
   @Column({ type: 'boolean', default: false })
   is_available: boolean;
 
-  @Column({ type: 'boolean', nullable: true })
-  is_national: boolean | null;
 
   @Column({ type: 'text', nullable: true })
-  origin: string | null;    
-  
+  origin: string | null;
+
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   observed_at: Date;
 
@@ -45,8 +43,8 @@ export class AuditCompetitor extends CoreEntity {
   audit_date: string;
 
   // Use varchar instead of enum to avoid conflicts
-  @Column({ 
-    type: 'varchar', 
+  @Column({
+    type: 'varchar',
     length: 50,
     nullable: true,
     default: null
@@ -68,7 +66,7 @@ export class AuditCompetitor extends CoreEntity {
 
   setDiscountReason(reason: DiscountReason, details?: string): void {
     this.discount_reason = reason;
-    
+
     if (reason === DiscountReason.OTHER && details) {
       this.discount_details = details;
     } else if (reason !== DiscountReason.OTHER) {

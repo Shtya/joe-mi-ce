@@ -178,7 +178,6 @@ export class ProjectStatsService {
       this.auditRepo
         .createQueryBuilder('a')
         .where('a.projectId = :projectId', { projectId })
-        .andWhere('a.image_urls IS NOT NULL AND array_length(a.image_urls, 1) > 0')
         .getCount(),
     ]);
 
@@ -256,7 +255,7 @@ export class ProjectStatsService {
     ]);
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const firstDayStr = firstDayOfMonth.toISOString().slice(0, 10);
-    
+
     const weeklySales = await this.saleRepo
       .createQueryBuilder('s')
       .select(
@@ -317,7 +316,7 @@ export class ProjectStatsService {
           totalAmount: Number(w.totalAmount),
         })),
       },
-      
+
       stock: {
         totalSkuWithStock,
         totalQuantity: totalStockQuantity,

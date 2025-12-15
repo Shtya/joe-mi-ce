@@ -22,16 +22,16 @@ export class AuditsController {
   @Permissions(EPermission.AUDIT_READ)
   async getDiscountReasons(@Headers('lang') langHeader?: string) {
     const allReasons = this.exportService.getTranslatedDiscountReasons();
-    
+
     // Default to English if no header
     const lang = (langHeader || 'en').toLowerCase();
     const useArabic = lang === 'ar';
-    
+
     const filteredReasons = allReasons.map(reason => ({
       value: reason.value,
       label: useArabic ? reason.label_ar : reason.label_en
     }));
-    
+
     return {
       discount_reasons: filteredReasons
     };
@@ -41,18 +41,18 @@ export class AuditsController {
   @Permissions(EPermission.AUDIT_READ)
   async getCountries(@Headers('lang') langHeader: string) {
     const allCountries = this.exportService.getTranslatedCountries();
-    
+
     // Default to English if no header
     const lang = (langHeader || 'en').toLowerCase();
     const useArabic = lang === 'ar';
-    
+
     const filteredCountries = allCountries
-      .filter(c => c.value !== 'local')
+      
       .map(country => ({
         value: country.value,
         label: useArabic ? country.label_ar : country.label_en
       }));
-  
+
     return { countries: filteredCountries };
   }
   @Post()
@@ -86,13 +86,13 @@ export class AuditsController {
       category_name,
       project_id,
     } = query;
-  
+
     let parsedFilters: any = {};
-    const user = await this.service.userRepo.findOne({ 
-      where: { id: req.user.id }, 
-      relations: ['role', 'project', 'branch'] 
+    const user = await this.service.userRepo.findOne({
+      where: { id: req.user.id },
+      relations: ['role', 'project', 'branch']
     });
-    
+
     if (filters) {
       if (typeof filters === 'string') {
         try {
@@ -104,11 +104,11 @@ export class AuditsController {
         parsedFilters = filters;
       }
     }
-  
+
     const mergedFilters: any = {
       ...parsedFilters,
     };
-  
+
     if (user?.project?.id && !project_id) {
       mergedFilters.projectId = user.project.id;
     }
@@ -117,8 +117,8 @@ export class AuditsController {
     }
 
     // If user has a specific project, only show audits from that project
-   
-  
+
+
     // Apply query parameter filters (only if not already set by role-based filtering)
     if (status) mergedFilters.status = status;
     if (branch_id) mergedFilters.branchId = branch_id;
@@ -126,13 +126,13 @@ export class AuditsController {
     if (product_id) mergedFilters.productId = product_id;
     if (is_national !== undefined) mergedFilters.is_national = is_national === 'true';
     if (project_id) mergedFilters.projectId = project_id;
-    
+
     // Enhanced brand and category filters
     if (brand_id) mergedFilters.brandId = brand_id;
     if (category_id) mergedFilters.categoryId = category_id;
     if (brand_name) mergedFilters.brand_name = brand_name;
     if (category_name) mergedFilters.category_name = category_name;
-  
+
     // Date range filters
     if (fromDate) {
       mergedFilters.audit_date_from = fromDate;
@@ -140,13 +140,13 @@ export class AuditsController {
     if (toDate) {
       mergedFilters.audit_date_to = toDate;
     }
-  
+
     // Include all necessary relations
     const relations = [
-      'branch', 
-      'promoter', 
-      'branch.city', 
-      'branch.city.region', 
+      'branch',
+      'promoter',
+      'branch.city',
+      'branch.city.region',
       'branch.chain',
       'branch.project',
       'product',
@@ -155,7 +155,7 @@ export class AuditsController {
       'auditCompetitors',
       'auditCompetitors.competitor',
     ];
-  
+
     // Add category filter at audit level (if audit has direct category relation)
     // Note: If you need category filtering at different levels, you might need to use query builder
     if (category_id) {
@@ -173,12 +173,12 @@ export class AuditsController {
       [], // searchFields
       mergedFilters,
     );
-  
+
     // تحميل المنافسين لكل المراجعات في النتيجة
     if (result.records && Array.isArray(result.records)) {
       await this.service.loadCompetitorsForAudits(result.records);
     }
-  
+
     return result;
   }
 
@@ -191,7 +191,7 @@ export class AuditsController {
 
   @Patch(':id')
   @Permissions(EPermission.AUDIT_UPDATE)
- 
+
   update(@Param('id', new ParseUUIDPipe()) id: string, @Body() dto: UpdateAuditDto) {
     return this.service.update(id, dto);
   }
@@ -217,16 +217,16 @@ export class AuditsController {
   ) {
     try {
       const buffer = await this.exportService.exportToExcel(query,req);
-      
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const filename = `audit-report-${timestamp}.xlsx`;
-      
+
       res.set({
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="${filename}"`,
         'Content-Length': buffer.length,
       });
-      
+
       res.end(buffer);
     } catch (error) {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
@@ -251,8 +251,8 @@ export class AuditsController {
     @Query('date') date?: string
   ) {
     const targetDate = date || new Date().toISOString().split('T')[0];
-   
-    
+
+
     const stats = await this.service.repo
       .createQueryBuilder('audit')
       .select([
@@ -262,7 +262,7 @@ export class AuditsController {
         'COUNT(DISTINCT promoterId) as unique_promoters',
         'COUNT(DISTINCT branchId) as unique_branches',
       ])
-   
+
       .andWhere('audit.audit_date = :targetDate', { targetDate })
       .getRawOne();
 
@@ -344,7 +344,7 @@ export class AuditsController {
 
   @Get('by-promoter/:promoterId')
   @Permissions(EPermission.AUDIT_READ)
-  
+
   byPromoter(@Param('promoterId', new ParseUUIDPipe()) promoterId: string, @Query() query: any) {
     return CRUD.findAll(
       this.service.repo,
@@ -366,7 +366,7 @@ export class AuditsController {
   async getTodayAudits(@Req() req: any, @Query() query: any) {
     const today = new Date().toISOString().split('T')[0];
     const promoterId = req.user.id;
-    
+
     return CRUD.findAll(
       this.service.repo,
       'audit',
@@ -383,14 +383,14 @@ export class AuditsController {
 
   @Get('promoter/:branch_id/products-status')
   @Permissions(EPermission.AUDIT_READ)
- 
+
   async getAllProductsWithAuditStatus(
     @Req() req: any,
     @Param('branch_id') branchId: string,
 
-    @Query() query: { 
-      brand?: string; 
-      category?: string; 
+    @Query() query: {
+      brand?: string;
+      category?: string;
       search?: string;
       page?: string;
       limit?: string;
@@ -403,13 +403,13 @@ export class AuditsController {
       page: query.page ? parseInt(query.page) : undefined,
       limit: query.limit ? parseInt(query.limit) : undefined
     };
-    
+
     return this.service.getAllProductsWithTodayAuditStatusPaginated(req.user.id, branchId,filters);
   }
 
   @Get('promoter/can-audit/:productId')
   @Permissions(EPermission.AUDIT_READ)
- 
+
   async canAuditProduct(
     @Req() req: any,
     @Param('productId', new ParseUUIDPipe()) productId: string,
@@ -417,7 +417,7 @@ export class AuditsController {
   ) {
     const promoterId = req.user.id;
     const today = new Date().toISOString().split('T')[0];
-    
+
     // If branch_id not provided, use promoter's default branch
     let targetBranchId = branchId;
     if (!targetBranchId) {
@@ -426,7 +426,7 @@ export class AuditsController {
         relations: ['branch']
       });
       targetBranchId = promoter?.branch?.id;
-      
+
       if (!targetBranchId) {
         return {
           can_audit: false,
@@ -447,8 +447,8 @@ export class AuditsController {
 
     return {
       can_audit: !existingAudit,
-      reason: existingAudit ? 
-        `Already audited this product today at ${existingAudit.created_at.toLocaleTimeString()}` : 
+      reason: existingAudit ?
+        `Already audited this product today at ${existingAudit.created_at.toLocaleTimeString()}` :
         'Can audit this product',
       branch_id: targetBranchId,
       product_id: productId,

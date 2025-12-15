@@ -29,7 +29,7 @@ export class AuditExportService {
     'Australia': { en: 'Australia', ar: 'أستراليا' },
     'Austria': { en: 'Austria', ar: 'النمسا' },
     'Azerbaijan': { en: 'Azerbaijan', ar: 'أذربيجان' },
-    
+
     // B
     'Bahamas': { en: 'Bahamas', ar: 'الباهاما' },
     'Bahrain': { en: 'Bahrain', ar: 'البحرين' },
@@ -48,7 +48,7 @@ export class AuditExportService {
     'Bulgaria': { en: 'Bulgaria', ar: 'بلغاريا' },
     'Burkina Faso': { en: 'Burkina Faso', ar: 'بوركينا فاسو' },
     'Burundi': { en: 'Burundi', ar: 'بوروندي' },
-    
+
     // C
     'Cabo Verde': { en: 'Cabo Verde', ar: 'الرأس الأخضر' },
     'Cambodia': { en: 'Cambodia', ar: 'كمبوديا' },
@@ -66,14 +66,14 @@ export class AuditExportService {
     'Cuba': { en: 'Cuba', ar: 'كوبا' },
     'Cyprus': { en: 'Cyprus', ar: 'قبرص' },
     'Czech Republic': { en: 'Czech Republic', ar: 'جمهورية التشيك' },
-    
+
     // D
     'Democratic Republic of the Congo': { en: 'Democratic Republic of the Congo', ar: 'جمهورية الكونغو الديمقراطية' },
     'Denmark': { en: 'Denmark', ar: 'الدنمارك' },
     'Djibouti': { en: 'Djibouti', ar: 'جيبوتي' },
     'Dominica': { en: 'Dominica', ar: 'دومينيكا' },
     'Dominican Republic': { en: 'Dominican Republic', ar: 'جمهورية الدومينيكان' },
-    
+
     // E
     'Ecuador': { en: 'Ecuador', ar: 'الإكوادور' },
     'Egypt': { en: 'Egypt', ar: 'مصر' },
@@ -83,12 +83,12 @@ export class AuditExportService {
     'Estonia': { en: 'Estonia', ar: 'إستونيا' },
     'Eswatini': { en: 'Eswatini', ar: 'إسواتيني' },
     'Ethiopia': { en: 'Ethiopia', ar: 'إثيوبيا' },
-    
+
     // F
     'Fiji': { en: 'Fiji', ar: 'فيجي' },
     'Finland': { en: 'Finland', ar: 'فنلندا' },
     'France': { en: 'France', ar: 'فرنسا' },
-    
+
     // G
     'Gabon': { en: 'Gabon', ar: 'الغابون' },
     'Gambia': { en: 'Gambia', ar: 'غامبيا' },
@@ -101,12 +101,12 @@ export class AuditExportService {
     'Guinea': { en: 'Guinea', ar: 'غينيا' },
     'Guinea-Bissau': { en: 'Guinea-Bissau', ar: 'غينيا بيساو' },
     'Guyana': { en: 'Guyana', ar: 'غيانا' },
-    
+
     // H
     'Haiti': { en: 'Haiti', ar: 'هايتي' },
     'Honduras': { en: 'Honduras', ar: 'هندوراس' },
     'Hungary': { en: 'Hungary', ar: 'المجر' },
-    
+
     // I
     'Iceland': { en: 'Iceland', ar: 'آيسلندا' },
     'India': { en: 'India', ar: 'الهند' },
@@ -116,12 +116,12 @@ export class AuditExportService {
     'Ireland': { en: 'Ireland', ar: 'أيرلندا' },
     'Israel': { en: 'Israel', ar: 'إسرائيل' },
     'Italy': { en: 'Italy', ar: 'إيطاليا' },
-    
+
     // J
     'Jamaica': { en: 'Jamaica', ar: 'جامايكا' },
     'Japan': { en: 'Japan', ar: 'اليابان' },
     'Jordan': { en: 'Jordan', ar: 'الأردن' },
-    
+
     // K
     'Kazakhstan': { en: 'Kazakhstan', ar: 'كازاخستان' },
     'Kenya': { en: 'Kenya', ar: 'كينيا' },
@@ -131,7 +131,7 @@ export class AuditExportService {
     'Kosovo': { en: 'Kosovo', ar: 'كوسوفو' },
     'Kuwait': { en: 'Kuwait', ar: 'الكويت' },
     'Kyrgyzstan': { en: 'Kyrgyzstan', ar: 'قيرغيزستان' },
-    
+
     // L
     'Laos': { en: 'Laos', ar: 'لاوس' },
     'Latvia': { en: 'Latvia', ar: 'لاتفيا' },
@@ -142,7 +142,7 @@ export class AuditExportService {
     'Liechtenstein': { en: 'Liechtenstein', ar: 'ليختنشتاين' },
     'Lithuania': { en: 'Lithuania', ar: 'ليتوانيا' },
     'Luxembourg': { en: 'Luxembourg', ar: 'لوكسمبورغ' },
-    
+
     // M
     'Madagascar': { en: 'Madagascar', ar: 'مدغشقر' },
     'Malawi': { en: 'Malawi', ar: 'مالاوي' },
@@ -162,7 +162,7 @@ export class AuditExportService {
     'Morocco': { en: 'Morocco', ar: 'المغرب' },
     'Mozambique': { en: 'Mozambique', ar: 'موزمبيق' },
     'Myanmar': { en: 'Myanmar', ar: 'ميانمار' },
-    
+
     // N
     'Namibia': { en: 'Namibia', ar: 'ناميبيا' },
     'Nauru': { en: 'Nauru', ar: 'ناورو' },
@@ -174,10 +174,10 @@ export class AuditExportService {
     'Nigeria': { en: 'Nigeria', ar: 'نيجيريا' },
     'North Macedonia': { en: 'North Macedonia', ar: 'مقدونيا الشمالية' },
     'Norway': { en: 'Norway', ar: 'النرويج' },
-    
+
     // O
     'Oman': { en: 'Oman', ar: 'عُمان' },
-    
+
     // P
     'Pakistan': { en: 'Pakistan', ar: 'باكستان' },
     'Palau': { en: 'Palau', ar: 'بالاو' },
@@ -189,15 +189,15 @@ export class AuditExportService {
     'Philippines': { en: 'Philippines', ar: 'الفلبين' },
     'Poland': { en: 'Poland', ar: 'بولندا' },
     'Portugal': { en: 'Portugal', ar: 'البرتغال' },
-    
+
     // Q
     'Qatar': { en: 'Qatar', ar: 'قطر' },
-    
+
     // R
     'Romania': { en: 'Romania', ar: 'رومانيا' },
     'Russia': { en: 'Russia', ar: 'روسيا' },
     'Rwanda': { en: 'Rwanda', ar: 'رواندا' },
-    
+
     // S
     'Saint Kitts and Nevis': { en: 'Saint Kitts and Nevis', ar: 'سانت كيتس ونيفيس' },
     'Saint Lucia': { en: 'Saint Lucia', ar: 'سانت لوسيا' },
@@ -224,7 +224,7 @@ export class AuditExportService {
     'Sweden': { en: 'Sweden', ar: 'السويد' },
     'Switzerland': { en: 'Switzerland', ar: 'سويسرا' },
     'Syria': { en: 'Syria', ar: 'سوريا' },
-    
+
     // T
     'Taiwan': { en: 'Taiwan', ar: 'تايوان' },
     'Tajikistan': { en: 'Tajikistan', ar: 'طاجيكستان' },
@@ -238,7 +238,7 @@ export class AuditExportService {
     'Turkey': { en: 'Turkey', ar: 'تركيا' },
     'Turkmenistan': { en: 'Turkmenistan', ar: 'تركمانستان' },
     'Tuvalu': { en: 'Tuvalu', ar: 'توفالو' },
-    
+
     // U
     'Uganda': { en: 'Uganda', ar: 'أوغندا' },
     'Ukraine': { en: 'Ukraine', ar: 'أوكرانيا' },
@@ -247,20 +247,20 @@ export class AuditExportService {
     'United States': { en: 'United States', ar: 'الولايات المتحدة الأمريكية' },
     'Uruguay': { en: 'Uruguay', ar: 'الأوروغواي' },
     'Uzbekistan': { en: 'Uzbekistan', ar: 'أوزبكستان' },
-    
+
     // V
     'Vanuatu': { en: 'Vanuatu', ar: 'فانواتو' },
     'Vatican City': { en: 'Vatican City', ar: 'الفاتيكان' },
     'Venezuela': { en: 'Venezuela', ar: 'فنزويلا' },
     'Vietnam': { en: 'Vietnam', ar: 'فيتنام' },
-    
+
     // Y
     'Yemen': { en: 'Yemen', ar: 'اليمن' },
-    
+
     // Z
     'Zambia': { en: 'Zambia', ar: 'زامبيا' },
     'Zimbabwe': { en: 'Zimbabwe', ar: 'زيمبابوي' },
-    
+
     // Special
     'local': { en: 'Local', ar: 'محلي' },
   };
@@ -283,7 +283,7 @@ export class AuditExportService {
 
   private translateDiscountReason(reason: DiscountReason | string | null, language: 'en' | 'ar' = 'en'): string {
     if (!reason) return '';
-    
+
     // Handle string values that might match enum
     if (typeof reason === 'string') {
       const enumKey = Object.keys(DiscountReason).find(
@@ -294,7 +294,7 @@ export class AuditExportService {
       }
       return reason;
     }
-    
+
     return this.discountReasonTranslations[reason]?.[language] || reason;
   }
 
@@ -304,11 +304,11 @@ export class AuditExportService {
       where: { id: req.user.id },
       relations: ['project'],
     });
-  
+
     if (!user?.project?.id) {
       throw new Error("User does not belong to a project");
     }
-  
+
     // --- Build Query ---
     const qb = this.auditRepo.createQueryBuilder('audit')
       .leftJoinAndSelect('audit.branch', 'branch')
@@ -321,10 +321,10 @@ export class AuditExportService {
       .leftJoinAndSelect('product.category', 'category')
       .leftJoinAndSelect('audit.auditCompetitors', 'auditCompetitors')
       .leftJoinAndSelect('auditCompetitors.competitor', 'competitor');
-  
+
     // 🔥 ALWAYS FILTER BY USER'S PROJECT
     qb.andWhere('project.id = :pid', { pid: user.project.id });
-  
+
     // Date filtering
     if (query.from_date && query.to_date) {
       qb.andWhere('audit.audit_date BETWEEN :from AND :to', {
@@ -336,7 +336,7 @@ export class AuditExportService {
     } else if (query.to_date) {
       qb.andWhere('audit.audit_date <= :to', { to: query.to_date });
     }
-  
+
     // Extra filters
     if (query.branch_id) qb.andWhere('branch.id = :branch', { branch: query.branch_id });
     if (query.promoter_id) qb.andWhere('promoter.id = :promoter', { promoter: query.promoter_id });
@@ -344,11 +344,11 @@ export class AuditExportService {
     if (query.status) qb.andWhere('audit.status = :status', { status: query.status });
     if (query.is_national !== undefined)
       qb.andWhere('audit.is_national = :nat', { nat: query.is_national });
-  
+
     if (query.origin) {
       // Handle both English and Arabic origin filtering
       const originQuery = Object.keys(this.countryTranslations).find(
-        key => this.countryTranslations[key].en === query.origin || 
+        key => this.countryTranslations[key].en === query.origin ||
                this.countryTranslations[key].ar === query.origin
       ) || query.origin;
       qb.andWhere('audit.origin = :origin', { origin: originQuery });
@@ -361,18 +361,18 @@ export class AuditExportService {
       qb.andWhere('brand.name ILIKE :bname', { bname: `%${query.brand_name}%` });
     if (query.category_name)
       qb.andWhere('category.name ILIKE :cname', { cname: `%${query.category_name}%` });
-  
+
     // Sorting
     qb.orderBy('audit.audit_date', 'DESC')
       .addOrderBy('audit.created_at', 'DESC');
-  
+
     const audits = await qb.getMany();
-  
+
     // --- Excel ---
     const workbook = new ExcelJS.Workbook();
     this.createEnglishSheet(workbook, audits);
     this.createArabicSheet(workbook, audits);
-  
+
     const uint = await workbook.xlsx.writeBuffer();
     const nodeBuffer = Buffer.from(uint);
     return nodeBuffer;
@@ -380,7 +380,7 @@ export class AuditExportService {
 
   private createEnglishSheet(workbook: ExcelJS.Workbook, audits: Audit[]): void {
     const worksheet = workbook.addWorksheet('Audit Report - English');
-  
+
     const headers = [
       'Date',
       'Auditor',
@@ -395,7 +395,7 @@ export class AuditExportService {
       'Discount %',
       'Discount Reason',
       'Discount Details',
-   
+
       'Total Competitors',
       'Available Competitors',
       ...Array.from({ length: 10 }, (_, i) => [
@@ -409,9 +409,9 @@ export class AuditExportService {
         `Comp ${i + 1} Discount Details`,
       ]).flat(),
     ];
-  
+
     const headerRow = worksheet.addRow(headers);
-  
+
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFF' } };
       cell.fill = {
@@ -421,24 +421,23 @@ export class AuditExportService {
       };
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
-  
+
     audits.forEach(audit => {
       const competitors = audit.auditCompetitors || [];
       const totalCompetitors = competitors.length;
       const availableCompetitors = competitors.filter(c => c.is_available).length;
-  
+
       const compData = [];
-  
+
       for (let i = 0; i < 10; i++) {
         const c = competitors[i];
-  
+
         if (c) {
           compData.push(
             c.competitor?.name || '',
             c.price ?? '',
             c.discount ?? '',
             c.is_available ? 'Yes' : 'No',
-            c.is_national ? 'Yes' : 'No',
             this.translateCountry(c.origin, 'en'),
             this.translateDiscountReason(c.discount_reason, 'en'),
             c.discount_details || '',
@@ -447,7 +446,7 @@ export class AuditExportService {
           compData.push('', '', '', '', '', '', '', '');
         }
       }
-  
+
       const row = [
         audit.audit_date,
         audit.promoter?.name || '',
@@ -466,10 +465,10 @@ export class AuditExportService {
         availableCompetitors,
         ...compData,
       ];
-  
+
       worksheet.addRow(row);
     });
-  
+
     worksheet.columns.forEach(column => {
       let maxLength = 12;
       column.eachCell({ includeEmpty: true }, (cell) => {
@@ -479,10 +478,10 @@ export class AuditExportService {
       column.width = maxLength + 2;
     });
   }
-  
+
   private createArabicSheet(workbook: ExcelJS.Workbook, audits: Audit[]): void {
     const worksheet = workbook.addWorksheet('تقرير المراجعة - عربي');
-  
+
     const headers = [
       'التاريخ',
       'المدقق',
@@ -497,7 +496,7 @@ export class AuditExportService {
       'نسبة الخصم',
       'سبب الخصم',
       'تفاصيل الخصم',
-   
+
       'عدد المنافسين',
       'عدد المتوفرين',
       ...Array.from({ length: 10 }, (_, i) => [
@@ -511,9 +510,9 @@ export class AuditExportService {
         `تفاصيل الخصم ${i + 1}`,
       ]).flat(),
     ];
-  
+
     const headerRow = worksheet.addRow(headers);
-  
+
     headerRow.eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFF' }, name: 'Arial' };
       cell.fill = {
@@ -523,24 +522,23 @@ export class AuditExportService {
       };
       cell.alignment = { horizontal: 'center', vertical: 'middle', readingOrder: 'rtl' };
     });
-  
+
     audits.forEach(audit => {
       const competitors = audit.auditCompetitors || [];
       const totalCompetitors = competitors.length;
       const availableCompetitors = competitors.filter(c => c.is_available).length;
-  
+
       const compData = [];
-  
+
       for (let i = 0; i < 10; i++) {
         const c = competitors[i];
-  
+
         if (c) {
           compData.push(
             c.competitor?.name || '',
             c.price ?? '',
             c.discount ?? '',
             c.is_available ? 'نعم' : 'لا',
-            c.is_national ? 'نعم' : 'لا',
             this.translateCountry(c.origin, 'ar'),
             this.translateDiscountReason(c.discount_reason, 'ar'),
             c.discount_details || '',
@@ -549,7 +547,7 @@ export class AuditExportService {
           compData.push('', '', '', '', '', '', '', '');
         }
       }
-  
+
       const row = [
         audit.audit_date,
         audit.promoter?.name || '',
@@ -568,14 +566,14 @@ export class AuditExportService {
         availableCompetitors,
         ...compData,
       ];
-  
+
       const rowObj = worksheet.addRow(row);
-  
+
       rowObj.eachCell(cell => {
         cell.alignment = { horizontal: 'right', readingOrder: 'rtl' };
       });
     });
-  
+
     worksheet.columns.forEach(column => {
       let maxLength = 12;
       column.eachCell({ includeEmpty: true }, (cell) => {
