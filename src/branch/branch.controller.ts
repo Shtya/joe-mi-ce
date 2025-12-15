@@ -33,26 +33,26 @@ export class BranchController {
     if (req.user.role?.name == ERole.SUPER_ADMIN) {
       throw new ForbiddenException('You cannot access this route');
     }
-    
-    const whereCondition = { 
-      project: { id: req.user.project_id } 
+    console.log('User Project ID:', req.user);
+    const whereCondition = {
+      project: { id: req.user.project.id }
     };
-  
+
     // Apply other filters if they exist and are for branch fields
     if (query.filters) {
       Object.assign(whereCondition, query.filters);
     }
-  
+
     return CRUD.findAll2(
-      this.branchService.branchRepo, 
-      'branch', 
-      query.search, 
-      query.page, 
-      query.limit, 
-      query.sortBy, 
-      query.sortOrder, 
-      ['city', 'chain', 'project', 'supervisor', 'team'], 
-      ['name'], 
+      this.branchService.branchRepo,
+      'branch',
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ['city', 'chain', 'project', 'supervisor', 'team'],
+      ['name'],
       whereCondition
     );
   }
