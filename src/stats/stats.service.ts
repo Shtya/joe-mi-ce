@@ -167,27 +167,21 @@ export class ProjectStatsService {
     ]);
 
     // --------- Audits ----------
-    const [auditByStatus, auditsWithImages] = await Promise.all([
-      this.auditRepo
-        .createQueryBuilder('a')
-        .select('a.status', 'status')
-        .addSelect('COUNT(*)', 'count')
-        .where('a.projectId = :projectId', { projectId })
-        .groupBy('a.status')
-        .getRawMany(),
-      this.auditRepo
-        .createQueryBuilder('a')
-        .where('a.projectId = :projectId', { projectId })
-        .getCount(),
-    ]);
+const [auditAgg, auditsWithImages] = await Promise.all([
+  this.auditRepo
+    .createQueryBuilder('a')
+    .select('COUNT(a.id)', 'count')
+    .where('a.projectId = :projectId', { projectId })
+    .getRawOne(),
 
-    const auditsByStatus: Record<string, number> = {};
-    let auditsTotal = 0;
-    auditByStatus.forEach(row => {
-      const count = Number(row.count) || 0;
-      auditsByStatus[status] = count;
-      auditsTotal += count;
-    });
+  this.auditRepo
+    .createQueryBuilder('a')
+    .where('a.projectId = :projectId', { projectId })
+    .getCount(),
+]);
+
+
+const auditsTotal = Number(auditAgg?.count) || 0;
 
     // --------- Sales ----------
     const [salesAgg, salesTodayAgg] = await Promise.all([
