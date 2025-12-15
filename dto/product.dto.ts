@@ -13,12 +13,11 @@ export class StockDto {
   quantity: number;
 
   @IsOptional()
-  @IsBoolean()
   all_branches?: boolean;
 
   // Add validation to ensure either branch_id OR all_branches is provided
   constructor() {
- 
+
     // You can add custom validation decorators if needed
   }
 }
@@ -85,7 +84,7 @@ export function ValidateStock() {
   return function (object: any, propertyName: string) {
     const validate = function (value: StockDto[]) {
       if (!value) return true;
-      
+
       for (const stock of value) {
         if (!stock.all_branches && !stock.branch_id) {
           throw new Error('Either branch_id must be provided or all_branches must be true');
@@ -96,7 +95,7 @@ export function ValidateStock() {
       }
       return true;
     };
-    
+
     // Register the validator
     // You can use class-validator's @Validate decorator with a custom class
   };
@@ -160,7 +159,6 @@ export class ImportProductRowDto {
   quantity?: number;
 
   @IsOptional()
-  @IsBoolean()
   all_branches?: boolean;
 
   @IsOptional()

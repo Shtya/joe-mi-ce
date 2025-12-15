@@ -47,15 +47,15 @@ export class JourneyService {
       }),
       this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
     ]);
-  
+
     if (!user) throw new NotFoundException('User not found');
     if (!branch) throw new NotFoundException('Branch not found');
     if (!shift) throw new NotFoundException('Shift not found');
-  
+
     if (!branch.project) {
       throw new BadRequestException('Branch has no project assigned');
     }
-  
+
     // ❗ Check if same plan already exists
     const existing = await this.journeyPlanRepo.find({
       where: {
@@ -64,7 +64,7 @@ export class JourneyService {
         shift: { id: dto.shiftId },
       },
     });
-  
+
     for (const plan of existing) {
       const overlap = plan.days.filter(d => dto.days.includes(d));
       if (overlap.length > 0) {
@@ -74,7 +74,7 @@ export class JourneyService {
         });
       }
     }
-  
+
     const newPlan = this.journeyPlanRepo.create({
       user,
       branch,
@@ -83,14 +83,14 @@ export class JourneyService {
       days: dto.days,
       createdBy: user,
     });
-  
+
     const savedPlan = await this.journeyPlanRepo.save(newPlan);
-  
+
     return savedPlan;
   }
-  
- 
-  
+
+
+
   // ===== الرحلات الطارئة =====
   async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
     const [user, branch, shift] = await Promise.all([
@@ -310,7 +310,7 @@ export class JourneyService {
   async createJourneysForTomorrow() {
     const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
     const dayName = dayjs(tomorrow).format('dddd').toUpperCase();
-  
+
     // get all plans matching tomorrow's day
     const plans = await this.journeyPlanRepo
       .createQueryBuilder("plan")
@@ -320,9 +320,9 @@ export class JourneyService {
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
       .getMany();
-  
+
     let createdCount = 0;
-  
+
     for (const plan of plans) {
       const exists = await this.journeyRepo.findOne({
         where: {
@@ -331,9 +331,9 @@ export class JourneyService {
           date: tomorrow,
         },
       });
-  
+
       if (exists) continue;
-  
+
       const journey = this.journeyRepo.create({
         user: plan.user,
         branch: plan.branch,
@@ -344,14 +344,14 @@ export class JourneyService {
         status: JourneyStatus.ABSENT,
         journeyPlan: plan,
       });
-  
+
       await this.journeyRepo.save(journey);
       createdCount++;
     }
-  
+
     return { createdCount, date: tomorrow };
   }
-  
+
 
   // ===== الدوال المساعدة =====
   private isWithinGeofence(branch: Branch, geo: any): boolean {
