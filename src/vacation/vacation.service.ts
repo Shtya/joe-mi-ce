@@ -221,7 +221,7 @@ export class VacationService {
       if (!user) {
         throw new NotFoundException(`User with id ${req.user.id} not found`);
       }
-   
+      console.log(user.project.id)
       if(!user.project.id && !user.project_id){
         throw new  BadRequestException("there are not user found")
       }
