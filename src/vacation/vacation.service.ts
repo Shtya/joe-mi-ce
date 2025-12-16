@@ -218,10 +218,10 @@ export class VacationService {
     try {
       const skip = (page - 1) * limit;
       const user = await this.userRepo.findOne({ where: { id: req.user.id },relations:['project'] });
+      console.log(user)
       if (!user) {
         throw new NotFoundException(`User with id ${req.user.id} not found`);
       }
-      console.log(user.project.id)
       if(!user.project.id && !user.project_id){
         throw new  BadRequestException("there are not user found")
       }
