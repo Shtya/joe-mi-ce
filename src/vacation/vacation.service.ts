@@ -41,13 +41,24 @@ export class VacationService {
   // Create a new vacation request
   async createVacation(dto: CreateVacationDto, imagePath: string | null = null) {
     try {
+      if(!dto.userId){
+        throw new NotFoundException("there are not user")
+      }
       const user = await this.userRepo.findOne({
-        where: { id: dto.userId }
+        where: { id: dto.userId  }, relations :['branch']
       });
       if (!user) {
         throw new NotFoundException(`User with id ${dto.userId} not found`);
       }
-
+      if(!dto.branchId){
+        if(!user.branch){
+          throw new NotFoundException('the user is without branch')
+        }
+        dto.branchId = user.branch.id
+      }
+      if(!dto.branchId){
+        throw new NotFoundException("there are not branch")
+      }
       const branch = await this.branchRepo.findOne({
         where: { id: dto.branchId }
       });
@@ -79,6 +90,7 @@ export class VacationService {
 
       return this.getVacationById(savedVacation.id);
     } catch (error) {
+      console.log(error)
       if (error instanceof NotFoundException ||
           error instanceof ConflictException ||
           error instanceof BadRequestException) {
@@ -435,7 +447,7 @@ export class VacationService {
       .leftJoinAndSelect('vacationDate.vacation', 'vacation')
       .where('vacation.user_id = :userId', { userId })
       .andWhere('vacation.overall_status IN (:...statuses)', {
-        statuses: ['pending', 'partially_approved', 'approved']
+        statuses: ['pending',  'approved']
       })
       .andWhere('vacationDate.date IN (:...dates)', { dates })
       .getMany();

@@ -1,9 +1,9 @@
 // dto/vacation.dto.ts
-import { 
-  IsString, 
-  IsEnum, 
-  IsUUID, 
-  IsOptional, 
+import {
+  IsString,
+  IsEnum,
+  IsUUID,
+  IsOptional,
   IsArray,
   IsNotEmpty,
   ValidateNested,
@@ -14,12 +14,12 @@ import { Type } from 'class-transformer';
 // ==================== REQUEST DTOs ====================
 
 export class CreateVacationDto {
-  
+  @IsOptional()
   @IsUUID()
   userId: string;
 
   @IsUUID()
-  @IsNotEmpty()
+  @IsOptional()
   branchId: string;
   @IsNotEmpty()
   @Type(() => String)
@@ -106,8 +106,8 @@ export class VacationDateWithStatusDto {
     this.date = vacationDate.date;
     this.status = vacationDate.status;
     this.processedBy = vacationDate.processedBy?.id;
-    this.processedByName = vacationDate.processedBy ? 
-      `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` : 
+    this.processedByName = vacationDate.processedBy ?
+      `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` :
       undefined;
     this.processedAt = vacationDate.processed_at;
     this.rejectionReason = vacationDate.rejection_reason;
@@ -144,8 +144,8 @@ export class VacationResponseDto {
     this.createdAt = vacation.created_at;
     this.updatedAt = vacation.updated_at;
     this.processedBy = vacation.processedBy?.id;
-    this.processedByName = vacation.processedBy ? 
-      `${vacation.processedBy.first_name} ${vacation.processedBy.last_name}` : 
+    this.processedByName = vacation.processedBy ?
+      `${vacation.processedBy.first_name} ${vacation.processedBy.last_name}` :
       undefined;
     this.rejectionReason = vacation.rejection_reason;
 
@@ -184,10 +184,10 @@ export class VacationSummaryResponseDto {
     this.updatedAt = vacation.updated_at;
 
     const vacationDates = vacation.vacationDates || [];
-    
+
     // All dates with their status
     this.dates = vacationDates.map((date: any) => new VacationDateWithStatusDto(date));
-    
+
     // Statistics
     this.totalDates = this.dates.length;
     this.approvedDates = this.dates.filter(date => date.status === 'approved').length;
@@ -203,7 +203,7 @@ export class VacationDateStatusSummaryDto {
 
   constructor(vacationDates: any[]) {
     const dates = vacationDates.map(date => new VacationDateWithStatusDto(date));
-    
+
     this.pending = dates.filter(date => date.status === 'pending');
     this.approved = dates.filter(date => date.status === 'approved');
     this.rejected = dates.filter(date => date.status === 'rejected');
@@ -227,8 +227,8 @@ export class ApprovedVacationDatesWithStatusDto {
     this.reason = vacationDate.vacation?.reason;
     this.userName = `${vacationDate.vacation?.user?.first_name || ''} ${vacationDate.vacation?.user?.last_name || ''}`.trim();
     this.branchName = vacationDate.vacation?.branch?.name;
-    this.processedByName = vacationDate.processedBy ? 
-      `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` : 
+    this.processedByName = vacationDate.processedBy ?
+      `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` :
       undefined;
     this.processedAt = vacationDate.processed_at;
   }
