@@ -58,7 +58,12 @@ export class VacationController {
       if (file) {
         imagePath = `/uploads/vacations/${file.filename}`;
       }
-      dto.userId = res.user.id;
+      if (!dto.userId){
+        dto.userId = res.user.id
+      }
+      if(!dto.branchId){
+        
+      }
       return await this.vacationService.createVacation(dto, imagePath);
     } catch (error) {
       throw new BadRequestException(`Failed to create vacation: ${error.message}`);
