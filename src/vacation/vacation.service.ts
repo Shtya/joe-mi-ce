@@ -207,39 +207,85 @@ export class VacationService {
       throw new InternalServerErrorException('Failed to fetch vacations');
     }
   }
-  async getVacationsWithPaginationProject(
-    whereConditions: any = {},
-    page: number = 1,
-    limit: number = 10,
-    sortBy: string = 'created_at',
-    sortOrder: 'ASC' | 'DESC' = 'DESC',
-    req:any
-  ): Promise<PaginatedResponseDto<any>> {
-    try {
-      const skip = (page - 1) * limit;
-      const user = await this.userRepo.findOne({ where: { id: req.user.id },relations:['project'] });
-      console.log(user)
-      if (!user) {
-        throw new NotFoundException(`User with id ${req.user.id} not found`);
-      }
-      if(!user.project.id && !user.project_id){
-        throw new  BadRequestException("there are not user found")
-      }
-      const [vacations, total] = await this.vacationRepo.findAndCount({
-        where: {...whereConditions, branch: {project: {id:  user.project.id}} },
-        relations: ['user', 'branch', 'vacationDates'],
-        order: { [sortBy]: sortOrder },
-        skip,
-        take: limit,
-      });
+ async getVacationsWithPaginationProject(
+  whereConditions: any = {},
+  page: number = 1,
+  limit: number = 10,
+  sortBy: string = 'created_at',
+  sortOrder: 'ASC' | 'DESC' = 'DESC',
+  req: any
+): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
+  try {
+    const skip = (page - 1) * limit;
 
-      const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
-      return new PaginatedResponseDto(vacations, total, page, limit);
-    } catch (error) {
-      console.log(error)
-      throw new InternalServerErrorException('Failed to fetch vacations');
+    const user = await this.userRepo.findOne({
+      where: { id: req.user.id },
+      relations: ['project', 'branch', 'branch.project'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with id ${req.user.id} not found`);
     }
+
+    // 🔑 Resolve projectId safely
+    const projectId =
+      user.project?.id ||
+      user.project_id ||
+      user.branch?.project?.id;
+
+    if (!projectId) {
+      throw new BadRequestException('User is not assigned to any project');
+    }
+
+    // 🔹 Build query
+    const query = this.vacationRepo
+      .createQueryBuilder('vacation')
+      .leftJoinAndSelect('vacation.user', 'user')
+      .leftJoinAndSelect('vacation.branch', 'branch')
+      .leftJoinAndSelect('branch.project', 'project')
+      .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
+      .where('project.id = :projectId', { projectId });
+
+    // 🔹 Apply dynamic filters
+    if (whereConditions.overall_status) {
+      query.andWhere(
+        'vacation.overall_status = :status',
+        { status: whereConditions.overall_status }
+      );
+    }
+
+    if (whereConditions.branch?.id) {
+      query.andWhere(
+        'branch.id = :branchId',
+        { branchId: whereConditions.branch.id }
+      );
+    }
+
+    if (whereConditions.user?.id) {
+      query.andWhere(
+        'user.id = :userId',
+        { userId: whereConditions.user.id }
+      );
+    }
+
+    // 🔹 Sorting & pagination
+    query
+      .orderBy(`vacation.${sortBy}`, sortOrder)
+      .skip(skip)
+      .take(limit);
+
+    const [vacations, total] = await query.getManyAndCount();
+
+    const data = vacations.map(
+      vacation => new VacationSummaryResponseDto(vacation)
+    );
+
+    return new PaginatedResponseDto(data, total, page, limit);
+  } catch (error) {
+    console.error(error);
+    throw new InternalServerErrorException('Failed to fetch vacations');
   }
+}
 
   // Get date status summary - Simple date lists
   // async getDateStatusSummary(vacationId: string): Promise<VacationDateStatusSummaryDto> {
