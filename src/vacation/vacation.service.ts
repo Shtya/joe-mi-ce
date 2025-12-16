@@ -1,15 +1,15 @@
 // services/vacation.service.ts
-import { 
-  Injectable, 
-  NotFoundException, 
-  ConflictException, 
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
   BadRequestException,
-  InternalServerErrorException 
+  InternalServerErrorException
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { 
-  CreateVacationDto, 
+import {
+  CreateVacationDto,
   UpdateDateStatusDto,
   UpdateMultipleDatesStatusDto,
   VacationResponseDto,
@@ -41,15 +41,15 @@ export class VacationService {
   // Create a new vacation request
   async createVacation(dto: CreateVacationDto, imagePath: string | null = null) {
     try {
-      const user = await this.userRepo.findOne({ 
+      const user = await this.userRepo.findOne({
         where: { id: dto.userId }
       });
       if (!user) {
         throw new NotFoundException(`User with id ${dto.userId} not found`);
       }
 
-      const branch = await this.branchRepo.findOne({ 
-        where: { id: dto.branchId } 
+      const branch = await this.branchRepo.findOne({
+        where: { id: dto.branchId }
       });
       if (!branch) {
         throw new NotFoundException(`Branch with id ${dto.branchId} not found`);
@@ -68,7 +68,7 @@ export class VacationService {
 
       const savedVacation = await this.vacationRepo.save(vacation);
 
-      const vacationDates = formattedDates.map(date => 
+      const vacationDates = formattedDates.map(date =>
         this.vacationDateRepo.create({
           vacation: savedVacation,
           date,
@@ -79,8 +79,8 @@ export class VacationService {
 
       return this.getVacationById(savedVacation.id);
     } catch (error) {
-      if (error instanceof NotFoundException || 
-          error instanceof ConflictException || 
+      if (error instanceof NotFoundException ||
+          error instanceof ConflictException ||
           error instanceof BadRequestException) {
         throw error;
       }
@@ -102,8 +102,8 @@ export class VacationService {
 
 
 
-      const processedBy = dto.processedById ? 
-        await this.userRepo.findOne({ where: { id: dto.processedById } }) : 
+      const processedBy = dto.processedById ?
+        await this.userRepo.findOne({ where: { id: dto.processedById } }) :
         null;
 
       if (dto.processedById && !processedBy) {
@@ -112,7 +112,7 @@ export class VacationService {
 
       vacation.overall_status = dto.overall_status;
       vacation.processedBy = processedBy;
-    
+
       vacation.rejection_reason = dto.rejectionReason;
 
 
@@ -132,8 +132,8 @@ export class VacationService {
       const vacation = await this.vacationRepo.findOne({
         where: { id },
         relations: [
-          'user', 
-          'branch', 
+          'user',
+          'branch',
           'processedBy',
           'vacationDates'
         ],
@@ -187,11 +187,11 @@ export class VacationService {
     limit: number = 10,
     sortBy: string = 'created_at',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
-    
+
   ): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
     try {
       const skip = (page - 1) * limit;
-      
+
       const [vacations, total] = await this.vacationRepo.findAndCount({
         where: whereConditions,
         relations: ['user', 'branch', 'vacationDates'],
@@ -203,6 +203,7 @@ export class VacationService {
       const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
       return new PaginatedResponseDto(data, total, page, limit);
     } catch (error) {
+      console.log(error)
       throw new InternalServerErrorException('Failed to fetch vacations');
     }
   }
@@ -221,8 +222,9 @@ export class VacationService {
         throw new NotFoundException(`User with id ${req.user.id} not found`);
       }
 
+
       const [vacations, total] = await this.vacationRepo.findAndCount({
-        where: {...whereConditions, user: {project: {id:  user.project.id}} },
+        where: {...whereConditions, branch: {project: {id:  user.project.id}} },
         relations: ['user', 'branch', 'vacationDates'],
         order: { [sortBy]: sortOrder },
         skip,
@@ -270,8 +272,8 @@ export class VacationService {
 
   // Get approved vacation dates - Simple date list
   async getApprovedVacationDates(
-    userId: string, 
-    startDate: string, 
+    userId: string,
+    startDate: string,
     endDate: string
   ): Promise<string[]> {
     try {
@@ -290,9 +292,9 @@ export class VacationService {
         .leftJoinAndSelect('vacationDate.vacation', 'vacation')
         .where('vacation.user_id = :userId', { userId })
         .andWhere('vacation.overall_status = :overall_status', { status: 'approved' })
-        .andWhere('vacationDate.date BETWEEN :startDate AND :endDate', { 
-          startDate: start, 
-          endDate: end 
+        .andWhere('vacationDate.date BETWEEN :startDate AND :endDate', {
+          startDate: start,
+          endDate: end
         })
         .orderBy('vacationDate.date', 'ASC')
         .getMany();
@@ -348,7 +350,7 @@ export class VacationService {
 
   private formatDateString(dateStr: string): string {
     let date: Date;
-  
+
     if (dateStr.includes('T')) {
       date = new Date(dateStr);
     } else if (dateStr.includes('-')) {
@@ -383,8 +385,8 @@ export class VacationService {
       .createQueryBuilder('vacationDate')
       .leftJoinAndSelect('vacationDate.vacation', 'vacation')
       .where('vacation.user_id = :userId', { userId })
-      .andWhere('vacation.overall_status IN (:...statuses)', { 
-        statuses: ['pending', 'partially_approved', 'approved'] 
+      .andWhere('vacation.overall_status IN (:...statuses)', {
+        statuses: ['pending', 'partially_approved', 'approved']
       })
       .andWhere('vacationDate.date IN (:...dates)', { dates })
       .getMany();

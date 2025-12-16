@@ -1,13 +1,13 @@
 // controllers/vacation.controller.ts
-import { 
-  Controller, 
-  Post, 
-  Body, 
-  Param, 
-  Put, 
-  Get, 
-  UseGuards, 
-  Query, 
+import {
+  Controller,
+  Post,
+  Body,
+  Param,
+  Put,
+  Get,
+  UseGuards,
+  Query,
   Delete,
   UseInterceptors,
   UploadedFile,
@@ -19,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VacationService } from './vacation.service';
-import { 
+import {
   CreateVacationDto,
   UpdateDateStatusDto,
   UpdateMultipleDatesStatusDto,
@@ -34,8 +34,8 @@ import { multerOptionsVaction } from 'common/multer.config';
 
 @UseGuards(AuthGuard)
 @Controller('vacations')
-@UsePipes(new ValidationPipe({ 
-  transform: true, 
+@UsePipes(new ValidationPipe({
+  transform: true,
   whitelist: true,
   forbidNonWhitelisted: false,
   transformOptions: {
@@ -94,7 +94,7 @@ export class VacationController {
   @Get('by-branch/:branchId')
   @Permissions(EPermission.VACATION_READ)
   async getVacationsByBranch(
-    @Param('branchId') branchId: UUID, 
+    @Param('branchId') branchId: UUID,
     @Query() query: VacationQueryDto
   ) {
     const transformedQuery = this.transformQueryParams(query);
@@ -112,7 +112,7 @@ export class VacationController {
   @Get('by-user/:userId')
   @Permissions(EPermission.VACATION_READ)
   async getVacationsByUser(
-    @Param('userId') userId: UUID, 
+    @Param('userId') userId: UUID,
     @Query() query: VacationQueryDto
   ) {
     const transformedQuery = this.transformQueryParams(query);
@@ -156,8 +156,8 @@ export class VacationController {
   //   @Query() query: ApprovedDatesQueryDto
   // ) {
   //   return await this.vacationService.getApprovedVacationDates(
-  //     req.user.id, 
-  //     query.startDate, 
+  //     req.user.id,
+  //     query.startDate,
   //     query.endDate
   //   );
   // }
@@ -170,8 +170,8 @@ export class VacationController {
   //   @Query() query: ApprovedDatesQueryDto
   // ) {
   //   return await this.vacationService.getApprovedVacationDates(
-  //     userId, 
-  //     query.startDate, 
+  //     userId,
+  //     query.startDate,
   //     query.endDate
   //   );
   // }
