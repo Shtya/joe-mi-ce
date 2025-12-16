@@ -221,8 +221,10 @@ export class VacationService {
       if (!user) {
         throw new NotFoundException(`User with id ${req.user.id} not found`);
       }
-
-
+   
+      if(!user.project.id && !user.project_id){
+        throw new  BadRequestException("there are not user found")
+      }
       const [vacations, total] = await this.vacationRepo.findAndCount({
         where: {...whereConditions, branch: {project: {id:  user.project.id}} },
         relations: ['user', 'branch', 'vacationDates'],
