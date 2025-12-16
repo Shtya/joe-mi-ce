@@ -234,6 +234,7 @@ export class VacationService {
       const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
       return new PaginatedResponseDto(vacations, total, page, limit);
     } catch (error) {
+      console.log(error)
       throw new InternalServerErrorException('Failed to fetch vacations');
     }
   }
