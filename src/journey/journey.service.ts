@@ -309,7 +309,7 @@ export class JourneyService {
   // ===== الكرون جوب =====
   async createJourneysForTomorrow() {
     const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
-    const dayName = dayjs(tomorrow).format('dddd').toUpperCase();
+    const dayName = dayjs(tomorrow).format('dddd').toLowerCase();
 
     // get all plans matching tomorrow's day
     const plans = await this.journeyPlanRepo
