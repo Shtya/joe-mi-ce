@@ -27,7 +27,7 @@ export class SaleController {
   findAll(@Query() query: any , @Req() req:any) {
 		// const mergedFilters: any = {
     //   ...parsedFilters,
-    // };
+    // };6b140f73-7d36-44ad-89b2-492d482e8997
 
     // if (query.filters.fromDate) {
     //   mergedFilters.audit_date_from = query.filters.fromDate; // will map to audit.audit_date >= fromDate
@@ -78,35 +78,36 @@ export class SaleController {
     return this.saleService.cancelOrReturn(id);
   }
 
- 
+
   @Get('by-branch/:branchId')
   @Permissions(EPermission.SALE_READ)
   findByBranch(@Param('branchId') branchId: string, @Query() query: any) {
     return this.saleService.findSalesWithBrand(
-      'sale', 
-      query.search, 
-      query.page, 
-      query.limit, 
-      query.sortBy, 
-      query.sortOrder, 
-      ["user", "product", "branch"], 
-      ['status'], 
+      'sale',
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ["user", "product", "branch","branch.salesTargets"],
+      ['status'],
       { branch: { id: branchId }, ...query.filters }
     );
   }
+
 
   @Get('by-product/:productId')
   @Permissions(EPermission.SALE_READ)
   findByProduct(@Param('productId') productId: string, @Query() query: any) {
     return this.saleService.findSalesWithBrand(
-      'sale', 
-      query.search, 
-      query.page, 
-      query.limit, 
-      query.sortBy, 
-      query.sortOrder, 
-      ["user", "product", "branch"], 
-      ['status'], 
+      'sale',
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ["user", "product", "branch"],
+      ['status'],
       { product: { id: productId }, ...query.filters }
     );
   }
@@ -117,11 +118,11 @@ export class SaleController {
 findByUser(@Param('userId') userId: string, @Query() query: any) {
   return this.saleService.findSalesByUserOptimized(
     userId,
-    query.search, 
-    query.page, 
-    query.limit, 
-    query.sortBy, 
-    query.sortOrder, 
+    query.search,
+    query.page,
+    query.limit,
+    query.sortBy,
+    query.sortOrder,
     { ...query.filters }
   );
 }

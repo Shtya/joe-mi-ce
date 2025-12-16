@@ -1,5 +1,5 @@
 // controllers/users.controller.ts
-import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException } from '@nestjs/common';
 import { UserResponseDto, UsersByBranchResponseDto, ProjectUsersResponseDto } from 'dto/users.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { UsersService } from './users.service';
@@ -43,7 +43,7 @@ export class UsersController {
   @Get()
   async getUsers(@Query('branchId') branchId?: string, @Query('projectId') projectId?: string, @Request() req?) {
     if (branchId) {
-      const projectIdToUse = projectId || req.user.project_id;
+      const projectIdToUse = projectId || req.user.project_id || req.user.project.id;
       return this.usersService.getUsersByBranch(branchId, projectIdToUse);
     }
 

@@ -32,9 +32,9 @@ export class SaleService {
     const branch = await this.branchRepo.findOne({ where: { id: dto.branchId }, relations: ["project"] });
     if (!branch) throw new NotFoundException('Branch not found');
 
-    
-    const stock = await this.stockRepo.findOne({ 
-      where: { product: { id: product.id }, branch: { id: branch.id } } 
+
+    const stock = await this.stockRepo.findOne({
+      where: { product: { id: product.id }, branch: { id: branch.id } }
     });
     if (!stock) throw new NotFoundException('Stock not found for this branch');
 
@@ -60,7 +60,7 @@ export class SaleService {
       branch,
       userId: dto.userId,
       productId: dto.productId,
-      
+
       branchId: dto.branchId,
     });
 
@@ -73,77 +73,77 @@ export class SaleService {
   }
 
   async update(id: string, dto: UpdateSaleDto) {
-    const sale = await this.saleRepo.findOne({ 
-      where: { id }, 
-      relations: ['product', 'branch', 'user', 'product.brand', 'product.category'] 
+    const sale = await this.saleRepo.findOne({
+      where: { id },
+      relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
     });
-    
+
     if (!sale) throw new NotFoundException('Sale not found');
-  
+
     if (sale.status === 'returned' || sale.status === 'cancelled') {
       throw new BadRequestException('Cannot update returned or cancelled sale');
     }
-  
+
     const stock = await this.stockRepo.findOne({
       where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
     });
-  
+
     if (!stock) {
       throw new NotFoundException('Stock not found for this branch');
     }
-  
+
     let stockAdjustment = 0;
     let amountAdjustment = 0;
-  
+
     // Handle quantity changes
     if (dto.quantity !== undefined && dto.quantity !== sale.quantity) {
       const quantityDiff = dto.quantity - sale.quantity;
-      
+
       if (quantityDiff > 0 && stock.quantity < quantityDiff) {
         throw new BadRequestException('Not enough stock available for quantity increase');
       }
-      
+
       stockAdjustment = -quantityDiff; // Negative because we subtract from stock
     }
-  
+
     // Handle price changes
     const oldTotalAmount = sale.total_amount;
     const newTotalAmount = dto.price !== undefined ? dto.price * (dto.quantity || sale.quantity) : oldTotalAmount;
-    
+
     if (dto.price !== undefined || dto.quantity !== undefined) {
       amountAdjustment = newTotalAmount - oldTotalAmount;
     }
-  
+
     // Update stock if quantity changed
     if (stockAdjustment !== 0) {
       stock.quantity += stockAdjustment;
       await this.stockRepo.save(stock);
     }
-  
+
     // Update sale
     if (dto.price !== undefined) sale.price = dto.price;
     if (dto.quantity !== undefined) sale.quantity = dto.quantity;
     if (dto.status !== undefined) sale.status = dto.status;
-    
+
     sale.total_amount = newTotalAmount;
     await this.saleRepo.save(sale);
-  
+
     // Update sales target progress if amount changed
     if (amountAdjustment !== 0) {
       await this.updateSalesTargetProgress(sale.branch.id, amountAdjustment);
     }
-  
+
     // Transform the response to match the get method structure
     const updatedSale = await this.saleRepo.findOne({
       where: { id },
       relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
     });
-  
+
     // Calculate product amounts
     const unitPrice = updatedSale.product?.price || 0;
     const quantity = updatedSale.quantity || 0;
     const discount = updatedSale.product?.discount || 0;
-  
+
     // Format response to match findSalesByUserOptimized structure exactly
     return {
       total_records: 1,
@@ -182,32 +182,32 @@ export class SaleService {
     };
   }
   async delete(id: string) {
-    const sale = await this.saleRepo.findOne({ 
-      where: { id }, 
-      relations: ['product', 'branch', 'user', 'product.brand', 'product.category'] 
+    const sale = await this.saleRepo.findOne({
+      where: { id },
+      relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
     });
-    
+
     if (!sale) throw new NotFoundException('Sale not found');
-  
+
     if (sale.status === 'returned' || sale.status === 'cancelled') {
       throw new BadRequestException('Sale is already returned or cancelled');
     }
-  
+
     const stock = await this.stockRepo.findOne({
       where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
     });
-  
+
     if (!stock) {
       throw new NotFoundException('Stock not found for this branch');
     }
-  
+
     // Return quantity to stock
     stock.quantity += sale.quantity;
     await this.stockRepo.save(stock);
-  
+
     // Update sales target progress
     await this.updateSalesTargetProgress(sale.branch.id, -sale.total_amount);
-  
+
     // Transform the response to match the optimized structure before deletion
     const response = {
       total_records: 1,
@@ -242,19 +242,19 @@ export class SaleService {
         }
       }]
     };
-  
+
     // Soft delete the sale after preparing response
     await this.saleRepo.softDelete(id);
-  
+
     return response;
   }
 
   async cancelOrReturn(id: string) {
-    const sale = await this.saleRepo.findOne({ 
-      where: { id }, 
-      relations: ['product', 'branch'] 
+    const sale = await this.saleRepo.findOne({
+      where: { id },
+      relations: ['product', 'branch']
     });
-    
+
     if (!sale) throw new NotFoundException('Sale not found');
 
     if (sale.status === 'cancelled' || sale.status === 'returned') {
@@ -284,11 +284,11 @@ export class SaleService {
   }
 
   async cancelSale(id: string) {
-    const sale = await this.saleRepo.findOne({ 
-      where: { id }, 
-      relations: ['product', 'branch'] 
+    const sale = await this.saleRepo.findOne({
+      where: { id },
+      relations: ['product', 'branch']
     });
-    
+
     if (!sale) throw new NotFoundException('Sale not found');
 
     if (sale.status === 'cancelled' || sale.status === 'returned') {
@@ -328,7 +328,7 @@ export class SaleService {
 
       if (currentTarget) {
         currentTarget.currentAmount = Number(currentTarget.currentAmount) + Number(amount);
-        
+
         if (currentTarget.currentAmount < 0) {
           currentTarget.currentAmount = 0;
         }
@@ -428,12 +428,12 @@ export class SaleService {
 
     let dailyAverageRequired = 0;
     let daysRemaining = 0;
-    
+
     if (currentTarget) {
       const today = new Date();
       const end = new Date(currentTarget.endDate);
       daysRemaining = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-      
+
       if (daysRemaining > 0) {
         dailyAverageRequired = (currentTarget.targetAmount - currentTarget.currentAmount) / daysRemaining;
       }
@@ -534,20 +534,20 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     searchFields: string[] = [],
     filters?: any
   ) {
-    // First get the sales using the existing CRUD.findAll
-    const result = await CRUD.findAll(
-      this.saleRepo, 
-      entityName, 
-      search, 
-      page, 
-      limit, 
-      sortBy, 
-      sortOrder, 
-      relations, 
-      searchFields, 
+    console.log(relations)
+    const result = await CRUD.findAll2(
+      this.saleRepo,
+      entityName,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      relations,
+      searchFields,
       filters
     );
-
+    console.log(result)
     // Extract all product IDs from the sales
     const productIds = result.records
       .map(sale => sale.product?.id)
@@ -592,7 +592,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   // Also add a method for single sale with brand
   async findOneWithBrand(id: string) {
     const sale = await CRUD.findOne(this.saleRepo, 'sale', id, ['product', 'user', 'branch']);
-    
+
     if (sale.product) {
       const productWithBrand = await this.productRepo.findOne({
         where: { id: sale.product.id },
@@ -603,7 +603,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
         product: productWithBrand
       };
     }
-    
+
     return sale;
   }
   // sale.service.ts
@@ -645,7 +645,7 @@ async findSalesByUserOptimized(
       'brand.name',
       'category.id',
       'category.name',
-      'branch.id', 
+      'branch.id',
       'branch.name',
       'branch.city',
       'user.id',
@@ -677,8 +677,8 @@ async findSalesByUserOptimized(
         if (key.includes('.')) {
           // Handle nested filters like branch.id, product.name, category.name, etc.
           const [relation, field] = key.split('.');
-          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { 
-            [key.replace('.', '_')]: value 
+          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, {
+            [key.replace('.', '_')]: value
           });
         } else {
           qb.andWhere(`sale.${key} = :${key}`, { [key]: value });
@@ -710,7 +710,7 @@ async findSalesByUserOptimized(
     const unitPrice = sale.product?.price || 0;
     const quantity = sale.quantity || 0;
     const discount = sale.product.discount || 0;
-    
+
     return {
       id: sale.id,
       quantity: quantity,
