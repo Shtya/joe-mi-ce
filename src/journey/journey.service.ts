@@ -362,16 +362,33 @@ export class JourneyService {
 
     return distance <= branch.geofence_radius_meters;
   }
-
 private parseLatLng(value: any): { lat: number; lng: number } {
-  if (typeof value === 'string') {
-    value = value.replace(/"/g, '').trim(); // 🔥 FIX
-    const [lat, lng] = value.split(',').map(v => Number(v.trim()));
-    if (isNaN(lat) || isNaN(lng)) {
-      throw new BadRequestException('Invalid geo format (expected: "lat,lng")');
-    }
-    return { lat, lng };
+  // Case 1: already object
+  if (typeof value === 'object' && value?.lat && value?.lng) {
+    return { lat: Number(value.lat), lng: Number(value.lng) };
   }
+
+  // Case 2: JSON string
+  if (typeof value === 'string' && value.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed.lat && parsed.lng) {
+        return { lat: Number(parsed.lat), lng: Number(parsed.lng) };
+      }
+    } catch (_) {}
+  }
+
+  // Case 3: "lat,lng"
+  if (typeof value === 'string') {
+    const clean = value.replace(/["\s]/g, '');
+    const [lat, lng] = clean.split(',').map(Number);
+    if (!isNaN(lat) && !isNaN(lng)) {
+      return { lat, lng };
+    }
+  }
+
+  throw new BadRequestException('Invalid geo format (expected: "lat,lng" or {lat,lng})');
 }
+
 
 }
