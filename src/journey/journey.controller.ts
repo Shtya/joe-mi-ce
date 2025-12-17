@@ -1,6 +1,6 @@
 // src/journey/journey.controller.ts
 // ===== journey.controller.ts =====
-import { Controller, Get, Post, Body, Param, Delete,Headers, UseGuards, Req, Query, Patch, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete,Headers, UseGuards, Req, Query, Patch, UploadedFile, UseInterceptors, NotFoundException } from '@nestjs/common';
 import { JourneyService } from './journey.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto } from 'dto/journey.dto';
@@ -13,10 +13,13 @@ import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.confi
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
 import { Raw } from 'typeorm';
+import { UsersService } from 'src/users/users.service';
 @UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
-  constructor(private readonly journeyService: JourneyService) {}
+  constructor(private readonly journeyService: JourneyService,
+              private readonly usersService : UsersService
+  ) {}
 
   // ===== Plans =====
   @Post('plans')
@@ -308,24 +311,29 @@ async getOptimizedPlans(
 
   };
 }
-@Get('plans/project/:projectId/supervisor/all')
+@Get('plans/project/supervisor/all')
 @Permissions(EPermission.JOURNEY_READ)
 async getAllPlansWithPagination(
   @Query('') query: any,
-  @Param('projectId') projectId: string,
+  @Req() req :any,
   @Query('page') page: number = 1,
   @Query('limit') limit: number = 10,
   @Query('userId') userId?: string,
   @Query('search') search?: string,
 ) {
+    const user = await this.usersService.resolveUserWithProject(
+    req.user.id,
+  );
+  const projectId = user.project?.id
+  if(projectId){
+    throw new NotFoundException("the project is not assign to this user")
+  }
   const filters: any = {
-    projectId,
     ...query.filters,
+    projectId
   };
 
-  if (userId) {
-    filters.user = { id: userId };
-  }
+
 
   const plans = await CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,

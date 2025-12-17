@@ -13,6 +13,8 @@ import { Shift } from 'entities/employee/shift.entity';
 import { Region } from 'entities/locations/region.entity';
 import { City } from 'entities/locations/city.entity';
 import { NotificationModule } from 'src/notification/notification.module';
+import { UsersService } from 'src/users/users.service';
+import { Project } from 'entities/project.entity';
 
 @Module({
   imports: [
@@ -25,12 +27,14 @@ import { NotificationModule } from 'src/notification/notification.module';
       Shift,
       Region,
       City,
+      User,
+      Project
     ]),
     ScheduleModule.forRoot(),
 		NotificationModule,
   ],
   controllers: [JourneyController],
-  providers: [JourneyService, JourneyCron],
-  exports: [JourneyService],
+  providers: [JourneyService, JourneyCron,UsersService],
+  exports: [JourneyService,],
 })
 export class JourneyModule {}
