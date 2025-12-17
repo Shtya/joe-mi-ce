@@ -56,7 +56,19 @@ export class BranchController {
       whereCondition
     );
   }
+  @Get('/my/for-mobile')
+  @Permissions(EPermission.BRANCH_READ)
+  async getBranchesForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
 
+
+    if(!req.user.project.id){
+      throw new ForbiddenException('You cannot acces to project id');
+
+    }
+    const branches = this.branchService.findAllbyProject(req.user.project.id)
+    return branches
+
+  }
   @Get(':branchId/teams')
   @Permissions(EPermission.BRANCH_READ)
   async getTeamOnBranch(@Param('branchId') branchId: UUID, @Query() query: PaginationQueryDto, @Req() req: any) {

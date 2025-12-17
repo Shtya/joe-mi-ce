@@ -1,7 +1,7 @@
 // services/users.service.ts
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { User } from 'entities/user.entity';
 import { Branch } from 'entities/branch.entity';
 import { Project } from 'entities/project.entity';
@@ -129,4 +129,44 @@ export class UsersService {
       created_at: user.created_at,
     };
   }
+async getPromotersAndSupervisorsByProject(
+  projectId: string,
+): Promise<UserResponseDto[]> {
+  const users = await this.userRepository.find({
+    where: {
+      project_id: projectId,
+      role: {
+        name: In(['promoter', 'supervisor']),
+      },
+    },
+    relations: ['role', 'branch'],
+  });
+
+  return users.map(user => this.mapUserToDto(user));
+}
+
+async resolveProjectIdFromUser(userId: string): Promise<string> {
+  const user = await this.userRepository.findOne({
+    where: { id: userId },
+    relations: ['branch', 'branch.project', 'project'],
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+
+  // Priority:
+  // 1️⃣ Direct project on user
+  if (user.project) {
+    return user.project.id;
+  }
+
+  // 2️⃣ Project via branch
+  if (user.branch?.project) {
+    return user.branch.project.id;
+  }
+
+  throw new ForbiddenException('User is not assigned to any project');
+}
+
 }

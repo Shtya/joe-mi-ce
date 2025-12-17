@@ -110,10 +110,10 @@ export class BranchService {
 
 
       });
-    
+
       await this.salesTargetRepo.save(salesTarget);
     }
-    
+
     return savedBranch;
 
   }
@@ -210,6 +210,19 @@ export class BranchService {
     if (!branch) throw new NotFoundException('Branch not found');
     return branch;
   }
+    async findAllbyProject(projectid:string): Promise<Branch[]> {
+      if(!projectid){
+        throw new BadRequestException("there are not project id assiing")
+      }
+const branch = await this.branchRepo
+  .createQueryBuilder('branch')
+  .select(['branch.id', 'branch.name'])
+  .where('branch.projectId = :projectid', { projectid })
+  .getMany();
+    if (!branch) throw new NotFoundException('Branch not found');
+      return branch;
+  }
+
 
   async remove(id: string, user: User) {
     const branch = await this.branchRepo.findOne({ where: { id }, relations: ['project', 'project.owner'] });

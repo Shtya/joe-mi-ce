@@ -55,4 +55,15 @@ export class UsersController {
     // Default: return users in current user's project
     return this.usersService.getUsersInProject(req.user.project_id);
   }
+
+  @Get('project/promoters-supervisors')
+async getPromotersAndSupervisors(@Request() req) {
+  // 🔐 Resolve project strictly from DB user
+  const projectId = await this.usersService.resolveProjectIdFromUser(
+    req.user.id,
+  );
+
+  return this.usersService.getPromotersAndSupervisorsByProject(projectId);
+}
+
 }
