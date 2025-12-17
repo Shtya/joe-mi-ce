@@ -367,25 +367,58 @@ private parseLatLng(value: any): { lat: number; lng: number } {
   console.log('Raw input:', value);
   console.log('Type of input:', typeof value);
 
+  let lat: number | undefined;
+  let lng: number | undefined;
+
+  // Special handling for '[object Object]'
+  if (value === '[object Object]') {
+    console.warn('Detected "[object Object]" string — client likely sent a JS object in form-data.');
+
+    // Attempt to log original object if available
+    if ((global as any)._lastRawGeo) {
+      console.log('Attempting to recover from raw object:', (global as any)._lastRawGeo);
+    } else {
+      console.log('No original raw object available for recovery.');
+    }
+
+    // Try to recover numbers from string "[object Object]" (last resort)
+    const nums = value.match(/-?\d+(\.\d+)?/g);
+    if (nums && nums.length >= 2) {
+      lat = Number(nums[0]);
+      lng = Number(nums[1]);
+      console.log('Recovered lat/lng from string "[object Object]":', lat, lng);
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    }
+
+    // Otherwise continue to try other cases
+    console.log('Continuing to attempt parsing other formats.');
+  }
+
   // Case 1: array [lat, lng]
   if (Array.isArray(value) && value.length === 2) {
-    const [lat, lng] = value.map(Number);
+    lat = Number(value[0]);
+    lng = Number(value[1]);
     console.log('Detected array format:', [lat, lng]);
-    if (!isNaN(lat) && !isNaN(lng)) {
-      console.log('Parsed successfully from array.');
-      return { lat, lng };
-    }
+    if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
   }
 
   // Case 2: object { lat, lng }
   if (typeof value === 'object' && value !== null) {
     console.log('Detected object format:', value);
     if ('lat' in value && 'lng' in value) {
-      const lat = Number(value.lat);
-      const lng = Number(value.lng);
+      lat = Number(value.lat);
+      lng = Number(value.lng);
       console.log('Parsed lat/lng from object:', lat, lng);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        console.log('Parsed successfully from object.');
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
+    } else {
+      // attempt to extract first two numeric properties
+      const numericProps = Object.values(value)
+        .map(Number)
+        .filter(v => !isNaN(v));
+      if (numericProps.length >= 2) {
+        lat = numericProps[0];
+        lng = numericProps[1];
+        console.log('Recovered lat/lng from object properties:', lat, lng);
         return { lat, lng };
       }
     }
@@ -394,7 +427,6 @@ private parseLatLng(value: any): { lat: number; lng: number } {
   // Case 3: stringified JSON or "lat,lng" string
   if (typeof value === 'string') {
     const cleanValue = value.trim();
-    console.log('Detected string format:', cleanValue);
 
     // Try JSON.parse first
     if (cleanValue.startsWith('{')) {
@@ -402,13 +434,10 @@ private parseLatLng(value: any): { lat: number; lng: number } {
         const parsed = JSON.parse(cleanValue);
         console.log('Parsed JSON object:', parsed);
         if ('lat' in parsed && 'lng' in parsed) {
-          const lat = Number(parsed.lat);
-          const lng = Number(parsed.lng);
+          lat = Number(parsed.lat);
+          lng = Number(parsed.lng);
           console.log('Parsed lat/lng from JSON string:', lat, lng);
-          if (!isNaN(lat) && !isNaN(lng)) {
-            console.log('Parsed successfully from JSON string.');
-            return { lat, lng };
-          }
+          if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
         }
       } catch (err) {
         console.log('JSON.parse failed:', err.message);
@@ -416,25 +445,23 @@ private parseLatLng(value: any): { lat: number; lng: number } {
     }
 
     // Try "lat,lng" format
-    const str = cleanValue.replace(/["\s]/g, ''); // remove quotes & spaces
+    const str = cleanValue.replace(/["\s]/g, '');
     const parts = str.split(',');
-    console.log('Split string into parts:', parts);
     if (parts.length === 2) {
-      const lat = Number(parts[0]);
-      const lng = Number(parts[1]);
+      lat = Number(parts[0]);
+      lng = Number(parts[1]);
       console.log('Parsed lat/lng from "lat,lng" string:', lat, lng);
-      if (!isNaN(lat) && !isNaN(lng)) {
-        console.log('Parsed successfully from "lat,lng" string.');
-        return { lat, lng };
-      }
+      if (!isNaN(lat) && !isNaN(lng)) return { lat, lng };
     }
   }
 
-  console.log('--- parseLatLng debug end ---');
+  console.error('--- parseLatLng debug end ---');
+  console.error('Failed to parse geo value:', value);
   throw new BadRequestException(
-    'Invalid geo format (expected: "lat,lng" or {lat,lng} or [lat,lng])'
+    'Invalid geo format (expected: "lat,lng", {lat,lng}, or [lat,lng])'
   );
 }
+
 
 
 }
