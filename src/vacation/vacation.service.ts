@@ -126,7 +126,8 @@ export class VacationService {
       vacation.processedBy = processedBy;
 
       vacation.rejection_reason = dto.rejectionReason;
-
+      vacation.save()
+      
 
       return this.getVacationById(vacationId);
     } catch (error) {
