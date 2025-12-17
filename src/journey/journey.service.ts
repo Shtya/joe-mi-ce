@@ -386,7 +386,7 @@ private parseLatLng(value: any): { lat: number; lng: number } {
       return { lat, lng };
     }
   }
-
+  console.log(value)
   throw new BadRequestException('Invalid geo format (expected: "lat,lng" or {lat,lng})');
 }
 
