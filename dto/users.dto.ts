@@ -12,6 +12,10 @@ export class UserResponseDto {
     id: string;
     name: string;
   };
+  project?:{
+    id:string;
+    name:string
+  }
   created_at: Date;
 }
 

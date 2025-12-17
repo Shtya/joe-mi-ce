@@ -1,5 +1,5 @@
 
-import { Controller, Get, Post, Body, Param, Delete, Put, UseGuards, Request, Query, Req, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete, Put, UseGuards, Request, Query, Req, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { BranchService } from './branch.service';
 import { CreateBranchDto, UpdateBranchDto, AssignPromoterDto } from 'dto/branch.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
@@ -58,17 +58,26 @@ export class BranchController {
   }
   @Get('/my/for-mobile')
   @Permissions(EPermission.BRANCH_READ)
-  async getBranchesForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
+  async getBranchesForMobile( @Req() req: any) {
+  const user = await this.branchService.usersService.resolveUserWithProject(
+    req.user.id,
+  );
 
+  // 2️⃣ Resolve projectId
+  const projectId =
+    user.project?.id ||
+    user.branch?.project?.id;
 
-    if(!req.user.project.id){
-      throw new ForbiddenException('You cannot acces to project id');
-
-    }
-    const branches = this.branchService.findAllbyProject(req.user.project.id)
-    return branches
-
+  if (!projectId) {
+    throw new ForbiddenException(
+      'User is not assigned to any project',
+    );
   }
+
+  // 3️⃣ Get branches by resolved projectId
+  return this.branchService.findAllbyProject(projectId);
+}
+  
   @Get(':branchId/teams')
   @Permissions(EPermission.BRANCH_READ)
   async getTeamOnBranch(@Param('branchId') branchId: UUID, @Query() query: PaginationQueryDto, @Req() req: any) {

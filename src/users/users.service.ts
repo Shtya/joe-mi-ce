@@ -21,7 +21,7 @@ export class UsersService {
   async getUserProfile(userId: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ['role', 'branch'],
+      relations: ['role', 'branch','project'],
     });
 
     if (!user) {
@@ -30,7 +30,18 @@ export class UsersService {
 
     return this.mapUserToDto(user);
   }
+async resolveUserWithProject(userId: string) {
+  const user = await this.userRepository.findOne({
+    where: { id: userId },
+    relations: ['project', 'branch', 'branch.project'],
+  });
 
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+
+  return user;
+}
   async getUserById(userId: string, projectId: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({
       where: {
@@ -126,6 +137,7 @@ export class UsersService {
             name: user.branch.name,
           }
         : undefined,
+
       created_at: user.created_at,
     };
   }

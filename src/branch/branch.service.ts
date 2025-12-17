@@ -14,6 +14,7 @@ import { Repository } from 'typeorm';
 import { User } from 'entities/user.entity';
 import { ERole } from 'enums/Role.enum';
 import { SalesTarget, SalesTargetType } from 'entities/sales-target.entity';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class BranchService {
@@ -24,6 +25,7 @@ export class BranchService {
     @InjectRepository(Chain) readonly chainRepo: Repository<Chain>,
     @InjectRepository(User) readonly userRepo: Repository<User>,
     @InjectRepository(SalesTarget) readonly salesTargetRepo: Repository<SalesTarget>,
+         readonly usersService: UsersService,
 
   ) {}
   async create(dto: CreateBranchDto, user: User): Promise<Branch> {
