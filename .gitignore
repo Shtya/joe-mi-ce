@@ -29,7 +29,6 @@ lerna-debug.log*
 *.sublime-workspace
 
 # IDE - VSCode
-.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -58,3 +57,4 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 src/firebase/venuat-6f346-firebase-adminsdk-fbsvc-b2ce39bdcd.json
 
 .vercel
+config.bat
