@@ -355,7 +355,10 @@ export class JourneyService {
 
   // ===== الدوال المساعدة =====
   private isWithinGeofence(branch: Branch, geo: any): boolean {
+    console.log(`branch${branch.geo}`)
     const branchCoords = this.parseLatLng(branch.geo);
+    console.log(`geo :${geo}`)
+
     const userCoords = this.parseLatLng(geo);
 
     const distance = getDistance({ latitude: branchCoords.lat, longitude: branchCoords.lng }, { latitude: userCoords.lat, longitude: userCoords.lng });
