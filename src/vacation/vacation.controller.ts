@@ -62,7 +62,7 @@ export class VacationController {
         dto.userId = res.user.id
       }
       if(!dto.branchId){
-        
+
       }
       return await this.vacationService.createVacation(dto, imagePath);
     } catch (error) {
