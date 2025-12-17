@@ -363,24 +363,15 @@ export class JourneyService {
     return distance <= branch.geofence_radius_meters;
   }
 
-  private parseLatLng(value: any): { lat: number; lng: number } {
-    if (typeof value === 'object' && value.lat && value.lng) {
-      return { lat: Number(value.lat), lng: Number(value.lng) };
+private parseLatLng(value: any): { lat: number; lng: number } {
+  if (typeof value === 'string') {
+    value = value.replace(/"/g, '').trim(); // 🔥 FIX
+    const [lat, lng] = value.split(',').map(v => Number(v.trim()));
+    if (isNaN(lat) || isNaN(lng)) {
+      throw new BadRequestException('Invalid geo format (expected: "lat,lng")');
     }
-
-    if (typeof value === 'string') {
-      const [lat, lng] = value.split(',').map(v => Number(v.trim()));
-      if (isNaN(lat) || isNaN(lng)) {
-        throw new BadRequestException('Invalid geo format (expected: "lat,lng")');
-      }
-      return { lat, lng };
-    }
-
-    if (Array.isArray(value) && value.length === 2) {
-      const [lat, lng] = value.map(v => Number(v));
-      return { lat, lng };
-    }
-
-    throw new BadRequestException('Invalid geo value sent.');
+    return { lat, lng };
   }
+}
+
 }
