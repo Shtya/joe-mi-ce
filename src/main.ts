@@ -85,31 +85,44 @@ let cachedApp: NestExpressApplication;
 async function bootstrapServerless() {
   if (!cachedApp) {
     const server = express();
-    server.use(
-      cors({
-        origin: true,
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
-      }),
-    );
 
-    // ✅ Explicit OPTIONS handler (fixes preflight)
-    server.options('*', cors());
+    // ✅ Dynamic origin: allow localhost:30012 + any other origin
+    const corsOptions = {
+      origin: (origin: string | undefined, callback: Function) => {
+        if (!origin || origin === 'http://localhost:30012') {
+          // allow requests with no origin (like Postman) or localhost:30012
+          callback(null, true);
+        } else {
+          // allow all origins dynamically
+          callback(null, true);
+        }
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization'],
+    };
 
+    // ✅ Apply CORS middleware early (handles preflight)
+    server.use(cors(corsOptions));
+    server.options('*', cors(corsOptions)); // explicit OPTIONS handler
+
+    // ✅ Create Nest app
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,
       new ExpressAdapter(server),
     );
+
+    // ✅ Nest-level CORS (still needed for non-preflight requests)
+    app.enableCors(corsOptions);
 
     await configureApp(app);
     await app.init();
 
     cachedApp = app;
   }
+
   return cachedApp;
 }
-
 // --------------------------------------------
 // ⭐ THIS MUST BE TOP-LEVEL (VALID TS)
 // --------------------------------------------
