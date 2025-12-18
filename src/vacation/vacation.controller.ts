@@ -134,10 +134,10 @@ export class VacationController {
   // 🔹 Get all vacations (summary)
   @Get()
   @Permissions(EPermission.VACATION_READ)
-  async getAllVacations(@Query() query: VacationQueryDto,@Req() req:any) {
+  async getAllVacations(@Query() query: any,@Req() req:any) {
     const transformedQuery = this.transformQueryParams(query);
     return await this.vacationService.getVacationsWithPaginationProject(
-      {},
+      {      overall_status: transformedQuery.status,},
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
@@ -160,7 +160,7 @@ export class VacationController {
   //   @Req() req: any,
   //   @Query() query: ApprovedDatesQueryDto
   // ) {
-  //   return await this.vacationService.getApprovedVacationDates(
+  //   return await fthis.vacationService.getApprovedVacationDates(
   //     req.user.id,
   //     query.startDate,
   //     query.endDate
@@ -207,7 +207,9 @@ export class VacationController {
       limit: query.limit ? Number(query.limit) : 10,
       sortBy: query.sortBy || 'created_at',
       sortOrder: query.sortOrder || 'DESC',
-      search: query.search
+      search: query.search,
+          status: query.status, // ✅ pass it
+
     };
   }
 }

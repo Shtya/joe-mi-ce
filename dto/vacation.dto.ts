@@ -80,6 +80,10 @@ export class VacationQueryDto {
   @IsOptional()
   @IsEnum(['ASC', 'DESC'])
   sortOrder?: 'ASC' | 'DESC' = 'DESC';
+
+    @IsOptional()
+  @IsEnum(['pending' , 'approved' , 'rejected'])
+  status?: 'pending' | 'approved' | 'rejected';
 }
 
 export class ApprovedDatesQueryDto {
