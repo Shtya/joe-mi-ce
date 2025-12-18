@@ -137,7 +137,7 @@ export class VacationController {
   async getAllVacations(@Query() query: any,@Req() req:any) {
     const transformedQuery = this.transformQueryParams(query);
     return await this.vacationService.getVacationsWithPaginationProject(
-      {      overall_status: transformedQuery.status,},
+      {         status: transformedQuery.status,},
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
@@ -208,7 +208,7 @@ export class VacationController {
       sortBy: query.sortBy || 'created_at',
       sortOrder: query.sortOrder || 'DESC',
       search: query.search,
-          status: query.status, // ✅ pass it
+      status: query.status, // ✅ pass it
 
     };
   }
