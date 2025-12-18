@@ -1,4 +1,4 @@
-import { Controller, Post, UseGuards, UploadedFile, UploadedFiles, UseInterceptors, Req, Body, Delete, Param, Get, Patch, NotFoundException, Query } from '@nestjs/common';
+import { Controller, Post, UseGuards, UploadedFile, UploadedFiles, UseInterceptors, Req, Body, Delete, Param, Get, Patch, NotFoundException, Query, BadRequestException } from '@nestjs/common';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { multerOptions } from 'common/multer.config';
 import { CreateAssetDto, UpdateAssetDto } from 'dto/assets.dto';
@@ -12,12 +12,20 @@ import { EPermission } from 'enums/Permissions.enum';
 export class AssetController {
   constructor(private readonly assetService: AssetService) {}
 
-  @Post()
-  @Permissions(EPermission.ASSET_CREATE)
-  @UseInterceptors(FileInterceptor('file', multerOptions))
-  async upload(@UploadedFile() file: any, @Body() dto: CreateAssetDto, @Req() req: any) {
-    return this.assetService.Create(dto, file, req.user);
+@Post()
+@Permissions(EPermission.ASSET_CREATE)
+@UseInterceptors(FileInterceptor('file', multerOptions))
+async upload(
+  @UploadedFile() file: Express.Multer.File,
+  @Body() dto: CreateAssetDto,
+  @Req() req: any,
+) {
+  if (!file) {
+    throw new BadRequestException('No file uploaded');
   }
+
+  return this.assetService.Create(dto, file, req.user);
+}
 
   @Post('bulk')
   @Permissions(EPermission.ASSET_CREATE)
@@ -46,7 +54,9 @@ export class AssetController {
       sortOrder,
       [],
       ['user'], // relations
-      ['name'],
+      [''],
+
+      
       // { user: { id: req.user.id  }  , category, type },
     );
   }

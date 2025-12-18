@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Asset } from 'entities/assets.entity';
 import { Repository } from 'typeorm';
@@ -41,7 +41,7 @@ extractTypeFromMime(mime: string): string {
   if (
     mime.startsWith('application/json') ||
     mime === 'application/xml' ||
-    mime.startsWith('text/') 
+    mime.startsWith('text/')
   ) return 'code';
 
   return 'binary';
@@ -50,6 +50,14 @@ extractTypeFromMime(mime: string): string {
 
 
 async Create(dto: CreateAssetDto, file: any, user: User) {
+  if (!file) {
+    throw new BadRequestException('File not provided');
+  }
+
+  if (!file.mimetype) {
+    throw new BadRequestException('Invalid file upload');
+  }
+
   const inferredType = this.extractTypeFromMime(file.mimetype);
 
   const asset = this.assetRepo.create({
