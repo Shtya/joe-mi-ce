@@ -254,7 +254,7 @@ export class VacationService {
       .leftJoinAndSelect('vacation.branch', 'branch')
       .leftJoinAndSelect('branch.project', 'project')
       .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
-    console.log(whereConditions.status)
+      .where('project.id = :projectId', { projectId });
     // 🔹 Apply dynamic filters
     if (whereConditions.status) {
       query.andWhere(
