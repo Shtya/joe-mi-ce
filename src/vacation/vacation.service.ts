@@ -127,7 +127,7 @@ export class VacationService {
 
       vacation.rejection_reason = dto.rejectionReason;
       vacation.save()
-      
+
 
       return this.getVacationById(vacationId);
     } catch (error) {
@@ -260,10 +260,10 @@ export class VacationService {
       .where('project.id = :projectId', { projectId });
 
     // 🔹 Apply dynamic filters
-    if (whereConditions.overall_status) {
+    if (whereConditions.status) {
       query.andWhere(
         'vacation.overall_status = :status',
-        { status: whereConditions.overall_status }
+        { status: whereConditions.status }
       );
     }
 
