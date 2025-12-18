@@ -246,9 +246,6 @@ export class VacationService {
       user.project_id ||
       user.branch?.project?.id;
 
-    if (!projectId) {
-      throw new BadRequestException('User is not assigned to any project');
-    }
 
     // 🔹 Build query
     const query = this.vacationRepo
@@ -257,12 +254,11 @@ export class VacationService {
       .leftJoinAndSelect('vacation.branch', 'branch')
       .leftJoinAndSelect('branch.project', 'project')
       .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
-      .where('project.id = :projectId', { projectId });
-
+    console.log(whereConditions.status)
     // 🔹 Apply dynamic filters
     if (whereConditions.status) {
       query.andWhere(
-        'vacation.overallStatus = :status',
+    'vacation.overall_status = :status',
         { status: whereConditions.status }
       );
     }
