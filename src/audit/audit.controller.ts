@@ -47,7 +47,7 @@ export class AuditsController {
     const useArabic = lang === 'ar';
 
     const filteredCountries = allCountries
-      
+
       .map(country => ({
         value: country.value,
         label: useArabic ? country.label_ar : country.label_en
@@ -110,7 +110,7 @@ export class AuditsController {
     };
 
     if (user?.project?.id && !project_id) {
-      mergedFilters.projectId = user.project.id;
+      mergedFilters.projectId = user.project_id;
     }
     else{
       throw new NotFoundException('User project not found');
