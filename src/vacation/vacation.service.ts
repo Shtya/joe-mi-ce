@@ -262,7 +262,7 @@ export class VacationService {
     // 🔹 Apply dynamic filters
     if (whereConditions.status) {
       query.andWhere(
-        'vacation.overall_status = :status',
+        'vacation.overallStatus = :status',
         { status: whereConditions.status }
       );
     }
