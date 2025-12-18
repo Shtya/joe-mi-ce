@@ -1,16 +1,6 @@
 /**
  * main.ts
- * Auto mode selection:
- *
- * 🧪 DEVELOPMENT:
- *   - NODE_ENV = development
- *   - Runs normal NestJS server (app.listen)
- *
- * 🚀 PRODUCTION (DEFAULT):
- *   - Any other NODE_ENV (or undefined)
- *   - Uses serverless handler (for Vercel)
  */
-
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
@@ -33,7 +23,26 @@ async function configureApp(app: NestExpressApplication) {
   app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), { prefix: '/uploads/' });
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  app.enableCors({ origin: true, credentials: true });
+  // ✅ FIXED: Explicit CORS configuration
+  const corsOptions = {
+    origin: isDev
+      ? ['http://localhost:30012', 'http://localhost:3000']  // Development origins
+      : (origin: string | undefined, callback: Function) => { // Production - dynamic
+          // Allow all origins in production (or customize as needed)
+          // You might want to restrict this to specific domains
+          callback(null, true);
+        },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+    exposedHeaders: ['Content-Length', 'Content-Type'],
+    preflightContinue: false,
+    optionsSuccessStatus: 200
+  };
+
+  // ✅ Apply CORS with proper configuration
+  app.enableCors(corsOptions);
+
   app.setGlobalPrefix('api/v1');
 
   app.useGlobalPipes(app.get(LoggingValidationPipe));
@@ -86,34 +95,31 @@ async function bootstrapServerless() {
   if (!cachedApp) {
     const server = express();
 
-    // ✅ Dynamic origin: allow localhost:30012 + any other origin
+    // ✅ Fixed CORS configuration for serverless
     const corsOptions = {
       origin: (origin: string | undefined, callback: Function) => {
-        if (!origin || origin === 'http://localhost:30012') {
-          // allow requests with no origin (like Postman) or localhost:30012
-          callback(null, true);
-        } else {
-          // allow all origins dynamically
-          callback(null, true);
-        }
+        // Allow all origins in serverless/production
+        // You can add specific domain checks here if needed
+        callback(null, origin || true);
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+      exposedHeaders: ['Content-Length', 'Content-Type'],
+      preflightContinue: false,
+      optionsSuccessStatus: 200
     };
 
-    // ✅ Apply CORS middleware early (handles preflight)
+    // ✅ Apply CORS middleware
     server.use(cors(corsOptions));
-    server.options('*', cors(corsOptions)); // explicit OPTIONS handler
 
-    // ✅ Create Nest app
+    // ✅ Explicitly handle OPTIONS requests
+    server.options('*', cors(corsOptions));
+
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,
       new ExpressAdapter(server),
     );
-
-    // ✅ Nest-level CORS (still needed for non-preflight requests)
-    app.enableCors(corsOptions);
 
     await configureApp(app);
     await app.init();
@@ -123,11 +129,11 @@ async function bootstrapServerless() {
 
   return cachedApp;
 }
+
 // --------------------------------------------
 // ⭐ THIS MUST BE TOP-LEVEL (VALID TS)
 // --------------------------------------------
 export default async function handler(req: any, res: any) {
-  // In dev mode → DO NOT use serverless handler
   if (isDev) {
     res.status(400).send('Use the development server instead.');
     return;
