@@ -110,6 +110,8 @@ async function bootstrapServerless() {
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,
       new ExpressAdapter(server),
+      {cors:false}
+
     );
 
     // ✅ Nest-level CORS (still needed for non-preflight requests)
