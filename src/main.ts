@@ -21,6 +21,7 @@ import { QueryFailedErrorFilter } from 'common/QueryFailedErrorFilter';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import * as express from 'express';
 import * as qs from 'qs';
+import * as cors from 'cors';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -84,6 +85,17 @@ let cachedApp: NestExpressApplication;
 async function bootstrapServerless() {
   if (!cachedApp) {
     const server = express();
+    server.use(
+      cors({
+        origin: true,
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+      }),
+    );
+
+    // ✅ Explicit OPTIONS handler (fixes preflight)
+    server.options('*', cors());
 
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,

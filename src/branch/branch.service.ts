@@ -29,19 +29,19 @@ export class BranchService {
 
   ) {}
   async create(dto: CreateBranchDto, user: User): Promise<Branch> {
-    console.log(user.role.name, ERole.PROJECT_ADMIN);
     if (user.role?.name !== ERole.PROJECT_ADMIN) {
       throw new ForbiddenException('Only the admin can create branches');
     }
+    const userdata = await this.usersService.resolveUserWithProject(user.id)
 
     const project = await this.projectRepo.findOne({
-      where: { id: user.project.id },
+      where: { id: userdata.project.id },
       relations: ['owner'],
     });
     if (!project) throw new NotFoundException('Project not found');
 
     const existingBranch = await this.branchRepo.findOne({
-      where: { name: dto.name, project: { id: user.project.id } },
+      where: { name: dto.name, project: { id: userdata.project.id } },
     });
     if (existingBranch) throw new ConflictException('Branch name must be unique within the project');
 

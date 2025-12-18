@@ -62,7 +62,7 @@ export class BranchController {
   const user = await this.branchService.usersService.resolveUserWithProject(
     req.user.id,
   );
-
+  
   // 2️⃣ Resolve projectId
   const projectId =
     user.project?.id ||
@@ -77,7 +77,7 @@ export class BranchController {
   // 3️⃣ Get branches by resolved projectId
   return this.branchService.findAllbyProject(projectId);
 }
-  
+
   @Get(':branchId/teams')
   @Permissions(EPermission.BRANCH_READ)
   async getTeamOnBranch(@Param('branchId') branchId: UUID, @Query() query: PaginationQueryDto, @Req() req: any) {
