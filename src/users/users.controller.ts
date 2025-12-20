@@ -17,7 +17,6 @@ export class UsersController {
 
   @Get('project')
   async getProjectUsers(@Request() req): Promise<ProjectUsersResponseDto> {
-		console.log(req?.user?.project?.id );
     return this.usersService.getProjectUsers(req?.user?.project?.id);
   }
 

@@ -109,7 +109,7 @@ export class AuditsController {
       ...parsedFilters,
     };
 
-    if (user?.project?.id && !project_id) {
+    if (!user.project?.id && !user.project_id && !project_id) {
       mergedFilters.projectId = user.project_id;
     }
     else{

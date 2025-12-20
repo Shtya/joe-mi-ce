@@ -305,7 +305,7 @@ export class AuditExportService {
       relations: ['project'],
     });
 
-    if (!user?.project?.id) {
+    if (!user.project?.id && !user.project_id) {
       throw new Error("User does not belong to a project");
     }
 
@@ -323,7 +323,7 @@ export class AuditExportService {
       .leftJoinAndSelect('auditCompetitors.competitor', 'competitor');
 
     // 🔥 ALWAYS FILTER BY USER'S PROJECT
-    qb.andWhere('project.id = :pid', { pid: user.project.id });
+    qb.andWhere('project.id = :pid', { pid: user.project.id ?? user.project_id });
 
     // Date filtering
     if (query.from_date && query.to_date) {

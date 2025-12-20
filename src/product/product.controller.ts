@@ -13,7 +13,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerOptions } from 'common/multer.config';
 import { parse } from 'papaparse';
 import * as ExcelJS from 'exceljs';
-  
+
 @UseGuards(AuthGuard)
 @Controller('products')
 export class ProductController {
@@ -32,8 +32,8 @@ export class ProductController {
   ) {
     try {
       const user = await this.productService.userRepository.findOne({where:{id:req.user.id}, relations:['project']});
-      const projectId = user.project.id
-      const buffer = await this.productService.generateImportTemplate(projectId); 
+      const projectId = user.project.id || user.project_id
+      const buffer = await this.productService.generateImportTemplate(projectId);
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=product-import-template-${projectId}.csv`);
       res.send(buffer);
@@ -75,14 +75,14 @@ export class ProductController {
           transformHeader: (header) => header.trim().toLowerCase().replace(/\s+/g, '_'),
           transform: (value) => value?.toString().trim() || ''
         });
-        
+
         products = result.data.filter((row: any) => row.name); // Filter out empty rows
       } else {
         // Parse Excel
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.readFile(filePath);
         const worksheet = workbook.getWorksheet(1);
-        
+
         if (!worksheet) {
           throw new BadRequestException('Excel file has no data');
         }
@@ -96,7 +96,7 @@ export class ProductController {
           const row = worksheet.getRow(i);
           const product: any = {};
           let hasData = false;
-          
+
           headers.forEach((header, index) => {
             const cellValue = row.getCell(index + 1).value;
             if (cellValue !== null && cellValue !== undefined) {
@@ -104,7 +104,7 @@ export class ProductController {
               hasData = true;
             }
           });
-          
+
           if (hasData && product.name) {
             products.push(product);
           }
@@ -116,7 +116,7 @@ export class ProductController {
 
       // Prepare import data
       const importDto: ImportProductsDto = {
-        project_id: user.project.id,
+        project_id: user.project.id || user.project_id,
         products: products.map(row => {
           // Map column names (flexible mapping)
           const mapColumn = (possibleNames: string[], defaultValue: any = undefined) => {
@@ -161,32 +161,32 @@ export class ProductController {
   findAll(@Query() q: any) {
     // Parse filters manually
     const filters: any = {};
-    
+
     // Check for nested filter syntax
     if (q['filters[project][id]']) {
       filters.project = { id: q['filters[project][id]'] };
     }
-    
+
     // Or try dot notation
     if (!filters.project && q['filters.project.id']) {
       filters.project = { id: q['filters.project.id'] };
     }
-    
+
     console.log('Manually parsed filters:', filters);
-    
+
     const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
     const searchFields = ['name', 'model', 'sku'];
-    
+
     return CRUD.findAll2(
-      this.productService.productRepository, 
-      'product', 
-      q.search, 
-      q.page, 
-      q.limit, 
-      q.sortBy, 
-      (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC', 
-      relations, 
-      searchFields, 
+      this.productService.productRepository,
+      'product',
+      q.search,
+      q.page,
+      q.limit,
+      q.sortBy,
+      (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC',
+      relations,
+      searchFields,
       filters
     );
   }
@@ -218,5 +218,5 @@ export class ProductController {
   remove(@Param('id') id: string) {
     return CRUD.softDelete(this.productService.productRepository, 'product', id);
   }
-  
+
 }

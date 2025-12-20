@@ -35,13 +35,13 @@ export class BranchService {
     const userdata = await this.usersService.resolveUserWithProject(user.id)
 
     const project = await this.projectRepo.findOne({
-      where: { id: userdata.project.id },
+      where: { id: userdata.project.id  || userdata.project_id},
       relations: ['owner'],
     });
     if (!project) throw new NotFoundException('Project not found');
 
     const existingBranch = await this.branchRepo.findOne({
-      where: { name: dto.name, project: { id: userdata.project.id } },
+      where: { name: dto.name, project: { id: userdata.project.id || userdata.project_id}},
     });
     if (existingBranch) throw new ConflictException('Branch name must be unique within the project');
 
@@ -100,8 +100,10 @@ export class BranchService {
 
     const branch = this.branchRepo.create({
       name: dto.name,
-      geo: dto.geo,
-      geofence_radius_meters: dto.geofence_radius_meters ?? 500,
+geo: {
+  lat: dto.geo.lat,
+  lng: dto.geo.lng,
+},      geofence_radius_meters: dto.geofence_radius_meters ?? 500,
       image_url: dto.image_url,
       project,
       city,
@@ -334,7 +336,12 @@ export class BranchService {
     if (dto.cityId) branch.city = await this.cityRepo.findOneByOrFail({ id: dto.cityId });
     if (dto.chainId !== undefined) branch.chain = dto.chainId ? await this.chainRepo.findOneBy({ id: dto.chainId }) : null;
     if (dto.name) branch.name = dto.name;
-    if (dto.geo) branch.geo = dto.geo;
+if (dto.geo) {
+  branch.geo = {
+    lat: dto.geo.lat,
+    lng: dto.geo.lng,
+  };
+}
     if (dto.geofence_radius_meters !== undefined) branch.geofence_radius_meters = dto.geofence_radius_meters;
     if (dto.image_url !== undefined) branch.image_url = dto.image_url;
 

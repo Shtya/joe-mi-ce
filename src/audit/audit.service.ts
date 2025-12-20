@@ -551,7 +551,7 @@ export class AuditsService {
 
     // إضافة تصفية للمشروع إذا كان المروج مرتبطًا بمشروع
     if (promoter.project) {
-      queryBuilder.andWhere('project.id = :projectId', { projectId: promoter.project.id });
+      queryBuilder.andWhere('project.id = :projectId', { projectId: promoter.project.id || promoter.project_id});
     }
 
     // حساب العدد الكلي

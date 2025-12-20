@@ -35,7 +35,7 @@ export class BranchController {
     }
     console.log('User Project ID:', req.user);
     const whereCondition = {
-      project: { id: req.user.project.id }
+      project: { id: req.user.project.id || req.user.project_id }
     };
 
     // Apply other filters if they exist and are for branch fields
@@ -62,11 +62,12 @@ export class BranchController {
   const user = await this.branchService.usersService.resolveUserWithProject(
     req.user.id,
   );
-  
+
   // 2️⃣ Resolve projectId
   const projectId =
     user.project?.id ||
-    user.branch?.project?.id;
+    user.branch?.project?.id||
+    user.project_id
 
   if (!projectId) {
     throw new ForbiddenException(
@@ -105,6 +106,7 @@ export class BranchController {
   @Post(':branchId/promoter')
   @Permissions(EPermission.BRANCH_ASSIGN_PROMOTER)
   async assignPromoter(@Param('projectId') projectId: any, @Param('branchId') branchId: any, @Body() dto: AssignPromoterDto, @Req() req: any) {
-    return this.branchService.assignPromoter(req?.user?.project?.id, branchId, dto, req.user);
+    const project = req?.user?.project?.id || req.user.project_id || projectId
+    return this.branchService.assignPromoter(project, branchId, dto, req.user);
   }
 }
