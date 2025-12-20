@@ -11,25 +11,32 @@ import { Chain } from './locations/chain.entity';
 import { City } from './locations/city.entity';
 import { Journey } from './all_plans.entity';
 import { SalesTarget, SalesTargetType } from './sales-target.entity';
- 
+
 @Entity('branches')
 @Index(['name', 'project'])
 export class Branch extends CoreEntity {
   @Column()
   name: string;
 
-  @Column({nullable : true})
-  geo: string;
+   @Column({
+    type: 'jsonb',
+    nullable: true,
+  })
+  geo: {
+    lat: number;
+    lng: number;
+  };
+
 
   @Column({ default: 500 })
   geofence_radius_meters: number;
 
   @Column({ nullable: true })
   image_url: string;
-  @Column({ 
-    type: 'enum', 
-    enum: SalesTargetType, 
-    default: SalesTargetType.MONTHLY 
+  @Column({
+    type: 'enum',
+    enum: SalesTargetType,
+    default: SalesTargetType.MONTHLY
   })
   salesTargetType: SalesTargetType;
   @Column({ type: 'boolean', default: true })
@@ -37,7 +44,7 @@ export class Branch extends CoreEntity {
 
   @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
   defaultSalesTargetAmount: number;
-  
+
   @OneToMany(() => SalesTarget, salesTarget => salesTarget.branch)
   salesTargets: SalesTarget[];
   // Relationships

@@ -36,7 +36,7 @@ export class SaleController {
     //   mergedFilters.audit_date_to = query.filters.toDate; // will map to audit.audit_date <= toDate
     // }
 
-    return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], {projectId : req.user.project.id , ...query.filters});
+    return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], {projectId : req.user.project.id ||req.user.project_id , ...query.filters});
   }
   @Post()
   @Permissions(EPermission.SALE_CREATE)

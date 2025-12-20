@@ -63,7 +63,7 @@ export class CompetitorService {
 
     if (dto.name && dto.name !== competitor.name) {
       const existingCompetitor = await this.competitorRepo.findOne({
-        where: { name: dto.name, project: { id: competitor.project.id } },
+        where: { name: dto.name, project: { id: competitor.project.id ||competitor.project_id } },
       });
       if (existingCompetitor) {
         throw new ConflictException(`Competitor with name ${dto.name} already exists for this project`);

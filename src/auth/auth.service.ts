@@ -36,7 +36,7 @@ export class AuthService {
         if (dto.role === ERole.PROJECT_ADMIN) {
           throw new ForbiddenException('You cannot create other Project Admins');
         }
-        dto.project_id = requester.project.id;
+        dto.project_id = requester.project.id ||requester.project_id;
       }
     } else {
       if (dto.role !== ERole.SUPER_ADMIN) {
@@ -314,7 +314,7 @@ export class AuthService {
       sub: user.id,
       username: user.username,
       role: user.role.name,
-      project_id: user.project?.id,
+      project_id: user.project?.id ?? user.project_id,
     };
 
     return {
@@ -324,17 +324,17 @@ export class AuthService {
         name: user.name,
         role: user.role.name,
         mobile: user.mobile,
-        project_id: user.project?.id,
+        project_id: user.project?.id ?? user.project_id,
         is_active: user.is_active,
       },
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,
-        expiresIn:  process.env.JWT_EXPIRE || 
+        expiresIn:  process.env.JWT_EXPIRE ||
         '2d',
       }),
       refresh_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_REFRESH_SECRET,
-        expiresIn:  process.env.JWT_EXPIRE || 
+        expiresIn:  process.env.JWT_EXPIRE ||
         '2d',
       }),
     };

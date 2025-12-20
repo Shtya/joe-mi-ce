@@ -46,7 +46,7 @@ export class ProjectService extends BaseService<Project> {
     }
     const projects = await this.projectRepo.find({
       where: {
-        id: userId?.project?.id, // Fetch projects where the user is the owner
+        id: userId?.project?.id || userId?.project_id, // Fetch projects where the user is the owner
       },
       relations: ['owner', 'branches', 'products'], // Include related entities (branches, products)
     });

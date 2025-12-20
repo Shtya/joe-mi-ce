@@ -272,8 +272,11 @@ export const seedBranches = async (dataSource: DataSource) => {
     const chain = i < chains.length ? chains[i] : null;
 
     return branchRepository.create({
-      name,
-      geo: "31.137456290460786, 33.81889064234188",
+  name: 'Main Branch',
+  geo: {
+    lat: 31.137456290460786,
+    lng: 33.81889064234188,
+  },
       geofence_radius_meters: 500 + (i % 3) * 100,
       image_url: `https://via.placeholder.com/300x200?text=${encodeURIComponent(name)}`,
       project,
@@ -458,6 +461,166 @@ export const seedStocks = async (dataSource: DataSource) => {
   await stockRepository.save(stocks);
   console.log('✅ Seeded stocks successfully');
 };
+export const seedSuperAdminUser = async (dataSource: DataSource) => {
+  const userRepository = dataSource.getRepository(User);
+  const roleRepository = dataSource.getRepository(Role);
+
+  const superAdminRole = await roleRepository.findOne({
+    where: { name: ERole.SUPER_ADMIN },
+  });
+
+  const password = await argon.hash('123456');
+
+  const superAdmin = userRepository.create({
+    name: 'Super Admin',
+    username: 'superadmin',
+    password,
+    role: superAdminRole,
+  });
+
+  await userRepository.save(superAdmin);
+  console.log('✅ Seeded Super Admin user');
+
+  return superAdmin;
+};
+
+export const seedProjectAdmin = async (
+  dataSource: DataSource,
+  project: Project,
+  branch: Branch,
+) => {
+  const userRepository = dataSource.getRepository(User);
+  const roleRepository = dataSource.getRepository(Role);
+
+  const projectAdminRole = await roleRepository.findOne({
+    where: { name: ERole.PROJECT_ADMIN },
+  });
+
+  const password = await argon.hash('123456');
+
+  const projectAdmin = userRepository.create({
+    name: 'Project Admin',
+    username: 'projectadmin',
+    password,
+    role: projectAdminRole,
+
+    project,
+    project_id: project.id,
+    branch,
+  });
+
+  await userRepository.save(projectAdmin);
+
+  console.log('✅ Seeded Project Admin (owner + assigned to project & branch)');
+
+  return projectAdmin;
+};
+export const seedProjectStaff = async (
+  dataSource: DataSource,
+  project: Project,
+  branch: Branch,
+) => {
+  const userRepository = dataSource.getRepository(User);
+  const roleRepository = dataSource.getRepository(Role);
+
+  const supervisorRole = await roleRepository.findOne({
+    where: { name: ERole.SUPERVISOR },
+  });
+  const promoterRole = await roleRepository.findOne({
+    where: { name: ERole.PROMOTER },
+  });
+
+  const password = await argon.hash('123456');
+
+  const users = [
+    userRepository.create({
+      name: 'Supervisor',
+      username: 'supervisor',
+      password,
+      role: supervisorRole,
+      project,
+      project_id: project.id,
+      branch,
+    }),
+    userRepository.create({
+      name: 'Promoter',
+      username: 'promoter',
+      password,
+      role: promoterRole,
+      project,
+      project_id: project.id,
+      branch,
+    }),
+  ];
+
+  await userRepository.save(users);
+  console.log('✅ Seeded supervisor & promoter');
+};
+export const seedProjectAdminUserOnly = async (dataSource: DataSource) => {
+  const userRepository = dataSource.getRepository(User);
+  const roleRepository = dataSource.getRepository(Role);
+
+  const role = await roleRepository.findOne({
+    where: { name: ERole.PROJECT_ADMIN },
+  });
+
+  const password = await argon.hash('123456');
+
+  const user = userRepository.create({
+    name: 'Project Admin',
+    username: 'projectadmin2',
+    password,
+    role,
+  });
+
+  await userRepository.save(user);
+  return user;
+};
+export const seedProjectWithBranch = async (
+  dataSource: DataSource,
+  owner: User,
+) => {
+  const projectRepository = dataSource.getRepository(Project);
+  const branchRepository = dataSource.getRepository(Branch);
+  const cityRepository = dataSource.getRepository(City);
+  const chainRepository = dataSource.getRepository(Chain);
+
+  // 🟢 Create Project
+  const project = projectRepository.create({
+    name: 'Main Project',
+    owner,
+    image_url: 'https://via.placeholder.com/300x200?text=Main+Project',
+  });
+
+  await projectRepository.save(project);
+
+  // 🟢 Create Branch
+const city = await cityRepository.findOne({
+  where: {},
+});  const chain = await chainRepository.findOne({
+  where:{}
+});
+
+  if (!city) throw new Error('⚠️ City required for branch');
+
+  const branch = branchRepository.create({
+    name: 'Main Branch',
+  geo: {
+    lat: 31.137456290460786,
+    lng: 33.81889064234188,
+  },    geofence_radius_meters: 500,
+    project,
+    city,
+    chain,
+    image_url: 'https://via.placeholder.com/300x200?text=Main+Branch',
+  });
+
+  await branchRepository.save(branch);
+
+  console.log('✅ Seeded project + branch (owner = project admin)');
+
+  return { project, branch };
+};
 
 async function runSeeder() {
   const dataSource = new DataSource({
@@ -482,16 +645,16 @@ async function runSeeder() {
     // await seedUsers(dataSource);
 
     // await seedPermissions(dataSource);
-    await seedPermissions(dataSource);
-    await seedRoles(dataSource);
-    await seedUsers(dataSource);
+    // await seedPermissions(dataSource);
+    // await seedRoles(dataSource);
+    // await seedUsers(dataSource);
 
-    // Optional
-    await seedCountries(dataSource);
-    await seedRegions(dataSource);
-    await seedCities(dataSource);
-    await seedChains(dataSource);
-		await seedSuperAdminRole(dataSource);
+    // // Optional
+    // await seedCountries(dataSource);
+    // await seedRegions(dataSource);
+    // await seedCities(dataSource);
+    // await seedChains(dataSource);
+		// await seedSuperAdminRole(dataSource);
 
     // await seedCountries(dataSource);
     // await seedRegions(dataSource);
@@ -500,6 +663,33 @@ async function runSeeder() {
 
     // await seedProjects(dataSource);
     // await seedBranches(dataSource);
+
+
+    await seedPermissions(dataSource);
+await seedRoles(dataSource);
+
+// Locations
+await seedCountries(dataSource);
+await seedRegions(dataSource);
+await seedCities(dataSource);
+await seedChains(dataSource);
+
+// Users
+await seedSuperAdminUser(dataSource);
+const projectAdmin = await seedProjectAdminUserOnly(dataSource);
+
+// Project + Branch
+const { project, branch } = await seedProjectWithBranch(
+  dataSource,
+  projectAdmin,
+);
+
+// Assign project & branch to admin
+await seedProjectAdmin(dataSource, project, branch);
+
+// Staff
+await seedProjectStaff(dataSource, project, branch);
+
 
     console.log('✅ Seeding completed successfully!');
   } catch (error) {

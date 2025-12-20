@@ -324,7 +324,7 @@ async getAllPlansWithPagination(
     const user = await this.usersService.resolveUserWithProject(
     req.user.id,
   );
-  const projectId = user.project?.id
+  const projectId = user.project?.id || user.project_id || user.branch.project.id
   if(projectId){
     throw new NotFoundException("the project is not assign to this user")
   }
