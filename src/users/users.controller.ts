@@ -42,7 +42,7 @@ export class UsersController {
   @Get()
   async getUsers(@Query('branchId') branchId?: string, @Query('projectId') projectId?: string, @Request() req?) {
     if (branchId) {
-      const projectIdToUse = projectId || req.user.project_id || req.user.project.id;
+      const projectIdToUse = projectId || req.user.project_id || req.user.project?.id;
       return this.usersService.getUsersByBranch(branchId, projectIdToUse);
     }
 

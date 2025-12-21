@@ -32,7 +32,7 @@ export class ProductController {
   ) {
     try {
       const user = await this.productService.userRepository.findOne({where:{id:req.user.id}, relations:['project']});
-      const projectId = user.project.id || user.project_id
+      const projectId = user.project?.id || user.project_id
       const buffer = await this.productService.generateImportTemplate(projectId);
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename=product-import-template-${projectId}.csv`);
@@ -116,7 +116,7 @@ export class ProductController {
 
       // Prepare import data
       const importDto: ImportProductsDto = {
-        project_id: user.project.id || user.project_id,
+        project_id: user.project?.id || user.project_id,
         products: products.map(row => {
           // Map column names (flexible mapping)
           const mapColumn = (possibleNames: string[], defaultValue: any = undefined) => {

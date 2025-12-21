@@ -51,7 +51,7 @@ export class SurveyController {
   @Permissions(EPermission.SURVEY_READ)
   findAll(@Query() query: any, @Req() req: any) {
     return CRUD.findAll2(this.surveyService.surveyRepo, 'survey', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['questions','questions.answers','feedbacks.user',
-      'feedbacks.branch'], [], { projectId: req.user.project.id ||req.user.project_id, ...query.filters });
+      'feedbacks.branch'], [], { projectId: req.user.project?.id ||req.user.project_id, ...query.filters });
   }
 
   // 🔹 Get survey by ID

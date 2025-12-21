@@ -323,7 +323,7 @@ export class AuditExportService {
       .leftJoinAndSelect('auditCompetitors.competitor', 'competitor');
 
     // 🔥 ALWAYS FILTER BY USER'S PROJECT
-    qb.andWhere('project.id = :pid', { pid: user.project.id ?? user.project_id });
+    qb.andWhere('project.id = :pid', { pid: user.project?.id ?? user.project_id });
 
     // Date filtering
     if (query.from_date && query.to_date) {
