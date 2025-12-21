@@ -366,7 +366,7 @@ export class JourneyService {
     return distance <= branch.geofence_radius_meters;
   }
 private parseLatLng(value: any): { lat: number; lng: number } {
-  if (!value) throw new BadRequestException('No geo value');
+if (!value || value === '') throw new BadRequestException('No geo value');
 
   // If string
 if (typeof value === 'string') {

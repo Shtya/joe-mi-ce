@@ -5,7 +5,6 @@ export class CreateCompetitorDto {
   name: string;
 
   @IsOptional()
-  @IsUrl()
   logo_url: string;
 
   @IsUUID()
@@ -18,7 +17,6 @@ export class UpdateCompetitorDto {
   name: string;
 
   @IsOptional()
-  @IsUrl()
   logo_url: string;
 
   @IsUUID()
