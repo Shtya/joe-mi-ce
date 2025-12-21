@@ -322,7 +322,7 @@ export class JourneyService {
       .getMany();
 
     let createdCount = 0;
-
+    console.log(plans)
     for (const plan of plans) {
       const exists = await this.journeyRepo.findOne({
         where: {
@@ -399,6 +399,52 @@ private parseLatLng(value: any): { lat: number; lng: number } {
 
 
 
+// ===== الكرون جوب =====
+async createJourneysForToday() {
+  const today = dayjs().format('YYYY-MM-DD');
+  const dayName = dayjs(today).format('dddd').toLowerCase();
+
+  // get all plans matching today's day
+  const plans = await this.journeyPlanRepo
+    .createQueryBuilder("plan")
+    .leftJoinAndSelect("plan.user", "user")
+    .leftJoinAndSelect("plan.branch", "branch")
+    .leftJoinAndSelect("branch.project", "project")
+    .leftJoinAndSelect("plan.shift", "shift")
+    .where(":dayName = ANY(plan.days)", { dayName })
+    .getMany();
+
+  let createdCount = 0;
+  console.log(plans);
+
+  for (const plan of plans) {
+    const exists = await this.journeyRepo.findOne({
+      where: {
+        user: { id: plan.user.id },
+        shift: { id: plan.shift.id },
+        date: today,
+      },
+    });
+
+    if (exists) continue;
+
+    const journey = this.journeyRepo.create({
+      user: plan.user,
+      branch: plan.branch,
+      shift: plan.shift,
+      projectId: plan.projectId || plan.branch.project?.id,
+      date: today,
+      type: JourneyType.PLANNED,
+      status: JourneyStatus.ABSENT,
+      journeyPlan: plan,
+    });
+
+    await this.journeyRepo.save(journey);
+    createdCount++;
+  }
+
+  return { createdCount, date: today };
+}
 
 
 }
