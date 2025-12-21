@@ -64,9 +64,9 @@ async getPromotersAndSupervisors(@Request() req) {
 
   return this.usersService.getPromotersAndSupervisorsByProject(projectId);
 }
-  @Delete('delete/account/body')
+  @Delete('delete/account')
   async deleteUser(
-    @Body('userId', ParseUUIDPipe) userId: string,
+    @Body('userId') userId: string, // optional
  @Req() req
   ) {
 
