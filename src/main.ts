@@ -11,7 +11,6 @@ import { QueryFailedErrorFilter } from 'common/QueryFailedErrorFilter';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import * as express from 'express';
 import * as qs from 'qs';
-import * as cors from 'cors';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -20,34 +19,21 @@ const isDev = process.env.NODE_ENV === 'development';
 // --------------------------------------------
 async function configureApp(app: NestExpressApplication) {
   app.useGlobalFilters(app.get(QueryFailedErrorFilter));
-  app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), { prefix: '/uploads/' });
+  app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), {
+    prefix: '/uploads/',
+  });
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // ✅ FIXED: Explicit CORS configuration
-  const corsOptions = {
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      'http://localhost:3000',
-      'http://localhost:30012',
-      'https://ce-api.joe-mi.com',
-    ];
-
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, origin);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  // ✅ ACCEPT ALL ORIGINS (credentials-safe)
+  app.enableCors({
+    origin: (origin, callback) => {
+      // allow all origins (browser + server-to-server)
+      callback(null, origin || true);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-    exposedHeaders: ['Content-Length', 'Content-Type'],
-    preflightContinue: false,
-    optionsSuccessStatus: 200
-  };
-
-  // ✅ Apply CORS with proper configuration
-  app.enableCors(corsOptions);
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   app.setGlobalPrefix('api/v1');
 
@@ -78,7 +64,7 @@ async function configureApp(app: NestExpressApplication) {
 }
 
 // --------------------------------------------
-// 🧪 DEVELOPMENT MODE (app.listen)
+// 🧪 DEVELOPMENT MODE
 // --------------------------------------------
 if (isDev) {
   (async () => {
@@ -86,14 +72,14 @@ if (isDev) {
     await configureApp(app);
 
     const port = process.env.PORT || 3030;
-
     await app.listen(port);
+
     Logger.log(`🧪 Dev server running at http://localhost:${port}`);
   })();
 }
 
 // --------------------------------------------
-// 🚀 PRODUCTION MODE (default handler)
+// 🚀 PRODUCTION / SERVERLESS MODE
 // --------------------------------------------
 let cachedApp: NestExpressApplication;
 
@@ -101,27 +87,7 @@ async function bootstrapServerless() {
   if (!cachedApp) {
     const server = express();
 
-    // ✅ Fixed CORS configuration for serverless
-    const corsOptions = {
-      origin: (origin: string | undefined, callback: Function) => {
-        // Allow all origins in serverless/production
-        // You can add specific domain checks here if needed
-        callback(null, origin || true);
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
-      exposedHeaders: ['Content-Length', 'Content-Type'],
-      preflightContinue: false,
-      optionsSuccessStatus: 200
-    };
-
-    // ✅ Apply CORS middleware
-    server.use(cors(corsOptions));
-
-    // ✅ Explicitly handle OPTIONS requests
-    server.options('*', cors(corsOptions));
-
+    // ❌ NO EXPRESS CORS — Nest owns CORS
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,
       new ExpressAdapter(server),
@@ -137,7 +103,7 @@ async function bootstrapServerless() {
 }
 
 // --------------------------------------------
-// ⭐ THIS MUST BE TOP-LEVEL (VALID TS)
+// ⭐ SERVERLESS HANDLER
 // --------------------------------------------
 export default async function handler(req: any, res: any) {
   if (isDev) {
