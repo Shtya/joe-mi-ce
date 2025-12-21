@@ -58,7 +58,7 @@ export class AuthService {
         }),
       );
     } else if (dto.role !== ERole.SUPER_ADMIN) {
-      const projectId = requester?.role.name === ERole.PROJECT_ADMIN ? requester.project?.id : dto.project_id;
+      const projectId = requester?.role.name === ERole.PROJECT_ADMIN ? requester.project?.id || requester.project_id: dto.project_id;
       if (!projectId) throw new BadRequestException('Project ID is required for this role');
 
       project = await this.projectRepository.findOne({ where: { id: projectId } });
