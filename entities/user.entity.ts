@@ -11,6 +11,8 @@ import { Journey } from './all_plans.entity';
 
 @Entity('users')
 @Index(['username'], { unique: true })
+@Index(['mobile'], { unique: true })
+
 export class User extends CoreEntity {
   @Column({ length: 50 })
   username: string;

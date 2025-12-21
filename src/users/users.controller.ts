@@ -1,5 +1,5 @@
 // controllers/users.controller.ts
-import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException, Delete, Req, Body } from '@nestjs/common';
 import { UserResponseDto, UsersByBranchResponseDto, ProjectUsersResponseDto } from 'dto/users.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { UsersService } from './users.service';
@@ -64,5 +64,14 @@ async getPromotersAndSupervisors(@Request() req) {
 
   return this.usersService.getPromotersAndSupervisorsByProject(projectId);
 }
+  @Delete('delete/account/body')
+  async deleteUser(
+    @Body('userId', ParseUUIDPipe) userId: string,
+ @Req() req
+  ) {
 
+    const lang = req.headers['lang']?.toLowerCase() || 'en';
+    const user = userId || req.user.id
+    return this.usersService.deleteUser(user, lang);
+  }
 }

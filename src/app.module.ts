@@ -29,10 +29,13 @@ import { SaleModule } from './sale/sale.module';
 import { ExportModule } from './export/export.module';
 import { UsersModule } from './users/users.module';
 import { CheckoutsModule } from './checkout/checkout.module';
-import { FeedbackModule } from './feedback/feedback.module'; 
+import { FeedbackModule } from './feedback/feedback.module';
 import { ProjectStatsModule } from './stats/stats.module';
 import { NotificationModule } from './notification/notification.module';
 import { SalesTargetModule } from './sales-target/sales-target.module';
+import { StaticPagesModule } from './static-pages/static-pages.module';
+import { ContactUs } from 'entities/contact-us.entity';
+import { ContactUsModule } from './contact-us/contact-us.module';
  @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -89,7 +92,8 @@ import { SalesTargetModule } from './sales-target/sales-target.module';
     ProjectStatsModule,
     NotificationModule,
     SalesTargetModule,
-    
+    StaticPagesModule,
+    ContactUsModule
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
