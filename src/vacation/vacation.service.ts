@@ -227,13 +227,14 @@ export class VacationService {
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   req: any
-): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
+): Promise<PaginatedResponseDto<any>> {
   try {
     const skip = (page - 1) * limit;
 
     const user = await this.userRepo.findOne({
       where: { id: req.user.id },
       relations: ['project', 'branch', 'branch.project'],
+      select:{project:{id:true}}
     });
 
     if (!user) {
@@ -242,10 +243,9 @@ export class VacationService {
 
     // 🔑 Resolve projectId safely
     const projectId =
-      user.project?.id ||
-      user.project_id ||
+      user.project?.id ??
+      user.project_id ??
       user.branch?.project?.id;
-
 
     // 🔹 Build query
     const query = this.vacationRepo
@@ -285,11 +285,9 @@ export class VacationService {
 
     const [vacations, total] = await query.getManyAndCount();
 
-    const data = vacations.map(
-      vacation => new VacationSummaryResponseDto(vacation)
-    );
 
-    return new PaginatedResponseDto(data, total, page, limit);
+
+    return new PaginatedResponseDto(vacations, total, page, limit);
   } catch (error) {
     console.error(error);
     throw new InternalServerErrorException('Failed to fetch vacations');
