@@ -561,4 +561,9 @@ async getAllPlansWithPagination(
   async testCronCreateTomorrow() {
     return this.journeyService.createJourneysForTomorrow();
   }
+    @Patch('cron/create-today')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async testCronCreateToday() {
+    return this.journeyService.createJourneysForToday();
+  }
 }
