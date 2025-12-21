@@ -13,7 +13,7 @@ export class NotificationController {
 
   // 🔹 List notifications for current user (supervisor, admin, etc.)
   @Get('my')
-  @Permissions(EPermission.CHECKIN_READ)  
+  @Permissions(EPermission.CHECKIN_READ)
   async getMyNotifications(@Req() req, @Query("userId") userId : string ,  @Query() query:any) {
 		return CRUD.findAll(
       this.notificationService.notificationRepo,
@@ -26,7 +26,7 @@ export class NotificationController {
       [], // relation
       [], // search
       { user: { id: userId || req?.user.id} }, // filter
-    ); 
+    );
   }
 
   // 🔹 Mark single notification as read
@@ -41,5 +41,52 @@ export class NotificationController {
   @Permissions(EPermission.CHECKIN_READ)
   async markAllAsRead(@Req() req) {
     return this.notificationService.markAllAsRead(req.user.id);
+  }
+
+    @Get('user')
+  async getUserNotifications(
+    @Req() req,
+    @Query() query: any,
+
+  ) {
+    const lang = req.headers['lang']?.toLowerCase() || 'en';
+
+    const userId = req.user.id;
+    const notificationsData = await this.notificationService.getUserNotifications(
+      userId,
+      query,
+    );
+
+    return {
+      code: 200,
+      message: lang === 'ar' ? 'نجاح' : 'success',
+      data: {
+        notifications: notificationsData.items.map((n) => ({
+          id: n.id,
+          unreadCount: n.is_read ? 0 : 1,
+          createdAt: n.created_at,
+          updatedAt: n.updated_at,
+          isRead: n.is_read,
+          head: n.title,
+          message: n.message,
+          userId: n.user.id,
+        })),
+      },
+    };
+  }
+
+    @Patch('unread/mobile/:id')
+  async markAsReadMobile(
+    @Param('id') id: string,
+    @Req() req,
+  ) {
+      const lang = req.headers['lang']?.toLowerCase() || 'en';
+
+    await this.notificationService.markAsRead(id, req.user.id);
+    return {
+      success: true,
+      code: 200,
+      message: lang === 'ar' ? 'تم وضع العلامة كمقروءة' : 'Marked as read',
+    };
   }
 }

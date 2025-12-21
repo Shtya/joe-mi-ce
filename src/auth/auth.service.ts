@@ -36,7 +36,7 @@ export class AuthService {
         if (dto.role === ERole.PROJECT_ADMIN) {
           throw new ForbiddenException('You cannot create other Project Admins');
         }
-        dto.project_id = requester.project.id ||requester.project_id;
+        dto.project_id = requester.project?.id ||requester.project_id;
       }
     } else {
       if (dto.role !== ERole.SUPER_ADMIN) {
@@ -58,7 +58,7 @@ export class AuthService {
         }),
       );
     } else if (dto.role !== ERole.SUPER_ADMIN) {
-      const projectId = requester?.role.name === ERole.PROJECT_ADMIN ? requester.project.id : dto.project_id;
+      const projectId = requester?.role.name === ERole.PROJECT_ADMIN ? requester.project?.id : dto.project_id;
       if (!projectId) throw new BadRequestException('Project ID is required for this role');
 
       project = await this.projectRepository.findOne({ where: { id: projectId } });
@@ -298,7 +298,7 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.project?.id !== requester.project.id) {
+    if (user.project?.id !== requester.project?.id) {
       throw new ForbiddenException('You can only update users in your own project');
     }
 

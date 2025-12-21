@@ -180,5 +180,25 @@ async resolveProjectIdFromUser(userId: string): Promise<string> {
 
   throw new ForbiddenException('User is not assigned to any project');
 }
+  async deleteUser(
+    userId: string,
+    lang: 'ar' | 'en' = 'en',
+  ): Promise<{ success: boolean; code: number; message: string }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
 
+    if (!user) {
+      throw new NotFoundException(
+        lang === 'ar' ? 'المستخدم غير موجود' : 'User not found',
+      );
+    }
+
+    await this.userRepository.softRemove(user);
+
+    return {
+      success: true,
+      code: 200,
+      message:
+        lang === 'ar' ? 'تم حذف المستخدم بنجاح' : 'User deleted successfully',
+    };
+  }
 }
