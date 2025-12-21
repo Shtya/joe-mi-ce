@@ -226,7 +226,7 @@ async getOutOfStockByUserBranchMobile(
     if (req.user?.project?.id) {
       filters.branch = {
         ...(filters.branch || {}),
-        project: { id: req.user.project.id  || req.user.project_id},
+        project: { id: req.user.project?.id  || req.user.project_id},
       };
     }
 

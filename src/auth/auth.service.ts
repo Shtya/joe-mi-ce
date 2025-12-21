@@ -282,7 +282,7 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    if (requester.project.id !== user.project_id) {
+    if (requester.project?.id !== user.project_id) {
       throw new ForbiddenException('You can only edit users in your own project');
     }
 
@@ -298,7 +298,7 @@ export class AuthService {
 
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.project.id !== requester.project.id) {
+    if (user.project?.id !== requester.project.id) {
       throw new ForbiddenException('You can only update users in your own project');
     }
 

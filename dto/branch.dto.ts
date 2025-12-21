@@ -28,9 +28,8 @@ export class CreateBranchDto {
   @IsNotEmpty()
   name: string;
 
-  @ValidateNested()
-  @Type(() => GeoDto)
-  geo: GeoDto;
+  @IsNotEmpty()
+  geo: any;
 
 
   @IsNumber()

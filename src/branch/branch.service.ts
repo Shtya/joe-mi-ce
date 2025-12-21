@@ -35,13 +35,13 @@ export class BranchService {
     const userdata = await this.usersService.resolveUserWithProject(user.id)
 
     const project = await this.projectRepo.findOne({
-      where: { id: userdata.project.id  || userdata.project_id},
+      where: { id: userdata.project?.id  || userdata.project_id},
       relations: ['owner'],
     });
     if (!project) throw new NotFoundException('Project not found');
 
     const existingBranch = await this.branchRepo.findOne({
-      where: { name: dto.name, project: { id: userdata.project.id || userdata.project_id}},
+      where: { name: dto.name, project: { id: userdata.project?.id || userdata.project_id}},
     });
     if (existingBranch) throw new ConflictException('Branch name must be unique within the project');
 
@@ -97,13 +97,20 @@ export class BranchService {
       }
       await this.userRepo.save(team);
     }
+function parseGeoString(value: string): { lat: number; lng: number } {
+  if (!value) throw new BadRequestException('No geo value');
 
+  const parts = value.split(',').map(s => Number(s.trim()));
+  if (parts.length !== 2 || parts.some(isNaN)) {
+    throw new BadRequestException('Invalid geo format, expected "lat,lng"');
+  }
+
+  return { lat: parts[0], lng: parts[1] };
+}
     const branch = this.branchRepo.create({
       name: dto.name,
-geo: {
-  lat: dto.geo.lat,
-  lng: dto.geo.lng,
-},      geofence_radius_meters: dto.geofence_radius_meters ?? 500,
+ geo: dto.geo ? parseGeoString(dto.geo) : null,
+      geofence_radius_meters: dto.geofence_radius_meters ?? 500,
       image_url: dto.image_url,
       project,
       city,
