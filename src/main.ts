@@ -25,13 +25,19 @@ async function configureApp(app: NestExpressApplication) {
 
   // ✅ FIXED: Explicit CORS configuration
   const corsOptions = {
-    origin: isDev
-      ? ['http://localhost:30012', 'http://localhost:3000']  // Development origins
-      : (origin: string | undefined, callback: Function) => { // Production - dynamic
-          // Allow all origins in production (or customize as needed)
-          // You might want to restrict this to specific domains
-          callback(null, true);
-        },
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:30012',
+      'https://ce-api.joe-mi.com',
+    ];
+
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, origin);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
