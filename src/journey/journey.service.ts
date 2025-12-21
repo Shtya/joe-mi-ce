@@ -369,24 +369,13 @@ private parseLatLng(value: any): { lat: number; lng: number } {
   if (!value) throw new BadRequestException('No geo value');
 
   // If string
-  if (typeof value === 'string') {
-    // Try JSON.parse
-    try {
-      const parsed = JSON.parse(value);
-      if (parsed?.lat && parsed?.lng) return { lat: Number(parsed.lat), lng: Number(parsed.lng) };
-    } catch {}
-
-    // Try "lat,lng"
-    const parts = value.split(',').map(s => Number(s.trim()));
-    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-      return { lat: parts[0], lng: parts[1] };
-    }
-
-    // Last-resort: numbers in string "[object Object]" — unlikely
-    const nums = value.match(/-?\d+(\.\d+)?/g);
-    if (nums && nums.length >= 2) return { lat: Number(nums[0]), lng: Number(nums[1]) };
+if (typeof value === 'string') {
+  // Try "lat,lng"
+  const parts = value.split(',').map(s => Number(s.trim()));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return { lat: parts[0], lng: parts[1] };
   }
-
+}
   // If object
   if (typeof value === 'object') {
     if ('lat' in value && 'lng' in value) return { lat: Number(value.lat), lng: Number(value.lng) };
