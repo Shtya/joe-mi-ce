@@ -35,7 +35,7 @@ export class BranchController {
     }
     console.log('User Project ID:', req.user);
     const whereCondition = {
-      project: { id: req.user.project.id || req.user.project_id }
+      project: { id: req.user?.project?.id || req.user?.project_id }
     };
 
     // Apply other filters if they exist and are for branch fields
