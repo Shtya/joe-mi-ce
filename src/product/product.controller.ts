@@ -156,40 +156,46 @@ export class ProductController {
     }
   }
 
-  @Get()
-  @Permissions(EPermission.PRODUCT_READ)
-  findAll(@Query() q: any) {
-    // Parse filters manually
-    const filters: any = {};
+@Get()
+@Permissions(EPermission.PRODUCT_READ)
+async findAll(@Query() q: any, @Req() req: any) {
+  const user = req.user;
 
-    // Check for nested filter syntax
-    if (q['filters[project][id]']) {
-      filters.project = { id: q['filters[project][id]'] };
-    }
+  // 🔐 Always resolve project from user (never from query)
+  const projectId = await this.productService.userService
+    .resolveProjectIdFromUser(user.id);
 
-    // Or try dot notation
-    if (!filters.project && q['filters.project.id']) {
-      filters.project = { id: q['filters.project.id'] };
-    }
+  const filters: any = {
+    project: { id: projectId },
+  };
 
-    console.log('Manually parsed filters:', filters);
-
-    const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
-    const searchFields = ['name', 'model', 'sku'];
-
-    return CRUD.findAll2(
-      this.productService.productRepository,
-      'product',
-      q.search,
-      q.page,
-      q.limit,
-      q.sortBy,
-      (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC',
-      relations,
-      searchFields,
-      filters
-    );
+  // ✅ Support filters[brand][id]
+  if (q?.filters?.brand?.id) {
+    filters.brand = { id: q.filters.brand.id };
   }
+
+  // ✅ Support filters[category][id]
+  if (q?.filters?.category?.id) {
+    filters.category = { id: q.filters.category.id };
+  }
+
+  const relations = ['brand', 'category', 'project', 'stock', 'stock.branch'];
+  const searchFields = ['name', 'model', 'sku'];
+
+  return CRUD.findAll2(
+    this.productService.productRepository,
+    'product',
+    q.search,
+    q.page,
+    q.limit,
+    q.sortBy,
+    (q.sortOrder as 'ASC' | 'DESC') ?? 'DESC',
+    relations,
+    searchFields,
+    filters
+  );
+}
+
   @Get("mobile/list/:categoryId/:brandId")
   @Permissions(EPermission.BRAND_READ)
   findAllForMobile(
@@ -197,20 +203,26 @@ export class ProductController {
  @Param('brandId', new ParseUUIDPipe()) brandId: string,
 
   @Query() query: PaginationQueryDto,
+  @Req() user:any
   ) {
-    return this.productService.findAllForMobile(query, categoryId ,brandId);
+    return this.productService.findAllForMobile(query, categoryId ,brandId,user);
   }
 
   @Get(':id')
   @Permissions(EPermission.PRODUCT_READ)
-  findOne(@Param('id') id: string) {
-    return this.productService.findOne(id);
+  findOne(@Param('id') id: string,
+  @Req() user:any
+) {
+    return this.productService.findOne(id,user);
   }
 
   @Put(':id')
   @Permissions(EPermission.PRODUCT_UPDATE)
-  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto) {
-    return this.productService.update(id, updateProductDto);
+  update(@Param('id') id: string, @Body() updateProductDto: UpdateProductDto,
+  @Req() user:any
+
+) {
+    return this.productService.update(id, updateProductDto,user);
   }
 
   @Delete(':id')

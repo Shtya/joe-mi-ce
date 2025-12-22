@@ -7,6 +7,8 @@ import { Shift } from './employee/shift.entity';
 import { Product } from './products/product.entity';
 import { Competitor } from './competitor.entity';
 import { Feedback } from './feedback.entity';
+import { Brand } from './products/brand.entity';
+import { Category } from './products/category.entity';
 
 @Entity()
 export class Project extends CoreEntity {
@@ -21,7 +23,10 @@ export class Project extends CoreEntity {
 
   @OneToMany(() => Product, product => product.project)
   products: Product[];
-
+  @OneToMany(() => Brand, bra => bra.project)
+  brands: Brand[];
+  @OneToMany(() => Category, cat => cat.products)
+  categories: Brand[];
   @OneToMany(() => Branch, branch => branch.project)
   branches: Branch[];
 

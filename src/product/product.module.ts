@@ -1,14 +1,15 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm'; 
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { Brand } from 'entities/products/brand.entity';
 import { Category } from 'entities/products/category.entity';
-import { Product } from 'entities/products/product.entity'; 
+import { Product } from 'entities/products/product.entity';
 import { ProductController } from './product.controller';
 import { ProductService } from './product.service';
  import { User } from 'entities/user.entity';
 import { Stock } from 'entities/products/stock.entity';
 import { Project } from 'entities/project.entity';
 import { Branch } from 'entities/branch.entity';
+import { UsersService } from 'src/users/users.service';
 
 @Module({
   imports: [
@@ -18,7 +19,7 @@ import { Branch } from 'entities/branch.entity';
     // StockModule,
   ],
   controllers: [ProductController],
-  providers: [ProductService],
+  providers: [ProductService,UsersService],
   exports: [ProductService],
 })
 export class ProductModule {}

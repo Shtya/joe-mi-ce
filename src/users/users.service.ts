@@ -170,9 +170,11 @@ async resolveProjectIdFromUser(userId: string): Promise<string> {
   // Priority:
   // 1️⃣ Direct project on user
   if (user.project) {
-    return user.project?.id || user.project_id;
+    return user.project?.id
   }
-
+  if(user.project_id){
+    return user.project_id
+  }
   // 2️⃣ Project via branch
   if (user.branch?.project) {
     return user.branch.project.id;

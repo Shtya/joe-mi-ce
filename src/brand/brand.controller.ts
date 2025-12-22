@@ -18,7 +18,7 @@ export class BrandController {
   create(@Body() dto: CreateBrandDto, @Req() req: any) {
     return this.brandService.create(dto, req.user);
   }
-  
+
   @Get("mobile/list")
   @Permissions(EPermission.BRAND_READ)
   findAllForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
@@ -28,19 +28,22 @@ export class BrandController {
   @Permissions(EPermission.BRAND_UPDATE)
   assignCategories(
     @Param('id') id: string,
-    @Body() body: { categoryIds: string[] }
+    @Body() body: { categoryIds: string[] },
+    @Req() req:any
   ) {
-    return this.brandService.assignCategories(id, body.categoryIds);
+    return this.brandService.assignCategories(id, body.categoryIds,req.user);
   }
   @Delete(':id/categories')
   @Permissions(EPermission.BRAND_UPDATE)
   removeCategories(
     @Param('id') id: string,
-    @Body() body: { categoryIds: string[] }
+    @Body() body: { categoryIds: string[] },
+    @Req() req:any
+
   ) {
-    return this.brandService.removeCategories(id, body.categoryIds);
+    return this.brandService.removeCategories(id, body.categoryIds,req.user);
   }
-  
+
   @Get()
   @Permissions(EPermission.BRAND_READ)
   findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
@@ -50,16 +53,20 @@ export class BrandController {
     return CRUD.findAll(this.brandService.brandRepository, 'brand', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['categories'], ['name'], filters);
   }
 
-  @Get(':id') 
+  @Get(':id')
   @Permissions(EPermission.BRAND_READ)
-  findOne(@Param('id') id: string) {
-    return this.brandService.findOne(id);
+  findOne(@Param('id') id: string,
+    @Req() req:any
+) {
+    return this.brandService.findOne(id,req.user);
   }
 
   @Put(':id')
   @Permissions(EPermission.BRAND_UPDATE)
-  update(@Param('id') id: string, @Body() updateBrandDto: UpdateBrandDto) {
-    return this.brandService.update(id, updateBrandDto);
+  update(@Param('id') id: string, @Body() updateBrandDto: UpdateBrandDto,
+    @Req() req:any
+) {
+    return this.brandService.update(id, updateBrandDto,req.user);
   }
 
   @Delete(':id')

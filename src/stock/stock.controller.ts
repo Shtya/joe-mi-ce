@@ -8,7 +8,7 @@ import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { ExportService } from 'src/export/export.service';
 import { PaginationQueryDto } from 'dto/pagination.dto';
-import { LessThanOrEqual } from 'typeorm';
+import { Between, LessThanOrEqual } from 'typeorm';
 
 @UseGuards(AuthGuard)
 @Controller('stock')
@@ -109,26 +109,105 @@ async getOutOfStockByUserBranchMobile(
       query,
     });
   }
-  @Get('project/:projectId')
-  @Permissions(EPermission.STOCK_READ)
-  async getPromoterStocks(@Req() req, @Param('projectId') projectId?: string, @Query() query?: any, @Query('search') search?: string, @Query('page') page: any = 1, @Query('limit') limit: any = 10, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC') {
-    const user = req.user as any;
-    const effectiveProjectId = projectId || user?.project_id || user?.project?.id || null;
+  async getStocksByProjectPaginated({
+  projectId,
+  search,
+  page = 1,
+  limit = 10,
+  sortBy = 'createdAt',
+  sortOrder = 'DESC',
+  filters = {},
+}: {
+  projectId: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'ASC' | 'DESC';
+  filters?: any;
+}) {
+  const qb = this.stockService.stockRepo
+    .createQueryBuilder('stock')
+    .innerJoinAndSelect('stock.product', 'product')
+    .innerJoinAndSelect('product.category', 'category')
+    .leftJoinAndSelect('product.brand', 'brand')
+    .innerJoinAndSelect('stock.branch', 'branch')
+    .innerJoin('branch.project', 'project', 'project.id = :projectId', {
+      projectId,
+    });
 
-    if (!effectiveProjectId) {
-      throw new BadRequestException('projectId is required or user must belong to a project');
-    }
+  /* ===================== SEARCH ===================== */
+  if (search) {
+    qb.andWhere(
+      '(product.name ILIKE :search OR product.sku ILIKE :search)',
+      { search: `%${search}%` },
+    );
+  }
 
-    return this.stockService.getStocksByProjectPaginated({
-      projectId: effectiveProjectId,
-      search,
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-      query,
+  /* ===================== FILTERS ===================== */
+
+  // filters[product][id]
+  if (filters?.product?.id) {
+    qb.andWhere('product.id = :productId', {
+      productId: filters.product.id,
     });
   }
+
+  // filters[branch][id]
+  if (filters?.branch?.id) {
+    qb.andWhere('branch.id = :branchId', {
+      branchId: filters.branch.id,
+    });
+  }
+
+  // ✅ filters[category][id]
+  if (filters?.category?.id) {
+    qb.andWhere('category.id = :categoryId', {
+      categoryId: filters.category.id,
+    });
+  }
+
+  // ✅ filters[brand][id]
+  if (filters?.brand?.id) {
+    qb.andWhere('brand.id = :brandId', {
+      brandId: filters.brand.id,
+    });
+  }
+
+  // filters[createdAt]=YYYY-MM-DD
+if (filters?.createdAt) {
+  const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
+  const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
+
+  qb.andWhere(
+    'stock.created_at BETWEEN :start AND :end',
+    { start, end }
+  );
+}
+
+
+const safeSortBy =
+  sortBy === 'createdAt' ? 'created_at' : sortBy;
+
+qb.orderBy(`stock.${safeSortBy}`, sortOrder);
+
+  /* ===================== PAGINATION ===================== */
+  qb.skip((page - 1) * limit).take(limit);
+
+  const [data, total] = await qb.getManyAndCount();
+
+  return {
+    success: true,
+    data,
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
+  };
+}
+
   @Post('upsert')
   @Permissions(EPermission.STOCK_CREATE, EPermission.STOCK_UPDATE)
   async createOrUpdate(@Body() dto: CreateStockDto) {
@@ -203,72 +282,108 @@ async getOutOfStockByUserBranchMobile(
 
     return out;
   }
-  @Get('out-of-stock')
-  @Permissions(EPermission.STOCK_ANALYZE)
-  async outOfStockSmart(
-    @Req() req: any,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('sortBy') sortBy?: string,
-    @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC',
-    @Query('search') search?: string,
-    @Query('filters') filtersQuery?: Record<string, any>,
-    @Query('threshold') threshold = '0',
+@Get('out-of-stock')
+@Permissions(EPermission.STOCK_ANALYZE)
+async outOfStockSmart(
+  @Req() req: any,
+  @Query('page') page: string = '1',
+  @Query('limit') limit: string = '10',
+  @Query('sortBy') sortBy: string = 'created_at',
+  @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC',
+  @Query('search') search?: string,
+  @Query('filters') filtersQuery?: Record<string, any>,
+  @Query('threshold') threshold = '0',
+  @Query('export') exportFlag?: string,
+  @Res({ passthrough: true }) res?: any,
+) {
+  const user = req.user;
+  const projectId = await this.stockService.userService.resolveProjectIdFromUser(user.id);
 
-    @Query('export') exportFlag?: string,
-    @Res({ passthrough: true }) res?: any,
-  ) {
-    const thrNum = Number(threshold);
-    const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
-    let filters: Record<string, any> = filtersQuery && typeof filtersQuery === 'object' ? { ...filtersQuery } : {};
+  const thrNum = Number(threshold);
+  const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
 
-    filters = this.normalizeFilters(filters);
-    if (req.user?.project?.id) {
-      filters.branch = {
-        ...(filters.branch || {}),
-        project: { id: req.user.project?.id  || req.user.project_id},
-      };
-    }
+  const filters: Record<string, any> = filtersQuery && typeof filtersQuery === 'object' ? { ...filtersQuery } : {};
 
-if (safeThr >= 0 && filters.quantity_to === undefined) {
-  console.log('Applying quantity filter for out-of-stock:', safeThr);
-  filters.quantity = LessThanOrEqual(safeThr);
-}
-    const list = await CRUD.findAllRelation(this.stockService.stockRepo, 'stock', search, page, limit, sortBy, sortOrder, ['product', 'product.category', 'product.brand', 'branch', 'branch.project'], undefined, filters);
+  const qb = this.stockService.stockRepo.createQueryBuilder('stock')
+    .leftJoinAndSelect('stock.product', 'product')
+    .leftJoinAndSelect('product.category', 'category')
+    .leftJoinAndSelect('product.brand', 'brand')
+    .leftJoinAndSelect('product.project', 'project')
+    .leftJoinAndSelect('stock.branch', 'branch');
 
-    // 🔄 flatten for response / export
-    const flatItems = (list.records as any[]).map(it => ({
-      product_id: it.product?.id ?? null,
-      product_name: it.product?.name ?? null,
-      sku: it.product?.sku ?? null,
-      model: it.product?.model ?? null,
-      price: it.product?.price ?? null,
-      is_active: it.product?.is_active ?? null,
-      project: it.product?.project ?? null,
-      category_name: it.product?.category?.name ?? null,
-      brand_name: it.product?.brand?.name ?? null,
-
-      branch_id: it.branch?.id ?? null,
-      branch_name: it.branch?.name ?? null,
-      quantity: it.quantity,
-      created_at: it.created_at,
-    }));
-
-    const shouldExport = typeof exportFlag === 'string' && ['true', '1', 'yes'].includes(exportFlag.toLowerCase());
-
-    if (shouldExport) {
-      const rowsForExport = flatItems.map(row => ({
-        ...row,
-        threshold: safeThr,
-        filter_threshold: safeThr,
-      }));
-
-
-
-      return;
-    }
-    return list;
+  // Search
+  if (search) {
+    qb.andWhere(
+      '(product.name ILIKE :search OR product.sku ILIKE :search OR product.model ILIKE :search)',
+      { search: `%${search}%` }
+    );
   }
+
+  // Project filter
+  qb.andWhere('product.project_id = :projectId', { projectId });
+
+  // Category filter
+  if (filters.category?.id) {
+    qb.andWhere('product.category_id = :categoryId', { categoryId: filters.category.id });
+  }
+
+  // Brand filter
+  if (filters.brand?.id) {
+    qb.andWhere('product.brand_id = :brandId', { brandId: filters.brand.id });
+  }
+
+  // Created_at filter
+  if (filters.createdAt) {
+    const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
+    const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
+    qb.andWhere('stock.created_at BETWEEN :start AND :end', { start, end });
+  }
+
+  // Quantity threshold filter
+  if (safeThr >= 0) {
+    qb.andWhere('stock.quantity <= :threshold', { threshold: safeThr });
+  }
+
+  // Sorting
+  qb.orderBy(sortBy.startsWith('product.') || sortBy.startsWith('stock.') ? sortBy : `stock.${sortBy}`, sortOrder);
+
+  // Pagination
+  const pageNum = Math.max(1, Number(page));
+  const limitNum = Math.max(1, Number(limit));
+  qb.skip((pageNum - 1) * limitNum).take(limitNum);
+
+  const [records, total] = await qb.getManyAndCount();
+
+  // Flatten for response or export
+  const flatItems = records.map(stock => ({
+    product_id: stock.product?.id ?? null,
+    product_name: stock.product?.name ?? null,
+    sku: stock.product?.sku ?? null,
+    model: stock.product?.model ?? null,
+    price: stock.product?.price ?? null,
+    is_active: stock.product?.is_active ?? null,
+    project: stock.product?.project ?? null,
+    project_id:stock.product?.project.id ?? null,
+    category_name: stock.product?.category?.name ?? null,
+    brand_name: stock.product?.brand?.name ?? null,
+    branch_id: stock.branch?.id ?? null,
+    branch_name: stock.branch?.name ?? null,
+    quantity: stock.quantity,
+    created_at: stock.created_at,
+  }));
+
+  const shouldExport = ['true', '1', 'yes'].includes((exportFlag || '').toLowerCase());
+  if (shouldExport) {
+    return flatItems.map(row => ({ ...row, threshold: safeThr, filter_threshold: safeThr }));
+  }
+
+  return {
+    records: flatItems,
+    total,
+    page: pageNum,
+    limit: limitNum,
+  };
+}
 
   // @Get('mobile/out-of-stock')
   // @Permissions(EPermission.STOCK_ANALYZE)

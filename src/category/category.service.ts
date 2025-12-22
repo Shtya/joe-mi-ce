@@ -1,16 +1,18 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { CreateCategoryDto, UpdateCategoryDto } from 'dto/category.dto';
-import { PaginationQueryDto } from 'dto/pagination.dto';
-import { Category } from 'entities/products/category.entity';
-import { ERole } from 'enums/Role.enum';
-import { ILike, Repository } from 'typeorm';
+import { Injectable, ConflictException, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { CreateCategoryDto, UpdateCategoryDto } from "dto/category.dto";
+import { PaginationQueryDto } from "dto/pagination.dto";
+import { Category } from "entities/products/category.entity";
+import { ERole } from "enums/Role.enum";
+import { UsersService } from "src/users/users.service";
+import { Repository } from "typeorm";
 
 @Injectable()
 export class CategoryService {
   constructor(
     @InjectRepository(Category)
     public categoryRepository: Repository<Category>,
+    private readonly userService: UsersService,
   ) {}
 
   public isSuper(user: any) {
@@ -18,68 +20,109 @@ export class CategoryService {
   }
 
   private maskOwnerId(category: Category, requester: any) {
-    const show = this.isSuper(requester) || (category.ownerUserId && category.ownerUserId === requester?.id);
+    const show =
+      this.isSuper(requester) ||
+      (category.ownerUserId && category.ownerUserId === requester?.id);
+
     return { ...category, ownerUserId: show ? category.ownerUserId : null };
   }
 
-  async create(createCategoryDto: CreateCategoryDto, user: any) {
-    const existing = await this.categoryRepository.findOneBy({ name: createCategoryDto.name, ownerUserId: user.id });
+  /* ===================== CREATE ===================== */
+
+  async create(dto: CreateCategoryDto, user: any) {
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+
+    const existing = await this.categoryRepository.findOne({
+      where: {
+        name: dto.name,
+        project: { id: projectId },
+      },
+    });
 
     if (existing) {
-      throw new ConflictException('Category name already exists');
+      throw new ConflictException('category.name_exists');
     }
 
-    const ownerUserId = this.isSuper(user) ? null : user.id;
-
     const category = this.categoryRepository.create({
-      name: createCategoryDto.name,
-      description: createCategoryDto.description,
-      ownerUserId,
+      name: dto.name,
+      description: dto.description,
+      ownerUserId: this.isSuper(user) ? null : user.id,
+      project: { id: projectId },
     });
 
     const saved = await this.categoryRepository.save(category);
     return this.maskOwnerId(saved, user);
-
-    // const category = this.categoryRepository.create(createCategoryDto);
-    // return await this.categoryRepository.save(category);
   }
 
-  async findOne(id: string): Promise<Category> {
-    const category = await this.categoryRepository.findOne({ where: { id } });
+  /* ===================== FIND ONE ===================== */
+
+  async findOne(id: string, user: any): Promise<Category> {
+    const category = await this.categoryRepository.findOne({
+      where: await this.projectWhere(user, { id }),
+    });
+
     if (!category) {
-      throw new NotFoundException(`Category with ID ${id} not found`);
+      throw new NotFoundException('category.not_found');
     }
+
     return category;
   }
 
-  async update(id: string, updateCategoryDto: UpdateCategoryDto): Promise<Category> {
-    const category = await this.findOne(id);
-    this.categoryRepository.merge(category, updateCategoryDto);
+  /* ===================== UPDATE ===================== */
+
+  async update(
+    id: string,
+    dto: UpdateCategoryDto,
+    user: any,
+  ): Promise<Category> {
+    const category = await this.findOne(id, user);
+
+    this.categoryRepository.merge(category, dto);
     return await this.categoryRepository.save(category);
   }
-  async findAllForMobile(brandId: string, query: PaginationQueryDto, user: any) {
+
+  /* ===================== MOBILE ===================== */
+
+  async findAllForMobile(
+    brandId: string,
+    query: PaginationQueryDto,
+    user: any,
+  ) {
     const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
-  
-    try {
-      const categories = await this.categoryRepository
-        .createQueryBuilder('category')
-        .innerJoin('category.brands', 'brand', 'brand.id = :brandId', { brandId })
-        .select(['category.id', 'category.name'])
-        .where(search ? 'category.name ILIKE :search' : '1=1', { search: `%${search}%` })
-        .orderBy(`category.${sortBy}`, sortOrder)
-        .getMany();
-  
-      return {
-        success: true,
-        data: categories,
-      };
-    } catch (error) {
-      console.error('Error in findCategoriesByBrand:', error);
-      return {
-        success: false,
-        message: 'Failed to fetch categories for brand',
-        data: []
-      };
+
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+
+    const qb = this.categoryRepository
+      .createQueryBuilder('category')
+      .innerJoin('category.brands', 'brand', 'brand.id = :brandId', { brandId })
+      .innerJoin('category.project', 'project', 'project.id = :projectId', {
+        projectId,
+      })
+      .select(['category.id', 'category.name'])
+      .orderBy(`category.${sortBy}`, sortOrder);
+
+    if (search) {
+      qb.andWhere('category.name ILIKE :search', {
+        search: `%${search}%`,
+      });
     }
+
+    const categories = await qb.getMany();
+
+    return {
+      success: true,
+      data: categories,
+    };
+  }
+
+  /* ===================== HELPERS ===================== */
+
+  private async projectWhere(user: any, extra: any = {}) {
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+
+    return {
+      project: { id: projectId },
+      ...extra,
+    };
   }
 }

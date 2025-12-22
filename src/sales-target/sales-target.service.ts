@@ -17,110 +17,63 @@ export class SalesTargetService {
     @InjectRepository(Branch)
     private readonly branchRepository: Repository<Branch>,
   ) {}
-
+  private get3MonthPeriod(date: Date = new Date()) {
+    const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
+    const endDate = new Date(date.getFullYear(), date.getMonth() + 3, 0);
+    return { startDate, endDate };
+  }
   async create(createDto: CreateSalesTargetDto, createdBy?: string): Promise<SalesTarget[]> {
-    // Handle single branchId for backward compatibility
-    const branchIds = createDto.branchIds ;
-    
-    if (!branchIds.length) {
-      throw new BadRequestException('At least one branch ID is required');
-    }
-  
-    // Find all branches
-    const branches = await this.branchRepository.find({
-      where: { id: In(branchIds) }
-    });
-  
+    const branchIds = createDto.branchIds?.length
+      ? createDto.branchIds
+      : createDto.branchId
+        ? [createDto.branchId]
+        : [];
+
+    if (!branchIds.length) throw new BadRequestException('Either branchId or branchIds must be provided');
+
+    const branches = await this.branchRepository.find({ where: { id: In(branchIds) } });
     if (branches.length !== branchIds.length) {
-      const foundIds = branches.map(b => b.id);
-      const missingIds = branchIds.filter(id => !foundIds.includes(id));
+      const missingIds = branchIds.filter(id => !branches.map(b => b.id).includes(id));
       throw new NotFoundException(`Branches not found: ${missingIds.join(', ')}`);
     }
-  
-    // Determine the target type
+
     const targetType = createDto.type || SalesTargetType.QUARTERLY;
-    
-    // Get current date
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    
-    let startDate: Date;
-    let endDate: Date;
-  
-    // Helper function to set time to start of day (00:00:00.000)
-    const setStartOfDay = (date: Date): Date => {
-      const newDate = new Date(date);
-      newDate.setHours(0, 0, 0, 0);
-      return newDate;
-    };
-  
-    // Helper function to set time to end of day (23:59:59.999)
-    const setEndOfDay = (date: Date): Date => {
-      const newDate = new Date(date);
-      newDate.setHours(23, 59, 59, 999);
-      return newDate;
-    };
-  
-    if (targetType === SalesTargetType.MONTHLY) {
-      // Monthly: 1st to last day of current month
-      startDate = setStartOfDay(new Date(currentYear, currentMonth, 1));
-      endDate = setEndOfDay(new Date(currentYear, currentMonth + 1, 0));
-    } else {
-      // Quarterly: calculate quarter
-      const currentQuarter = Math.floor(currentMonth / 3);
-      const quarterStartMonth = currentQuarter * 3;
-      
-      // Set start date to 1st of quarter
-      startDate = setStartOfDay(new Date(currentYear, quarterStartMonth, 1));
-      // Set end date to last day of quarter
-      endDate = setEndOfDay(new Date(currentYear, quarterStartMonth + 3, 0));
-    }
-  
-    // Create sales targets for each branch
+    const { startDate, endDate } = this.get3MonthPeriod();
+
     const salesTargets: SalesTarget[] = [];
-    
+
     for (const branch of branches) {
-      // Generate branch-specific name and description
-      let targetName: string;
-      let description: string;
-  
-      if (targetType === SalesTargetType.MONTHLY) {
-        const monthYear = new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' });
-        targetName = createDto.name || `${branch.name} - Monthly Target - ${monthYear}`;
-        description = createDto.description || `Monthly sales target for ${branch.name} covering ${monthYear}`;
-      } else {
-        const currentQuarter = Math.floor(currentMonth / 3);
-        const quarterName = `Q${currentQuarter + 1}`;
-        const quarterStartMonthName = new Date(currentYear, Math.floor(currentMonth / 3) * 3, 1)
-          .toLocaleString('default', { month: 'short' });
-        const quarterEndMonthName = new Date(currentYear, Math.floor(currentMonth / 3) * 3 + 2, 1)
-          .toLocaleString('default', { month: 'short' });
-        
-        targetName = createDto.name || `${branch.name} - Quarterly Target - ${quarterName} ${currentYear}`;
-        description = createDto.description || `Quarterly sales target for ${branch.name} - ${quarterName} ${currentYear} (${quarterStartMonthName}-${quarterEndMonthName})`;
-      }
-  
-      // Use branch-specific target amount if available, otherwise use default
-      const targetAmount = createDto.targetAmount || branch.defaultSalesTargetAmount || 0;
-  
-      const salesTargetData = {
+      const targetName = createDto.name || `${branch.name} - ${targetType} Target - ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
+      const description = createDto.description || `${targetType} sales target for ${branch.name} from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
+      const targetAmount = createDto.targetAmount ?? branch.defaultSalesTargetAmount ?? 0;
+
+      const existingTarget = await this.salesTargetRepository.findOne({
+        where: {
+          branch: { id: branch.id },
+          type: targetType,
+          startDate,
+          endDate,
+        },
+      });
+      if (existingTarget) throw new BadRequestException(`Active ${targetType} target already exists for branch ${branch.name}`);
+
+      const salesTarget = this.salesTargetRepository.create({
         ...createDto,
         name: targetName,
         description,
-        startDate: createDto.startDate ? setStartOfDay(new Date(createDto.startDate)) : startDate,
-        endDate: createDto.endDate ? setEndOfDay(new Date(createDto.endDate)) : endDate,
+        startDate,
+        endDate,
         targetAmount,
+        currentAmount: 0,
+        status: SalesTargetStatus.ACTIVE,
         type: targetType,
         branch,
         createdBy: createdBy ? { id: createdBy } : null,
-      };
-  
-      const salesTarget = this.salesTargetRepository.create(salesTargetData);
+      });
+
       salesTargets.push(salesTarget);
     }
-  
-    // Save all sales targets
+
     return await this.salesTargetRepository.save(salesTargets);
   }
 
@@ -161,7 +114,7 @@ export class SalesTargetService {
 
   async findByBranch(branchId: string, status?: SalesTargetStatus): Promise<SalesTarget[]> {
     const where: any = { branch: { id: branchId } };
-    
+
     if (status) {
       where.status = status;
     }
@@ -172,10 +125,8 @@ export class SalesTargetService {
       order: { startDate: 'DESC' },
     });
   }
-
   async getCurrentTarget(branchId: string): Promise<SalesTarget | null> {
     const now = new Date();
-    
     return await this.salesTargetRepository.findOne({
       where: {
         branch: { id: branchId },
@@ -186,10 +137,9 @@ export class SalesTargetService {
       relations: ['branch', 'createdBy'],
     });
   }
-
   async update(id: string, updateDto: UpdateSalesTargetDto): Promise<SalesTarget> {
     const salesTarget = await this.findOne(id);
-    
+
     Object.assign(salesTarget, updateDto);
     salesTarget.updateStatus();
 
@@ -198,7 +148,7 @@ export class SalesTargetService {
 
   async updateProgress(id: string, progressDto: UpdateSalesProgressDto): Promise<SalesTarget> {
     const salesTarget = await this.findOne(id);
-    
+
     salesTarget.currentAmount += progressDto.salesAmount;
     salesTarget.updateStatus();
 
@@ -209,32 +159,10 @@ export class SalesTargetService {
     const salesTarget = await this.findOne(id);
     await this.salesTargetRepository.remove(salesTarget);
   }
-
   async createNewSalesTarget(branch: Branch, targetType: SalesTargetType): Promise<SalesTarget> {
-    const now = new Date();
-    const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth();
-    
-    let startDate: Date;
-    let endDate: Date;
-    let targetName: string;
-
-    if (targetType === SalesTargetType.MONTHLY) {
-      // Monthly target: current month (1st to last day)
-      startDate = new Date(currentYear, currentMonth, 1);
-      endDate = new Date(currentYear, currentMonth + 1, 0); // Last day of current month
-      targetName = `Monthly Sales - ${startDate.toLocaleString('default', { month: 'long', year: 'numeric' })}`;
-    } else {
-      // Quarterly target: current quarter
-      const currentQuarter = Math.floor(currentMonth / 3);
-      const quarterStartMonth = currentQuarter * 3;
-      
-      startDate = new Date(currentYear, quarterStartMonth, 1);
-      endDate = new Date(currentYear, quarterStartMonth + 3, 0); // Last day of the quarter
-      targetName = `Q${currentQuarter + 1} Sales - ${currentYear}`;
-    }
-
+    const { startDate, endDate } = this.get3MonthPeriod();
     const targetAmount = branch.defaultSalesTargetAmount || 0;
+    const targetName = `${targetType} Sales - ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
 
     const newTarget = this.salesTargetRepository.create({
       name: targetName,
@@ -244,21 +172,21 @@ export class SalesTargetService {
       endDate,
       branch,
       autoRenew: branch.autoCreateSalesTargets,
+      status: SalesTargetStatus.ACTIVE,
+      currentAmount: 0,
     });
 
     return await this.salesTargetRepository.save(newTarget);
   }
 
-  // Single cron job that runs on the 1st day of every month at 2:00 AM
-  @Cron('0 2 1 * *') // At 02:00 on day-of-month 1
+  /** Cron job runs on 1st day of every month at 2:00 AM */
+  @Cron('0 2 1 * *')
   async handleAllTargets() {
-    this.logger.log('Processing all sales targets (monthly and quarterly)...');
-    
-    const now = new Date();
-    const yesterday = new Date(now);
+    this.logger.log('Processing expired sales targets...');
+
+    const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
 
-    // Find ALL expired targets (both monthly and quarterly) that ended yesterday
     const expiredTargets = await this.salesTargetRepository.find({
       where: {
         endDate: Between(
@@ -270,65 +198,42 @@ export class SalesTargetService {
       relations: ['branch'],
     });
 
-    let monthlyCount = 0;
-    let quarterlyCount = 0;
-
     for (const target of expiredTargets) {
-      // Update status of expired target
       target.status = SalesTargetStatus.EXPIRED;
       await this.salesTargetRepository.save(target);
 
-      // Create new target if auto-renew is enabled
       if (target.autoRenew && target.branch.autoCreateSalesTargets) {
         await this.createNewSalesTarget(target.branch, target.type);
-        
-        if (target.type === SalesTargetType.MONTHLY) {
-          monthlyCount++;
-        } else {
-          quarterlyCount++;
-        }
-        
-        this.logger.log(`Created new ${target.type} sales target for branch: ${target.branch.name}`);
+        this.logger.log(`Created new ${target.type} sales target for branch ${target.branch.name}`);
       }
     }
 
-    this.logger.log(`Processed ${expiredTargets.length} expired targets (${monthlyCount} monthly, ${quarterlyCount} quarterly)`);
-    
-    // Also create initial targets for branches that don't have current targets
     await this.initializeMissingTargets();
   }
 
   // Initialize missing targets for branches with auto-create enabled
   async initializeMissingTargets(): Promise<void> {
-    this.logger.log('Checking for branches without current sales targets...');
-    
-    const branches = await this.branchRepository.find({
-      where: { autoCreateSalesTargets: true },
-    });
+    this.logger.log('Checking branches without current targets...');
 
-    const currentDate = new Date();
+    const branches = await this.branchRepository.find({ where: { autoCreateSalesTargets: true } });
     let createdCount = 0;
-    
+
     for (const branch of branches) {
       const currentTarget = await this.getCurrentTarget(branch.id);
-      
       if (!currentTarget) {
-        // No active target found, create one based on branch's target type
         await this.createNewSalesTarget(branch, branch.salesTargetType);
         createdCount++;
         this.logger.log(`Created initial ${branch.salesTargetType} sales target for branch: ${branch.name}`);
       }
     }
 
-    if (createdCount > 0) {
-      this.logger.log(`Created ${createdCount} initial sales targets for branches`);
-    }
+    if (createdCount > 0) this.logger.log(`Created ${createdCount} initial sales targets`);
   }
 
   // Method to manually trigger target creation for testing
   async manuallyCreateTargetsForDate(targetDate: Date): Promise<void> {
     this.logger.log(`Manually creating targets for date: ${targetDate}`);
-    
+
     const branches = await this.branchRepository.find({
       where: { autoCreateSalesTargets: true },
     });
@@ -416,7 +321,7 @@ export class SalesTargetService {
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + days);
-    
+
     return await this.salesTargetRepository.find({
       where: {
         endDate: Between(startDate, endDate),

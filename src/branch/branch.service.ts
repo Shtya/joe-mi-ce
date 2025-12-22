@@ -52,6 +52,15 @@ export class BranchService {
       where: { project: { id: project.id } },
       relations: ['supervisor', 'team'],
     });
+function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
+  const startDate = new Date(startMonthDate.getFullYear(), startMonthDate.getMonth(), 1);
+
+  // End date: 3 months later minus 1 day
+  const endDate = new Date(startMonthDate.getFullYear(), startMonthDate.getMonth() + 3, 0);
+
+  return { startDate, endDate };
+}
+
 
     // Supervisor duplication check
     if (dto.supervisorId) {
@@ -107,6 +116,7 @@ function parseGeoString(value: string): { lat: number; lng: number } {
 
   return { lat: parts[0], lng: parts[1] };
 }
+
     const branch = this.branchRepo.create({
       name: dto.name,
  geo: dto.geo ? parseGeoString(dto.geo) : null,
@@ -119,16 +129,20 @@ function parseGeoString(value: string): { lat: number; lng: number } {
       team,
       salesTargetType: dto.salesTargetType ?? SalesTargetType.QUARTERLY,
       autoCreateSalesTargets: dto.autoCreateSalesTargets ?? true,
-      defaultSalesTargetAmount: dto.defaultSalesTargetAmount ?? null
+      defaultSalesTargetAmount: dto.defaultSalesTargetAmount ?? 0
     });
 
     const savedBranch = await this.branchRepo.save(branch);
 
-    if (savedBranch.autoCreateSalesTargets && savedBranch.defaultSalesTargetAmount) {
+    if (savedBranch.autoCreateSalesTargets ) {
+      const { startDate, endDate } = getTargetStartAndEnd();
+
       const salesTarget = this.salesTargetRepo.create({
         branch: savedBranch,
         type: savedBranch.salesTargetType,
         name:`default target ${dto.name}`,
+        startDate,
+        endDate,
         description: `this is the deafault target of the branch ${dto.name} and the target is ${dto.defaultSalesTargetAmount}`,
         targetAmount: savedBranch.defaultSalesTargetAmount,
         autoRenew: savedBranch.autoCreateSalesTargets,
@@ -259,7 +273,7 @@ function parseGeoString(value: string): { lat: number; lng: number } {
     });
 
     if (!branch) throw new NotFoundException('Branch not found');
-    if (branch.project.owner.id !== user.id) throw new ForbiddenException('Access denied');
+    if (branch.project.id !== user.project_id || user.project.id) throw new ForbiddenException('Access denied');
 
     // Check for supervisor or team changes
     if (dto.supervisorId || dto.teamIds) {

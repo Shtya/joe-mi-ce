@@ -39,14 +39,17 @@ findCategoriesByBrand(
 
   @Get(':id')
   @Permissions(EPermission.CATEGORY_READ)
-  findOne(@Param('id') id: string) {
-    return this.categoryService.findOne(id);
+  findOne(@Param('id') id: string,
+    @Req() req:any) {
+    return this.categoryService.findOne(id,req.user);
   }
 
   @Put(':id')
   @Permissions(EPermission.CATEGORY_UPDATE)
-  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
-    return this.categoryService.update(id, updateCategoryDto);
+  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto,
+    @Req() req:any) {
+
+    return this.categoryService.update(id, updateCategoryDto,req.user);
   }
 
   @Delete(':id')
