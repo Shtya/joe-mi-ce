@@ -9,6 +9,7 @@ import { Stock } from 'entities/products/stock.entity';
 import { Brackets, In, LessThanOrEqual, Not, Repository } from 'typeorm';
 import { Sale } from 'entities/products/sale.entity';
 import { User } from 'entities/user.entity';
+import { UsersService } from 'src/users/users.service';
 
 type OutOfStockItem = {
   product: any;
@@ -35,38 +36,53 @@ export class StockService {
     @InjectRepository(Branch) public branchRepo: Repository<Branch>,
     @InjectRepository(Sale) public saleRepo: Repository<Sale>,
     @InjectRepository(User) public userRepo: Repository<User>,
-
+    public readonly userService : UsersService
   ) {}
 
-  async getStocksByProjectPaginated(params: { projectId: string; search?: string; page?: any; limit?: any; sortBy?: string; sortOrder?: 'ASC' | 'DESC', query: any }) {
-    const { projectId, search, page = 1, limit = 10, sortBy, sortOrder = 'DESC', query } = params;
+async getStocksByProjectPaginated(params: {
+  projectId: string;
+  search?: string;
+  page?: any;
+  limit?: any;
+  sortBy?: string;
+  sortOrder?: 'ASC' | 'DESC';
+  query: any;
+}) {
+  const { projectId, search, page = 1, limit = 10, sortBy, sortOrder = 'DESC', query } = params;
 
-    if (!projectId) {
-      throw new BadRequestException('projectId is required');
-    }
 
-    const filters = {
-      branch: {
-        project: {
-          id: projectId,
-        },
+
+  // Start with the mandatory project filter
+  const filters: any = {
+    branch: {
+      project: {
+        id: projectId,
       },
-      ...query?.filters
-    };
+    },
+  };
 
-    return CRUD.findAllRelation<Stock>(
-      this.stockRepo,
-      'stock',  
-      search,
-      page,
-      limit,
-      sortBy,
-      sortOrder,
-      ['product', 'branch', "branch.project",'product.brand'], 
-      ['name'], 
-      filters,
-    );
+  if (query?.filters) {
+    const { product, brand, branch, category, createdAt } = query.filters;
+
+    if (brand?.id) filters.product = { ...(filters.product || {}), brand: { id: brand.id } };
+    if (branch?.id) filters.branch = { ...(filters.branch || {}), id: branch.id };
+    if (category?.id) filters.product = { ...(filters.product || {}), category: { id: category.id } };
+    if (createdAt) filters.created_at = createdAt;
   }
+
+  return CRUD.findAllRelation<Stock>(
+    this.stockRepo,
+    'stock',
+    search,
+    page,
+    limit,
+    sortBy,
+    sortOrder,
+    ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
+    ['name'],
+    filters,
+  );
+}
 
   async createOrUpdate(createStockDto: CreateStockDto): Promise<Stock> {
     const { product_id, branch_id, quantity } = createStockDto;
@@ -128,24 +144,24 @@ export class StockService {
     if (!branchId) {
       throw new BadRequestException('branchId is required');
     }
-  
+
     const baseFilters = {
       branch: {
         id: branchId,
       },
       ...filters
     };
-  
+
     return CRUD.findAllRelation<Stock>(
       this.stockRepo,
-      'stock',  
+      'stock',
       search,
       page,
       limit,
       sortBy,
       sortOrder,
-      ['product', 'branch', 'branch.project', 'product.brand', 'product.category'], 
-      ['name'], 
+      ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
+      ['name'],
       baseFilters,
     );
   }
@@ -172,138 +188,212 @@ async getStocksByProduct(
 
   return CRUD.findAllRelation<Stock>(
     this.stockRepo,
-    'stock',  
+    'stock',
     search,
     page,
     limit,
     sortBy,
     sortOrder,
-    ['product', 'branch', 'branch.project', 'product.brand', 'product.category'], 
-    ['name'], 
+    ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
+    ['name'],
     baseFilters,
   );
 }
 
   // stock.service.ts
-  async getOutOfStockSmart(opts: { branchId?: string; productId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
-    const { branchId, productId, project, threshold = 0 } = opts;
-    if (productId) {
-      return this.getOutOfStock({ branchId, productId, project, threshold });
-    }
-    return this.getOutOfStockAggregated({ branchId, project, threshold });
+async getOutOfStockSmart(
+  opts: { branchId?: string; productId?: string; threshold?: number },
+  user: any
+): Promise<OutOfStockResponse> {
+      const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+
+     if (opts.productId) {
+    return this.getOutOfStock({
+      branchId: opts.branchId,
+      productId: opts.productId,
+      threshold: opts.threshold,
+      projectId,
+    });
   }
-  
-  async getOutOfStock(opts: { branchId?: string; productId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
-    const { branchId, productId, project, threshold = 0 } = opts;
-  
-    if (branchId) {
-      const branch = await this.branchRepo.findOne({ where: { id: branchId } });
-      if (!branch) throw new NotFoundException(`Branch with ID ${branchId} not found`);
-    }
-    if (productId) {
-      const product = await this.productRepo.findOne({ where: { id: productId } });
-      if (!product) throw new NotFoundException(`Product with ID ${productId} not found`);
-    }
-  
-    const where: any = { quantity: LessThanOrEqual(threshold) };
-    if (branchId) where.branch = { id: branchId };
-    if (productId) where.product = { id: productId };
-    if (project) where.product = { ...where.product, project }; // ✅ Added project filter
-  
-    const stocks = await this.stockRepo.find({
-      where,
-      relations: ['product', 'branch'],
-      order: { quantity: 'ASC' },
+  return this.getOutOfStockAggregated({
+    branchId: opts.branchId,
+    threshold: opts.threshold,
+    projectId,
+  });  }
+
+async getOutOfStock(opts: {
+  branchId?: string;
+  productId?: string;
+  projectId: string;
+  threshold?: number;
+}): Promise<OutOfStockResponse> {
+
+  const { branchId, productId, projectId, threshold = 0 } = opts;
+
+  /* ===================== VALIDATION ===================== */
+
+  if (branchId) {
+    const branch = await this.branchRepo.findOne({
+      where: { id: branchId, project: { id: projectId } },
     });
-  
-    const items = stocks.map(s => ({
-      product: s.product,
-      branch: s.branch,
-      quantity: s.quantity,
-    }));
-  
-    return {
-      mode: 'per-branch',
-      threshold,
-      branchId,
-      productId,
-      project, // ✅ Return project in response
-      items,
-      count: items.length,
-    };
+    if (!branch) {
+      throw new NotFoundException(
+        `Branch with ID ${branchId} not found in this project`
+      );
+    }
   }
-  
-  async getOutOfStockAggregated(opts: { branchId?: string; project?: string; threshold?: number }): Promise<OutOfStockResponse> {
-    const { branchId, project, threshold = 0 } = opts;
-  
-    // تجميعة آمنة بلا سحب stock.id
-    const qb = this.productRepo.createQueryBuilder('product')
-      .leftJoin('product.stock', 'stock')
-      .leftJoin('stock.branch', 'branch')
-      .select('product.id', 'product_id')
-      .addSelect('product.name', 'product_name')
-      .addSelect('product.project', 'project') // ✅ Added project to select
-      .addSelect('COALESCE(SUM(stock.quantity), 0)', 'total_qty')
-      .groupBy('product.id')
-      .addGroupBy('product.name')
-      .addGroupBy('product.project') // ✅ Added project to group by
-      .having('COALESCE(SUM(stock.quantity), 0) <= :thr', { thr: threshold })
-      .orderBy('total_qty', 'ASC');
-  
-    if (branchId) {
-      qb.andWhere('branch.id = :branchId', { branchId });
-    }
-    if (project) {
-      qb.andWhere('product.project = :project', { project }); // ✅ Added project filter
-    }
-  
-    const rows = await qb.getRawMany(); // [{ product_id, product_name, project, total_qty }]
-    if (rows.length === 0) {
-      return {
-        mode: 'aggregate',
-        threshold,
-        branchId,
-        project, // ✅ Return project in response
-        items: [],
-        count: 0,
-      };
-    }
-  
-    // حمّل المنتجات مع stocks + branches (لنفس شكل الإخراج)
-    const productIds = rows.map(r => r.product_id);
-    const products = await this.productRepo.find({
-      where: { id: In(productIds) },
-      relations: ['stock', 'stock.branch'],
+
+  if (productId) {
+    const product = await this.productRepo.findOne({
+      where: { id: productId, project: { id: projectId } },
     });
-    const byId = new Map(products.map(p => [p.id, p]));
-  
-    const items = rows.map(r => {
-      const product = byId.get(r.product_id)!;
-  
-      // لو عايز تقتصر stocks داخل المنتج على فرع معين (للمعاينة فقط)، ممكن تفعّل السطر ده:
-      const productScoped = branchId ? { ...product, stock: (product.stock ?? []).filter((s: any) => s.branch?.id === branchId) } : product;
-  
-      return {
-        product: productScoped,
-        branch: null, // موحّد مع per-branch (لكن هنا aggregate)
-        quantity: Number(r.total_qty), // نفس المفتاح "quantity" في الحالتين
-      };
+    if (!product) {
+      throw new NotFoundException(
+        `Product with ID ${productId} not found in this project`
+      );
+    }
+  }
+
+  /* ===================== QUERY ===================== */
+
+  const where: any = {
+    quantity: LessThanOrEqual(threshold),
+    product: {
+      project: { id: projectId }, // 🔐 PROJECT ENFORCED HERE
+    },
+  };
+
+  if (branchId) {
+    where.branch = { id: branchId };
+  }
+
+  if (productId) {
+    where.product.id = productId;
+  }
+
+  const stocks = await this.stockRepo.find({
+    where,
+    relations: ['product', 'branch'],
+    order: { quantity: 'ASC' },
+  });
+
+  const items = stocks.map(s => ({
+    product: s.product,
+    branch: s.branch,
+    quantity: s.quantity,
+  }));
+
+  return {
+    mode: 'per-branch',
+    threshold,
+    branchId,
+    productId,
+    project:projectId,
+    items,
+    count: items.length,
+  };
+}
+
+async getOutOfStockAggregated(
+  opts: { branchId?: string; threshold?: number ,projectId},
+): Promise<OutOfStockResponse> {
+
+  const { branchId, threshold = 0 ,projectId} = opts;
+
+  /* ===================== VALIDATION ===================== */
+
+  if (branchId) {
+    const branch = await this.branchRepo.findOne({
+      where: { id: branchId, project: { id: projectId } },
     });
-  
+
+    if (!branch) {
+      throw new NotFoundException(
+        `Branch with ID ${branchId} not found in this project`
+      );
+    }
+  }
+
+  /* ===================== AGGREGATION QUERY ===================== */
+
+  const qb = this.productRepo
+    .createQueryBuilder('product')
+    .leftJoin('product.stock', 'stock')
+    .leftJoin('stock.branch', 'branch')
+    .where('product.project_id = :projectId', { projectId }) // 🔐 PROJECT ENFORCED
+    .select('product.id', 'product_id')
+    .addSelect('product.name', 'product_name')
+    .addSelect('COALESCE(SUM(stock.quantity), 0)', 'total_qty')
+    .groupBy('product.id')
+    .addGroupBy('product.name')
+    .having('COALESCE(SUM(stock.quantity), 0) <= :thr', { thr: threshold })
+    .orderBy('total_qty', 'ASC');
+
+  if (branchId) {
+    qb.andWhere('branch.id = :branchId', { branchId });
+  }
+
+  const rows = await qb.getRawMany(); // [{ product_id, product_name, total_qty }]
+
+  if (rows.length === 0) {
     return {
       mode: 'aggregate',
       threshold,
       branchId,
-      project, // ✅ Return project in response
-      items,
-      count: items.length,
+      project:projectId,
+      items: [],
+      count: 0,
     };
   }
+
+  /* ===================== LOAD FULL PRODUCTS ===================== */
+
+  const productIds = rows.map(r => r.product_id);
+
+  const products = await this.productRepo.find({
+    where: {
+      id: In(productIds),
+      project: { id: projectId }, // 🔐 SAFETY NET
+    },
+    relations: ['stock', 'stock.branch'],
+  });
+
+  const byId = new Map(products.map(p => [p.id, p]));
+
+  const items = rows.map(r => {
+    const product = byId.get(r.product_id)!;
+
+    const productScoped = branchId
+      ? {
+          ...product,
+          stock: (product.stock ?? []).filter(
+            (s: any) => s.branch?.id === branchId
+          ),
+        }
+      : product;
+
+    return {
+      product: productScoped,
+      branch: null,
+      quantity: Number(r.total_qty),
+    };
+  });
+
+  return {
+    mode: 'aggregate',
+    threshold,
+    branchId,
+    project:projectId,
+    items,
+    count: items.length,
+  };
+}
+
 
   async getById(id: string): Promise<Stock> {
     const stock = await this.stockRepo.findOne({
       where: { id },
-      relations: ['product', 'branch', 'product.project', 'branch.project', 'product.brand'], 
+      relations: ['product', 'branch', 'product.project', 'branch.project', 'product.brand'],
     });
     console.log(stock.product.brand)
 
@@ -328,20 +418,20 @@ async getStocksByProduct(
       }
     }
 
-    const product = dto.product_id ? await this.productRepo.findOne({ 
-      where: { id: dto.product_id }, 
-      relations: ['project'] 
+    const product = dto.product_id ? await this.productRepo.findOne({
+      where: { id: dto.product_id },
+      relations: ['project']
     }) : stock.product;
-    
+
     if (dto.product_id && !product) {
       throw new NotFoundException(`Product with ID ${dto.product_id} not found`);
     }
 
-    const branch = dto.branch_id ? await this.branchRepo.findOne({ 
-      where: { id: dto.branch_id }, 
-      relations: ['project'] 
+    const branch = dto.branch_id ? await this.branchRepo.findOne({
+      where: { id: dto.branch_id },
+      relations: ['project']
     }) : stock.branch;
-    
+
     if (dto.branch_id && !branch) {
       throw new NotFoundException(`Branch with ID ${dto.branch_id} not found`);
     }
@@ -383,20 +473,20 @@ async getStocksByProduct(
     });
     if (!stock) throw new NotFoundException('Stock not found');
 
-    const product = dto.product_id ? await this.productRepo.findOne({ 
-      where: { id: dto.product_id }, 
-      relations: ['project'] 
+    const product = dto.product_id ? await this.productRepo.findOne({
+      where: { id: dto.product_id },
+      relations: ['project']
     }) : stock.product;
-    
+
     if (dto.product_id && !product) {
       throw new NotFoundException(`Product with ID ${dto.product_id} not found`);
     }
 
-    const branch = dto.branch_id ? await this.branchRepo.findOne({ 
-      where: { id: dto.branch_id }, 
-      relations: ['project'] 
+    const branch = dto.branch_id ? await this.branchRepo.findOne({
+      where: { id: dto.branch_id },
+      relations: ['project']
     }) : stock.branch;
-    
+
     if (dto.branch_id && !branch) {
       throw new NotFoundException(`Branch with ID ${dto.branch_id} not found`);
     }
@@ -601,8 +691,8 @@ if (!branch) {
       if (value !== null && value !== undefined && value !== '') {
         if (key.includes('.')) {
           const [relation, field] = key.split('.');
-          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { 
-            [key.replace('.', '_')]: value 
+          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, {
+            [key.replace('.', '_')]: value
           });
         } else {
           qb.andWhere(`stock.${key} = :${key}`, { [key]: value });
@@ -621,7 +711,7 @@ if (!branch) {
   const optimizedRecords = records.map(stock => {
     const productPrice = stock.product?.price || 0;
     const discount = stock.product?.discount || 0;
-    
+
     return {
       id: stock.id,
       quantity: stock.quantity,
@@ -711,7 +801,7 @@ async createStockMobile(
   // ─────────────────────────────────────────────
   const existingStock = await this.stockRepo.findOne({
     where: {
-      product_id, 
+      product_id,
       branch_id
     },
     withDeleted: true,
@@ -837,11 +927,11 @@ async updateStockMobile(
       where: { id: updateStockDto.product_id },
       relations: ['brand', 'category'],
     });
-    
+
     if (!product) {
       throw new NotFoundException(`Product with ID ${updateStockDto.product_id} not found`);
     }
-    
+
     stock.product = product;
     stock.product_id = product.id;
   }
@@ -851,7 +941,7 @@ async updateStockMobile(
   // Transform response to match optimized structure
   const productPrice = updatedStock.product?.price || 0;
   const discount = updatedStock.product?.discount || 0;
-  
+
   return {
     message: 'Stock updated successfully',
     total_records: 1,
@@ -993,7 +1083,7 @@ async getOutOfStockByUserBranchMobile(
   const branch = await this.branchRepo.findOne({
     where:{id:branchId}
   })
-  
+
   if (!branch) {
     throw new NotFoundException('Branch not found');
   }
@@ -1045,8 +1135,8 @@ async getOutOfStockByUserBranchMobile(
       if (value !== null && value !== undefined && value !== '') {
         if (key.includes('.')) {
           const [relation, field] = key.split('.');
-          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { 
-            [key.replace('.', '_')]: value 
+          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, {
+            [key.replace('.', '_')]: value
           });
         } else {
           qb.andWhere(`stock.${key} = :${key}`, { [key]: value });
@@ -1065,7 +1155,7 @@ async getOutOfStockByUserBranchMobile(
   const optimizedRecords = records.map(stock => {
     const productPrice = stock.product?.price || 0;
     const discount = stock.product?.discount || 0;
-    
+
     return {
       id: stock.id,
       quantity: stock.quantity,

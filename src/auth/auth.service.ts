@@ -21,9 +21,10 @@ export class AuthService {
   ) {}
 
   async register(requester: User | null, dto: RegisterDto) {
-    const existingUser = await this.userRepository.findOne({ where: { username: dto.username } });
+    const existingUser = await this.userRepository.findOne({ where: { username: dto.username },withDeleted:true});
     if (existingUser) throw new BadRequestException('Username already exists');
-
+const existingUserPhone = await this.userRepository.findOne({ where: { username: dto.mobile },withDeleted:true });
+    if (existingUserPhone) throw new BadRequestException('mobile already exists');
     const role = await this.roleRepository.findOne({ where: { name: dto.role } });
     if (!role) throw new BadRequestException('Invalid role specified');
 
@@ -278,10 +279,18 @@ export class AuthService {
     const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ['project'],
-    });
+      withDeleted:true
+  });
 
     if (!user) throw new NotFoundException('User not found');
-
+   if(dto.mobile){
+    const userPhone = await this.userRepository.findOne({
+      where:{mobile:dto.mobile}
+    })
+    if(userPhone){
+    if (userPhone) throw new BadRequestException('Phone already exists');
+    }
+   }
     if (requester.project?.id !== user.project_id) {
       throw new ForbiddenException('You can only edit users in your own project');
     }

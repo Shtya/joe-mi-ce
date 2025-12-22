@@ -13,6 +13,7 @@ import { CRUD } from 'common/crud.service';
 import { PaginationQueryDto } from 'dto/pagination.dto';
 import * as ExcelJS from 'exceljs';
 import { User } from 'entities/user.entity';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class ProductService {
@@ -31,9 +32,14 @@ export class ProductService {
     private stockRepository: Repository<Stock>,
     @InjectRepository(Branch)
     private branchRepository: Repository<Branch>,
-  ) {}
+        public readonly userService: UsersService, // inject userService
 
- 
+  ) {}
+  private async projectWhere(user: any, extra: any = {}) {
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+    return { project: { id: projectId }, ...extra };
+  }
+
   async create(dto: CreateProductDto): Promise<Product> {
     // Validate stock before processing
     if (dto.stock?.length) {
@@ -43,20 +49,20 @@ export class ProductService {
         }
       }
     }
-  
+
     const [brand, category, project] = await Promise.all([
-      dto.brand_id ? this.brandRepository.findOne({ 
-        where: { id: dto.brand_id } 
+      dto.brand_id ? this.brandRepository.findOne({
+        where: { id: dto.brand_id }
       }) : Promise.resolve(undefined),
-      this.categoryRepository.findOne({ 
-        where: { id: dto.category_id } 
+      this.categoryRepository.findOne({
+        where: { id: dto.category_id }
       }),
-      this.projectRepository.findOne({ 
-        where: { id: dto.project_id }, 
-        relations: ['branches'] 
+      this.projectRepository.findOne({
+        where: { id: dto.project_id },
+        relations: ['branches']
       })
     ]);
-  
+
     // Validations
     if (dto.brand_id && !brand) {
       throw new NotFoundException(`Brand with ID ${dto.brand_id} not found`);
@@ -67,7 +73,7 @@ export class ProductService {
     if (!project) {
       throw new NotFoundException(`Project with ID ${dto.project_id} not found`);
     }
-  
+
     // Check for existing product name in this project
     const existingProduct = await this.productRepository.findOne({
       where: {
@@ -75,13 +81,13 @@ export class ProductService {
         project: { id: project.id },
       },
     });
-    
+
     if (existingProduct) {
       throw new ConflictException(
         `Product name "${dto.name}" already exists in this project`
       );
     }
-  
+
     // Create product
     const product = this.productRepository.create({
       ...dto,
@@ -89,28 +95,28 @@ export class ProductService {
       category,
       project,
     });
-  
+
     const savedProduct = await this.productRepository.save(product);
-  
+
     // Handle Stock Assignment
     await this.assignStockToBranches(savedProduct, project, dto.stock || []);
-  
+
     // Return product with relations if needed
     return this.productRepository.findOne({
       where: { id: savedProduct.id },
       relations: ['brand', 'category', 'project', 'stock', 'stock.branch']
     });
   }
-  
+
   private async assignStockToBranches(
     product: Product,
     project: Project,
     stockItems: StockDto[]
   ): Promise<void> {
     if (!stockItems.length) return;
-  
+
     const stockToInsert: Partial<Stock>[] = [];
-    
+
     for (const stockItem of stockItems) {
       if (stockItem.all_branches) {
         // Assign to all branches in the project
@@ -119,7 +125,7 @@ export class ProductService {
             'Project has no branches to assign stock to'
           );
         }
-        
+
         for (const branch of project.branches) {
           stockToInsert.push({
             branch,
@@ -134,17 +140,17 @@ export class ProductService {
             'branch_id is required unless all_branches is true'
           );
         }
-  
+
         const branch = await this.branchRepository.findOne({
           where: { id: stockItem.branch_id, project: { id: project.id } },
         });
-  
+
         if (!branch) {
           throw new NotFoundException(
             `Branch with ID ${stockItem.branch_id} not found in this project`
           );
         }
-  
+
         stockToInsert.push({
           branch,
           product,
@@ -152,95 +158,68 @@ export class ProductService {
         });
       }
     }
-  
+
     // Bulk insert all stock records
     if (stockToInsert.length > 0) {
       await this.stockRepository.save(stockToInsert);
     }
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user: any) {
+    const where = await this.projectWhere(user, { id });
     const product = await this.productRepository.findOne({
-      where: { id },
+      where,
       relations: ['brand', 'category', 'stock', 'project'],
     });
 
-    if (!product) {
-      throw new NotFoundException(`Product with ID ${id} not found`);
-    }
-
+    if (!product) throw new NotFoundException('Product not found');
     return product;
   }
-
-  async update(id: string, dto: UpdateProductDto): Promise<Product> {
-    const product = await this.findOne(id);
+  async update(id: string, dto: UpdateProductDto, user: any): Promise<Product> {
+    const product = await this.findOne(id, user);
 
     if (dto.brand_id) {
       const brand = await this.brandRepository.findOne({ where: { id: dto.brand_id } });
-      if (!brand) throw new NotFoundException(`Brand with ID ${dto.brand_id} not found`);
+      if (!brand) throw new NotFoundException(`Brand not found in your project`);
       product.brand = brand;
     }
 
     if (dto.category_id) {
-      const category = await this.categoryRepository.findOne({ where: { id: dto.category_id } });
-      if (!category) throw new NotFoundException(`Category with ID ${dto.category_id} not found`);
+      const category = await this.categoryRepository.findOne({ where: { id: dto.category_id, project: product.project } });
+      if (!category) throw new NotFoundException(`Category not found in your project`);
       product.category = category;
     }
 
-    // 🔐 Check uniqueness before updating name
     if (dto.name && dto.name !== product.name) {
       const exists = await this.productRepository.findOne({
-        where: {
-          name: dto.name,
-          project: { id: product.project.id },
-        },
+        where: { name: dto.name, project: { id: product.project.id } },
       });
-      if (exists && exists.id !== product.id) {
-        throw new ConflictException(`Another product with name "${dto.name}" already exists in this project`);
-      }
+      if (exists && exists.id !== product.id)
+        throw new ConflictException(`Another product with name "${dto.name}" exists in your project`);
     }
 
     this.productRepository.merge(product, dto);
     return this.productRepository.save(product);
   }
-
-  async remove(id: string): Promise<void> {
-    const product = await this.findOne(id);
+  async remove(id: string, user: any): Promise<void> {
+    const product = await this.findOne(id, user);
     await this.productRepository.remove(product);
   }
-  async findAllForMobile(query: PaginationQueryDto, categoryId: string, brandId: string) {
-    const where: any = {};
-  
+  async findAllForMobile(query: PaginationQueryDto, categoryId: string, brandId: string, user: any) {
     const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
-  
-    const findOptions: any = {
+    const where = await this.projectWhere(user, {});
+
+    if (categoryId) where.category = { id: categoryId };
+    if (brandId) where.brand = { id: brandId };
+    if (search) where.name = ILike(`%${search}%`);
+
+    const products = await this.productRepository.find({
       where,
       select: ['id', 'name', 'price', 'image_url'],
       order: { [sortBy]: sortOrder },
-    };
-  
-    if (search) {
-      where.name = ILike(`%${search}%`);
-    }
-      where.category = { id: categoryId };
-      where.brand = {id:brandId}
-      
+    });
 
-    try {
-      const products = await this.productRepository.find(findOptions);
-  
-      return {
-        success: true,
-        data: products,
-      };
-    } catch (error) {
-      console.error('Error in findAllForMobile:', error);
-      return {
-        success: false,
-        message: 'Failed to fetch products',
-        data: []
-      };
-    }
+    return { success: true, data: products };
   }
 
   async generateImportTemplate(projectId: string): Promise<Buffer> {
@@ -248,16 +227,16 @@ export class ProductService {
       where: { id: projectId },
       relations: ['branches'],
     });
-  
+
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
-  
+
     const availableBranches = project.branches?.map(b => b.name) || [];
     const branchExample = availableBranches.length > 0
       ? availableBranches.slice(0, 3).join(', ')
       : 'Main Branch, Branch 2, Branch 3';
-  
+
     const sampleProducts = [
       {
         name: 'iPhone 15 Pro',
@@ -305,7 +284,7 @@ export class ProductService {
         branches: availableBranches[0] || 'Main Branch'
       }
     ];
-  
+
     const columns = [
       { key: 'name', header: 'name' },
       { key: 'description', header: 'description' },
@@ -321,27 +300,27 @@ export class ProductService {
       { key: 'all_branches', header: 'all_branches' },
       { key: 'branches', header: 'branches' },
     ];
-  
+
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Import Template');
-  
+
     // ✅ Define columns BEFORE adding rows
     sheet.columns = columns;
-  
+
     // Insert data rows
     sampleProducts.forEach(prod => sheet.addRow(prod));
-  
+
     // Apply numeric formats (now works because columns exist)
     sheet.getColumn('price').numFmt = '#,##0.00';
     sheet.getColumn('discount').numFmt = '#,##0.00';
     sheet.getColumn('quantity').numFmt = '0';
-  
+
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
-  
+
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
-  
+
   /**
    * Import products from CSV/Excel
    */
@@ -383,7 +362,7 @@ export class ProductService {
     let category = await this.categoryRepository.findOne({
       where: {
         name: ILike(productData.category_name),
-       
+
       }
     });
 
@@ -397,7 +376,7 @@ export class ProductService {
       brand = await this.brandRepository.findOne({
         where: {
           name: ILike(productData.brand_name),
-       
+
         }
       });
 
@@ -445,7 +424,7 @@ export class ProductService {
    */
   private async assignStock(product: Product, project: Project, productData: ImportProductRowDto): Promise<void> {
     const quantity = productData.quantity || 0;
-    
+
     // If no quantity specified, don't create stock records
     if (quantity <= 0) {
       return;
@@ -527,13 +506,13 @@ export class ProductService {
     // Apply filters if provided
     if (filters) {
       if (filters.category_id) {
-        queryBuilder.andWhere('product.category_id = :categoryId', { 
-          categoryId: filters.category_id 
+        queryBuilder.andWhere('product.category_id = :categoryId', {
+          categoryId: filters.category_id
         });
       }
       if (filters.brand_id) {
-        queryBuilder.andWhere('product.brand_id = :brandId', { 
-          brandId: filters.brand_id 
+        queryBuilder.andWhere('product.brand_id = :brandId', {
+          brandId: filters.brand_id
         });
       }
       if (filters.search) {
@@ -578,7 +557,7 @@ export class ProductService {
     // Add data rows
     products.forEach(product => {
       const totalStock = product.stock?.reduce((sum, s) => sum + s.quantity, 0) || 0;
-      
+
       worksheet.addRow({
         id: product.id,
         name: product.name,
