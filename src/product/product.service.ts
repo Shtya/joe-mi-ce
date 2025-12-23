@@ -357,67 +357,67 @@ export class ProductService {
   /**
    * Process a single import row
    */
-  private async processImportRow(productData: ImportProductRowDto, project: Project): Promise<void> {
-    // Find or create category
-    let category = await this.categoryRepository.findOne({
-      where: {
-        name: ILike(productData.category_name),
+  // private async processImportRow(productData: ImportProductRowDto, project: Project): Promise<void> {
+  //   // Find or create category
+  //   let category = await this.categoryRepository.findOne({
+  //     where: {
+  //       name: ILike(productData.category_name),
 
-      }
-    });
+  //     }
+  //   });
 
-    if (!category) {
-      throw new NotFoundException(`Category "${productData.category_name}" not found in this project`);
-    }
+  //   if (!category) {
+  //     throw new NotFoundException(`Category "${productData.category_name}" not found in this project`);
+  //   }
 
-    // Find or create brand (if provided)
-    let brand: Brand | undefined;
-    if (productData.brand_name) {
-      brand = await this.brandRepository.findOne({
-        where: {
-          name: ILike(productData.brand_name),
+  //   // Find or create brand (if provided)
+  //   let brand: Brand | undefined;
+  //   if (productData.brand_name) {
+  //     brand = await this.brandRepository.findOne({
+  //       where: {
+  //         name: ILike(productData.brand_name),
 
-        }
-      });
+  //       }
+  //     });
 
-      if (!brand) {
-        throw new NotFoundException(`Brand "${productData.brand_name}" not found in this project`);
-      }
-    }
+  //     if (!brand) {
+  //       throw new NotFoundException(`Brand "${productData.brand_name}" not found in this project`);
+  //     }
+  //   }
 
-    // Check for existing product with same name in this project
-    const existingProduct = await this.productRepository.findOne({
-      where: {
-        name: productData.name,
-        project: { id: project.id }
-      }
-    });
+  //   // Check for existing product with same name in this project
+  //   const existingProduct = await this.productRepository.findOne({
+  //     where: {
+  //       name: productData.name,
+  //       project: { id: project.id }
+  //     }
+  //   });
 
-    if (existingProduct) {
-      throw new ConflictException(`Product "${productData.name}" already exists in this project`);
-    }
+  //   if (existingProduct) {
+  //     throw new ConflictException(`Product "${productData.name}" already exists in this project`);
+  //   }
 
-    // Create product
-    const product = this.productRepository.create({
-      name: productData.name,
-      description: productData.description,
-      price: productData.price,
-      discount: productData.discount || 0,
-      model: productData.model,
-      sku: productData.sku,
-      image_url: productData.image_url,
-      is_high_priority: productData.is_high_priority || false,
-      is_active: true,
-      project,
-      category,
-      brand
-    });
+  //   // Create product
+  //   const product = this.productRepository.create({
+  //     name: productData.name,
+  //     description: productData.description,
+  //     price: productData.price,
+  //     discount: productData.discount || 0,
+  //     model: productData.model,
+  //     sku: productData.sku,
+  //     image_url: productData.image_url,
+  //     is_high_priority: productData.is_high_priority || false,
+  //     is_active: true,
+  //     project,
+  //     category,
+  //     brand
+  //   });
 
-    const savedProduct = await this.productRepository.save(product);
+  //   const savedProduct = await this.productRepository.save(product);
 
-    // Handle stock assignment
-    await this.assignStock(savedProduct, project, productData);
-  }
+  //   // Handle stock assignment
+  //   await this.assignStock(savedProduct, project, productData);
+  // }
 
   /**
    * Assign stock to branches
@@ -582,5 +582,232 @@ export class ProductService {
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
+private async findOrCreateCategory(
+  name: string,
+  project: Project
+): Promise<Category> {
+  let category = await this.categoryRepository.findOne({
+    where: {
+      name: ILike(name),
+      project: { id: project.id }
+    }
+  });
+
+  if (!category) {
+    category = this.categoryRepository.create({
+      name,
+      project
+    });
+    category = await this.categoryRepository.save(category);
+  }
+
+  return category;
+}
+private async findOrCreateBrand(
+  name: string,
+  category: Category,
+  project: Project
+): Promise<Brand> {
+  let brand = await this.brandRepository.findOne({
+    where: {
+      name: ILike(name),
+      project: { id: project.id }
+    },
+    relations: ['categories']
+  });
+
+  if (!brand) {
+    brand = this.brandRepository.create({
+      name,
+      project,
+      categories: [category]
+    });
+  } else {
+    const alreadyLinked = brand.categories?.some(
+      c => c.id === category.id
+    );
+
+    if (!alreadyLinked) {
+      brand.categories = [...(brand.categories || []), category];
+    }
+  }
+
+  return this.brandRepository.save(brand);
+}
+private async processImportRow(
+  productData: ImportProductRowDto,
+  project: Project
+): Promise<void> {
+
+  /**
+   * 1️⃣ Category (auto-create)
+   */
+  const category = await this.findOrCreateCategory(
+    productData.category_name,
+    project
+  );
+
+  /**
+   * 2️⃣ Brand (auto-create + auto-assign to category)
+   */
+  let brand: Brand | undefined;
+  if (productData.brand_name) {
+    brand = await this.findOrCreateBrand(
+      productData.brand_name,
+      category,
+      project
+    );
+  }
+
+  /**
+   * 3️⃣ Prevent duplicate product
+   */
+  const exists = await this.productRepository.findOne({
+    where: {
+      name: productData.name,
+      project: { id: project.id }
+    }
+  });
+
+  if (exists) {
+    throw new ConflictException(
+      `Product "${productData.name}" already exists`
+    );
+  }
+
+  /**
+   * 4️⃣ Create product (FULL MAPPING)
+   */
+  const product = this.productRepository.create({
+    // Excel → Product
+    name: productData.name,                  // Product Name
+    model: productData.device_name,           // Device Name
+    sku: productData.sku,                     // SKU/Reference
+    description: productData.description,     // Device Description
+    price: productData.price,                 // Device Price
+    is_high_priority: productData.product_priority || false,
+    image_url: productData.image_url,         // Device Image URL
+
+    discount: 0,
+    is_active: true,
+
+    // Relations
+    project,
+    category,
+    brand
+  });
+
+  const savedProduct = await this.productRepository.save(product);
+
+  /**
+   * 5️⃣ Stock
+   */
+  await this.assignStock(savedProduct, project, productData);
+}
+async importAndUpdateProducts(rows: any[], projectId: string) {
+  const project = await this.projectRepository.findOne({
+    where: { id: projectId },
+    relations: ['branches'],
+  });
+
+  const result = {
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [] as string[],
+  };
+
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      await this.processUpsertRow(rows[i], project); // ← handles both create & update
+      rows[i]._updated ? result.updated++ : result.created++;
+    } catch (e) {
+      result.failed++;
+      result.errors.push(`Row ${i + 1}: ${e.message}`);
+    }
+  }
+
+  return result;
+}
+
+private async processUpsertRow(row: any, project: Project) {
+  const map = (keys: string[], def?: any) =>
+    keys.find(k => row[k] !== undefined) ? row[keys.find(k => row[k] !== undefined)!] : def;
+
+  /** Mapping */
+  const name = map(['product_name', 'name']);
+const model = map(
+  ['device_name', 'product_name2', 'model'],
+  map(['product_name', 'name']) // fallback
+);
+const imageUrlRaw = map(['device_image_url', 'image_url']);
+
+// Remove :8080 if present
+const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
+
+  const price = parseFloat(map(['device_price', 'price'], '0'));
+  const isHighPriority = ['true', '1', 'yes'].includes(
+    (map(['product_priority', 'priority'], '') + '').toLowerCase()
+  );
+
+  /** Category */
+  const category = await this.findOrCreateCategory(
+    map(['category_name']),
+    project
+  );
+
+  /** Brand */
+  const brand = map(['brand_name'])
+    ? await this.findOrCreateBrand(
+        map(['brand_name']),
+        category,
+        project
+      )
+    : undefined;
+
+  /** Find product */
+let product = await this.productRepository.findOne({
+  where: [
+    { name:`${name} ${model}`, project: { id: project.id } },
+  ],
+});
+
+
+  /** CREATE */
+  if (!product) {
+    product = this.productRepository.create({
+      name:`${name} ${model}`,
+      model,
+      description: map(['device_description', 'description']),
+      price,
+      image_url: imageUrl,
+      is_high_priority: isHighPriority,
+      project,
+      category,
+      brand,
+      is_active: true,
+    });
+
+    await this.productRepository.save(product);
+    row._updated = false;
+  }
+
+  /** UPDATE */
+  else {
+    this.productRepository.merge(product, {
+      model,
+      price,
+      image_url: imageUrl,
+      is_high_priority: isHighPriority,
+      category,
+      brand,
+    });
+
+    await this.productRepository.save(product);
+    row._updated = true;
+  }
+
+
+}
 
 }

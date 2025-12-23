@@ -15,7 +15,7 @@ export class BrandService {
     public brandRepository: Repository<Brand>,
     @InjectRepository(Category)
     public categoryRepository: Repository<Category>,
-    private readonly userService : UsersService
+    public readonly userService : UsersService
   ) {}
 
   public isSuper(user: any) {
@@ -27,135 +27,115 @@ export class BrandService {
     return { ...brand, ownerUserId: show ? brand.ownerUserId : null };
   }
 
-async create(dto: CreateBrandDto, user: any, logoFile?: Express.Multer.File) {
-  const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+  async create(dto: CreateBrandDto, user: any, logoFile?: Express.Multer.File) {
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
 
-  const existing = await this.brandRepository.findOne({
-    where: {
+    const existing = await this.brandRepository.findOne({
+      where: [
+        { project: { id: projectId }, name: dto.name },
+        { ownerUserId: user.id, name: dto.name }
+      ]
+    });
+
+    if (existing) throw new ConflictException('brand.name_exists');
+
+    const brand = this.brandRepository.create({
       name: dto.name,
-      project: { id: projectId },
-    },
-  });
+      description: dto.description,
+      logo_url: logoFile ? logoFile.path : dto.logo_url,
+      ownerUserId: user.id, // always assign owner
+      project: { id: projectId }
+    });
 
-  if (existing) throw new ConflictException('brand.name_exists');
-
-  const brand = this.brandRepository.create({
-    name: dto.name,
-    description: dto.description,
-    logo_url: logoFile ? logoFile.path : dto.logo_url,
-    ownerUserId: this.isSuper(user) ? null : user.id,
-    project: { id: projectId },
-  });
-
-  return await this.brandRepository.save(brand);
-}
-
-async update(id: string, dto: UpdateBrandDto, user: any): Promise<Brand> {
-  const brand = await this.brandRepository.findOne({
-    where: await this.projectWhere(user, { id }),
-    relations: ['categories'],
-  });
-
-  if (!brand) throw new NotFoundException('brand.not_found');
-
-  Object.assign(brand, dto);
-
-  return await this.brandRepository.save(brand);
-}
-
-
-async assignCategories(
-  brandId: string,
-  categoryIds: string[],
-  user: any
-): Promise<Brand> {
-  const brand = await this.brandRepository.findOne({
-    where: await this.projectWhere(user, { id: brandId }),
-    relations: ['categories'],
-  });
-
-  if (!brand) throw new NotFoundException('brand.not_found');
-
-  const categories = await this.categoryRepository.find({
-    where: { id: In(categoryIds) },
-  });
-
-  if (categories.length !== categoryIds.length) {
-    throw new NotFoundException('category.not_found');
+    return this.brandRepository.save(brand);
   }
 
-  const existingIds = brand.categories.map(c => c.id);
-  brand.categories = [
-    ...brand.categories,
-    ...categories.filter(c => !existingIds.includes(c.id)),
-  ];
+ async update(id: string, dto: UpdateBrandDto, user: any): Promise<Brand> {
+    const brand = await this.brandRepository.findOne({
+      where: await this.projectOrOwnerWhere(user, { id }),
+      relations: ['categories']
+    });
 
-  return await this.brandRepository.save(brand);
-}
+    if (!brand) throw new NotFoundException('brand.not_found');
 
-async removeCategories(
-  brandId: string,
-  categoryIds: string[],
-  user: any
-): Promise<Brand> {
-  const brand = await this.brandRepository.findOne({
-    where: await this.projectWhere(user, { id: brandId }),
-    relations: ['categories'],
-  });
-
-  if (!brand) throw new NotFoundException('brand.not_found');
-
-  brand.categories = brand.categories.filter(
-    cat => !categoryIds.includes(cat.id)
-  );
-
-  return await this.brandRepository.save(brand);
-}
-
-
-async findAll(user: any): Promise<Brand[]> {
-  return await this.brandRepository.find({
-    where: await this.projectWhere(user),
-  });
-}
-
-async findOne(id: string, user: any): Promise<Brand> {
-  const where = await this.projectWhere(user, { id });
-
-  const brand = await this.brandRepository.findOne({ where });
-
-  if (!brand) {
-    throw new NotFoundException('brand.not_found');
+    Object.assign(brand, dto);
+    return this.brandRepository.save(brand);
   }
 
-  return brand;
-}
 
 
-async remove(id: string, user: any): Promise<void> {
-  const brand = await this.findOne(id, user);
-  await this.brandRepository.remove(brand);
-}
+  async assignCategories(brandId: string, categoryIds: string[], user: any): Promise<Brand> {
+    const brand = await this.brandRepository.findOne({
+      where: await this.projectOrOwnerWhere(user, { id: brandId }),
+      relations: ['categories']
+    });
 
-async findAllForMobile(query: PaginationQueryDto, user: any) {
-  const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+    if (!brand) throw new NotFoundException('brand.not_found');
 
-  const where = await this.projectWhere(
-    user,
-    search ? { name: ILike(`%${search}%`) } : {}
-  );
+    const categories = await this.categoryRepository.find({
+      where: { id: In(categoryIds) }
+    });
 
-  const brands = await this.brandRepository.find({
-    where,
-    select: ['id', 'name'],
-    order: { [sortBy]: sortOrder },
-  });
+    if (categories.length !== categoryIds.length) {
+      throw new NotFoundException('category.not_found');
+    }
 
-  return {
-    success: true,
-    data: brands,
-  };
-}
+    const existingIds = brand.categories.map(c => c.id);
+    brand.categories = [
+      ...brand.categories,
+      ...categories.filter(c => !existingIds.includes(c.id))
+    ];
+
+    return this.brandRepository.save(brand);
+  }
+  async removeCategories(brandId: string, categoryIds: string[], user: any): Promise<Brand> {
+    const brand = await this.brandRepository.findOne({
+      where: await this.projectOrOwnerWhere(user, { id: brandId }),
+      relations: ['categories']
+    });
+
+    if (!brand) throw new NotFoundException('brand.not_found');
+
+    brand.categories = brand.categories.filter(cat => !categoryIds.includes(cat.id));
+    return this.brandRepository.save(brand);
+  }
+
+
+  async findAll(user: any): Promise<Brand[]> {
+    return this.brandRepository.find({
+      where: await this.projectOrOwnerWhere(user)
+    });
+  }
+
+  async findOne(id: string, user: any): Promise<Brand> {
+    const brand = await this.brandRepository.findOne({
+      where: await this.projectOrOwnerWhere(user, { id })
+    });
+
+    if (!brand) throw new NotFoundException('brand.not_found');
+    return brand;
+  }
+
+  async remove(id: string, user: any): Promise<void> {
+    const brand = await this.findOne(id, user);
+    await this.brandRepository.softRemove(brand);
+  }
+  async findAllForMobile(query: PaginationQueryDto, user: any) {
+    const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+
+    const where = await this.projectOrOwnerWhere(
+      user,
+      search ? { name: ILike(`%${search}%`) } : {}
+    );
+
+    const brands = await this.brandRepository.find({
+      where,
+      select: ['id', 'name'],
+      order: { [sortBy]: sortOrder }
+    });
+
+    return { success: true, data: brands };
+  }
 
   private async projectWhere(user: any, extra: any = {}) {
   const projectId = await this.userService.resolveProjectIdFromUser(user.id);
@@ -165,5 +145,12 @@ async findAllForMobile(query: PaginationQueryDto, user: any) {
     ...extra,
   };
 }
+  private async projectOrOwnerWhere(user: any, extra: any = {}) {
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+    return [
+      { project: { id: projectId }, ...extra },
+      { ownerUserId: user.id, ...extra }
+    ];
+  }
 
 }

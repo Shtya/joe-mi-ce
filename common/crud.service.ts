@@ -20,7 +20,7 @@ type Paginated<T> = {
 };
 
 export class CRUD {
-  static async findAll<T>(repository: Repository<T>, entityName: string, search?: string, page: any = 1, limit: any = 10, sortBy?: string, sortOrder: 'ASC' | 'DESC' = 'DESC', relations: string[] = [], searchFields: string[] = [], filters?: Filters): Promise<Paginated<T>> {
+  static async findAll<T>(repository: Repository<T>, entityName: string, search?: string, page: any = 1, limit: any = 10, sortBy?: string, sortOrder: 'ASC' | 'DESC' = 'DESC', relations: string[] = [], searchFields: string[] = [], filters?: Filters, orFilters?: Filters[]): Promise<Paginated<T>> {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
 
@@ -234,7 +234,26 @@ if (search && searchFields?.length) {
     }),
   );
 }
-
+   if (orFilters?.length) {
+      qb.andWhere(
+        new Brackets(qb2 => {
+          orFilters.forEach((orFilter, index) => {
+            qb2.orWhere(
+              new Brackets(qb3 => {
+                const flat = flatten(orFilter);
+                for (const [key, value] of Object.entries(flat)) {
+                  if (value === null || value === undefined || value === '') continue;
+                  // Use the same applyFilter logic but within OR brackets
+                  const param = `or_${index}_${key.replace(/\./g, '_')}`;
+                  const qualified = qualifyField(key);
+                  qb3.andWhere(`${qualified} = :${param}`, { [param]: value });
+                }
+              })
+            );
+          });
+        })
+      );
+    }
     // ---------- sorting ----------
     if (sortBy?.includes('.')) {
       // e.g., sortBy=owner.username
@@ -771,7 +790,7 @@ if (value instanceof FindOperator) {
       throw new BadRequestException(`${entityName} with ID ${id} not found.`);
     }
 
-    await repository.delete(id);
+    await repository.softDelete(id);
 
     return {
       message: `${entityName} deleted successfully.`,

@@ -138,10 +138,16 @@ export class ImportProductRowDto {
   @IsString()
   image_url?: string;
 
+    @IsOptional()
+  @IsString()
+  device_name?: string;
   @IsOptional()
   @IsBoolean()
   is_high_priority?: boolean;
 
+ @IsOptional()
+  @IsBoolean()
+  product_priority?:boolean
   @IsString()
   @IsNotEmpty()
   category_name: string;

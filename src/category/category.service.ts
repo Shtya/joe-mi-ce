@@ -12,7 +12,7 @@ export class CategoryService {
   constructor(
     @InjectRepository(Category)
     public categoryRepository: Repository<Category>,
-    private readonly userService: UsersService,
+    public readonly userService: UsersService,
   ) {}
 
   public isSuper(user: any) {
@@ -46,7 +46,7 @@ export class CategoryService {
     const category = this.categoryRepository.create({
       name: dto.name,
       description: dto.description,
-      ownerUserId: this.isSuper(user) ? null : user.id,
+    ownerUserId: user.id, // always assign owner
       project: { id: projectId },
     });
 
@@ -56,30 +56,33 @@ export class CategoryService {
 
   /* ===================== FIND ONE ===================== */
 
-  async findOne(id: string, user: any): Promise<Category> {
-    const category = await this.categoryRepository.findOne({
-      where: await this.projectWhere(user, { id }),
-    });
+async findOne(id: string, user: any): Promise<Category> {
+  const category = await this.categoryRepository.findOne({
+    where: await this.projectOrOwnerWhere(user, { id }),
+  });
 
-    if (!category) {
-      throw new NotFoundException('category.not_found');
-    }
-
-    return category;
+  if (!category) {
+    throw new NotFoundException('category.not_found');
   }
+
+  return category;
+}
+
 
   /* ===================== UPDATE ===================== */
 
-  async update(
-    id: string,
-    dto: UpdateCategoryDto,
-    user: any,
-  ): Promise<Category> {
-    const category = await this.findOne(id, user);
+async update(
+  id: string,
+  dto: UpdateCategoryDto,
+  user: any,
+){
+  const category = await this.findOne(id, user);
 
-    this.categoryRepository.merge(category, dto);
-    return await this.categoryRepository.save(category);
-  }
+  this.categoryRepository.merge(category, dto);
+  const saved = await this.categoryRepository.save(category);
+
+  return this.maskOwnerId(saved,user); // will always return owner
+}
 
   /* ===================== MOBILE ===================== */
 
@@ -125,4 +128,14 @@ export class CategoryService {
       ...extra,
     };
   }
+
+  private async projectOrOwnerWhere(user: any, extra: any = {}) {
+  const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+
+  return [
+    { project: { id: projectId }, ...extra },
+    { ownerUserId: user.id, ...extra }
+  ];
+}
+
 }
