@@ -7,7 +7,7 @@ import { PaginationQueryDto } from 'dto/pagination.dto';
 import { CRUD } from 'common/crud.service';
 
 @UseGuards(AuthGuard)
-@Controller('notifications')
+@Controller('notification')
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
