@@ -230,5 +230,74 @@ async findAll(@Query() q: any, @Req() req: any) {
   remove(@Param('id') id: string) {
     return CRUD.softDelete(this.productService.productRepository, 'product', id);
   }
+@Post('import/update')
+@Permissions(EPermission.PRODUCT_UPDATE)
+@UseInterceptors(FileInterceptor('file', multerOptions))
+async importAndUpdateProducts(
+  @UploadedFile() file: Express.Multer.File,
+  @Req() req: any,
+) {
+  const user = await this.productService.userRepository.findOne({
+    where: { id: req.user.id },
+    relations: ['project'],
+  });
+
+  if (!file) {
+    throw new BadRequestException('File is required');
+  }
+
+  const filePath = file.path;
+  let rows: any[] = [];
+
+  try {
+    /** 1️⃣ Parse file (same logic as import) */
+    if (file.mimetype.includes('csv')) {
+      const csvContent = fs.readFileSync(filePath, 'utf-8');
+      const result = parse<any>(csvContent, {
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: h =>
+          h.trim().toLowerCase().replace(/\s+/g, '_'),
+      });
+      rows = result.data;
+    } else {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
+      const sheet = workbook.getWorksheet(1);
+
+      const headers: string[] = [];
+      sheet.getRow(1).eachCell((cell, i) => {
+        headers[i - 1] = cell.value
+          ?.toString()
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, '_');
+      });
+
+      for (let i = 2; i <= sheet.rowCount; i++) {
+        const row = sheet.getRow(i);
+        const obj: any = {};
+        headers.forEach((h, idx) => {
+          const v = row.getCell(idx + 1).value;
+          if (v !== null && v !== undefined) {
+            obj[h] = v.toString().trim();
+          }
+        });
+        if (obj.product_name || obj.name) rows.push(obj);
+      }
+    }
+
+    fs.unlinkSync(filePath);
+
+    /** 2️⃣ Call service */
+    return await this.productService.importAndUpdateProducts(
+      rows,
+      user.project?.id || user.project_id
+    );
+  } catch (err) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    throw err;
+  }
+}
 
 }

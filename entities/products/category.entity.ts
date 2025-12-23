@@ -5,7 +5,7 @@ import { Brand } from './brand.entity';
 import { Project } from 'entities/project.entity';
 
 @Entity('categories')
-@Unique('uq_category_name_owner', ['name', 'ownerUserId'])
+@Unique('uq_category_name_owner', ['name', 'project'])
 export class Category extends CoreEntity {
   @Column()
   name: string;

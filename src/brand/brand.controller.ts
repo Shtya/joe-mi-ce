@@ -44,14 +44,50 @@ export class BrandController {
     return this.brandService.removeCategories(id, body.categoryIds,req.user);
   }
 
-  @Get()
-  @Permissions(EPermission.BRAND_READ)
-  findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
-    const isSuper = req?.user?.role?.name === ERole.SUPER_ADMIN;
-    const filters = isSuper ? undefined : { ownerUserId: req?.user?.id };
+@Get()
+@Permissions(EPermission.BRAND_READ)
+findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
+  const user = req.user;
+  const isSuper = user?.role?.name === ERole.SUPER_ADMIN;
 
-    return CRUD.findAll(this.brandService.brandRepository, 'brand', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['categories'], ['name'], filters);
+  // Super admins see all brands
+  if (isSuper) {
+    return CRUD.findAll(
+      this.brandService.brandRepository,
+      'brand',
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ['categories'],
+      ['name']
+    );
   }
+
+  // Regular users: brands in the project OR owned by the user
+  const projectId =  this.brandService.userService.resolveProjectIdFromUser(user.id);
+
+  // Define OR filters as an array
+  const orFilters = [
+    { project: { id: projectId } },
+    { ownerUserId: user.id }
+  ];
+
+  return CRUD.findAll(
+    this.brandService.brandRepository,
+    'brand',
+    query.search,
+    query.page,
+    query.limit,
+    query.sortBy,
+    query.sortOrder,
+    ['categories'],
+    ['name'],
+    undefined, // regular filters (none in this case)
+    orFilters  // OR filters
+  );
+}
 
   @Get(':id')
   @Permissions(EPermission.BRAND_READ)
