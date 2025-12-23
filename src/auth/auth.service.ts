@@ -23,8 +23,9 @@ export class AuthService {
   async register(requester: User | null, dto: RegisterDto) {
     const existingUser = await this.userRepository.findOne({ where: { username: dto.username },withDeleted:true});
     if (existingUser) throw new BadRequestException('Username already exists');
+    if(dto.mobile){
 const existingUserPhone = await this.userRepository.findOne({ where: { username: dto.mobile },withDeleted:true });
-    if (existingUserPhone) throw new BadRequestException('mobile already exists');
+    if (existingUserPhone) throw new BadRequestException('mobile already exists');}
     const role = await this.roleRepository.findOne({ where: { name: dto.role } });
     if (!role) throw new BadRequestException('Invalid role specified');
 
