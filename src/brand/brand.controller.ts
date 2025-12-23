@@ -46,7 +46,7 @@ export class BrandController {
 
 @Get()
 @Permissions(EPermission.BRAND_READ)
-findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
+  async findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
   const user = req.user;
   const isSuper = user?.role?.name === ERole.SUPER_ADMIN;
 
@@ -66,8 +66,8 @@ findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
   }
 
   // Regular users: brands in the project OR owned by the user
-  const projectId =  this.brandService.userService.resolveProjectIdFromUser(user.id);
-
+  const projectId =  await this.brandService.userService.resolveProjectIdFromUser(user.id);
+  console.log(projectId)
   // Define OR filters as an array
   const orFilters = [
     { project: { id: projectId } },

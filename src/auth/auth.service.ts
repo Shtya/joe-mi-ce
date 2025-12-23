@@ -112,10 +112,11 @@ const existingUserPhone = await this.userRepository.findOne({ where: { username:
       username: dto.username,
       password: await argon2.hash(dto.password),
       name: dto.name,
-      project_id: dto.project_id || null,
+      project_id:project.id,
       manager_id: dto.manager_id || null,
       role,
       project: dto.role === ERole.PROJECT_ADMIN ? project : undefined,
+
       branch: branch ?? undefined,
       is_active: true,
       created_by: requester,
