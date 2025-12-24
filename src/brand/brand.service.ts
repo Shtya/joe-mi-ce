@@ -120,22 +120,36 @@ export class BrandService {
     const brand = await this.findOne(id, user);
     await this.brandRepository.softRemove(brand);
   }
-  async findAllForMobile(query: PaginationQueryDto, user: any) {
-    const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+async findBrandsForMobile(
+  query: PaginationQueryDto,
+  user: any,
+) {
+  const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
 
-    const where = await this.projectOrOwnerWhere(
-      user,
-      search ? { name: ILike(`%${search}%`) } : {}
-    );
+  // Resolve the project ID for this user
+  const projectId = await this.userService.resolveProjectIdFromUser(user.id);
 
-    const brands = await this.brandRepository.find({
-      where,
-      select: ['id', 'name'],
-      order: { [sortBy]: sortOrder }
-    });
+  const qb = this.brandRepository
+    .createQueryBuilder('brand')
+    .innerJoin('brand.project', 'project') // just join first
+    .where('project.id = :projectId', { projectId }) // apply where on joined table
+    .select(['brand.id', 'brand.name'])
+    .orderBy(`brand.${sortBy}`, sortOrder);
 
-    return { success: true, data: brands };
+  // Optional search filter
+  if (search) {
+    qb.andWhere('brand.name ILIKE :search', { search: `%${search}%` });
   }
+
+  const brands = await qb.getMany();
+
+  return {
+    success: true,
+    data: brands,
+  };
+}
+
+
 
   private async projectWhere(user: any, extra: any = {}) {
   const projectId = await this.userService.resolveProjectIdFromUser(user.id);

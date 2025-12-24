@@ -19,6 +19,7 @@ import { Survey } from 'entities/survey.entity';
 import { SurveyFeedback, SurveyFeedbackAnswer } from 'entities/survey-feedback.entity';
 
 import { ProjectStatsDto } from './stats.dto';
+import { SalesTargetService } from 'src/sales-target/sales-target.service';
 
 @Injectable()
 export class ProjectStatsService {
@@ -67,6 +68,9 @@ export class ProjectStatsService {
 
     @InjectRepository(SurveyFeedbackAnswer)
     private readonly surveyFeedbackAnswerRepo: Repository<SurveyFeedbackAnswer>,
+
+        private readonly salesTargetService: SalesTargetService, // <--- add this
+
   ) {}
 
   async getProjectStats(projectId: string): Promise<ProjectStatsDto> {
@@ -179,6 +183,35 @@ const [auditAgg, auditsWithImages] = await Promise.all([
     .where('a.projectId = :projectId', { projectId })
     .getCount(),
 ]);
+const branches = await this.branchRepo.find({ where: { project: { id: projectId } } });
+
+const salesTargetsPromises = branches.map(branch =>
+  this.salesTargetService.getCurrentTarget(branch.id),
+);
+
+const currentTargets = await Promise.all(salesTargetsPromises);
+
+const salesTargets = currentTargets
+  .filter(t => !!t)
+  .map(t => ({
+    branchId: t.branch.id,
+    branchName: t.branch.name,
+    type: t.type,
+    targetAmount: t.targetAmount,
+    currentAmount: t.currentAmount,
+    progress: t.targetAmount ? (t.currentAmount / t.targetAmount) * 100 : 0,
+    status: t.status,
+  }));
+const salesPerPromoter = await this.saleRepo
+  .createQueryBuilder('s')
+  .innerJoin('s.user', 'p')
+  .where('s.projectId = :projectId', { projectId })
+  .select(['p.id as promoterId', 'p.name as promoterName'])
+  .addSelect('SUM(s.quantity)', 'totalQuantity')
+  .addSelect('SUM(s.total_amount)', 'totalAmount')
+  .groupBy('p.id')
+  .addGroupBy('p.name')
+  .getRawMany();
 
 
 const auditsTotal = Number(auditAgg?.count) || 0;
@@ -308,7 +341,11 @@ const auditsTotal = Number(auditAgg?.count) || 0;
           totalOrders: Number(w.totalOrders),
           totalQuantity: Number(w.totalQuantity),
           totalAmount: Number(w.totalAmount),
+
         })),
+
+  perPromoter: salesPerPromoter,
+  targets: salesTargets,
       },
 
       stock: {
