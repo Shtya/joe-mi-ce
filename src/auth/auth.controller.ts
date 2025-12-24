@@ -1,5 +1,5 @@
 
-import { Controller, Post, Body, UseGuards, Get, Param, Req, ForbiddenException, Put, Delete, Query } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Param, Req, ForbiddenException, Put, Delete, Query, BadRequestException, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
 import { RegisterDto, LoginDto, RefreshTokenDto, ViewUserPasswordDto, UpdateUserDto, UpdateUserRoleDto } from 'dto/user.dto';
@@ -8,6 +8,12 @@ import { ERole } from 'enums/Role.enum';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { CRUD } from 'common/crud.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { multerOptions } from 'common/multer.config';
+import { parse } from 'papaparse';
+import * as fs from 'fs';
+import * as ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
 
 @Controller('')
 export class AuthController {
@@ -70,6 +76,82 @@ export class AuthController {
   async updateUserRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto, @Req() req: any) {
     return this.authService.updateUserRole(id, dto.role_id, req.user);
   }
+  @UseGuards(AuthGuard)
 
-	
+@Post('import/promoters')
+
+@Permissions(EPermission.USER_CREATE)
+@UseInterceptors(FileInterceptor('file', multerOptions))
+async importPromoters(
+  @UploadedFile() file: Express.Multer.File,
+  @Req() req: any,
+) {
+  if (!file) {
+    throw new BadRequestException('File is required');
+  }
+
+  const requester = await this.authService.userRepository.findOne({
+    where: { id: req.user.id },
+    relations: ['role', 'project'],
+  });
+
+  const filePath = file.path;
+  let rows: any[] = [];
+
+  try {
+    console.log(file.mimetype)
+if (file.mimetype === 'text/csv') {
+  // ✅ CSV
+  const csvContent = fs.readFileSync(filePath, 'utf8');
+  const result = parse(csvContent, {
+    header: true,
+    skipEmptyLines: true,
+  });
+  rows = result.data;
+
+} else if (file.mimetype === 'application/vnd.ms-excel') {
+  // ✅ REAL .xls
+  const workbook = XLSX.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  rows = XLSX.utils.sheet_to_json(
+    workbook.Sheets[sheetName],
+    { defval: '' },
+  );
+
+} else {
+  // ✅ .xlsx
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
+  const sheet = workbook.getWorksheet(1);
+
+  const headers: string[] = [];
+  sheet.getRow(1).eachCell((cell, i) => {
+    headers[i - 1] = cell.value?.toString() || '';
+  });
+
+  for (let i = 2; i <= sheet.rowCount; i++) {
+    const row = sheet.getRow(i);
+    const obj: any = {};
+    headers.forEach((h, idx) => {
+      const v = row.getCell(idx + 1).value;
+      if (v !== null && v !== undefined) {
+        obj[h] = v.toString().trim();
+      }
+    });
+    rows.push(obj);
+  }
+}
+
+
+    fs.unlinkSync(filePath);
+
+    // 2️⃣ Call service
+    return await this.authService.importPromoters(rows, requester);
+
+  } catch (err) {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    throw err;
+  }
+}
+
 }

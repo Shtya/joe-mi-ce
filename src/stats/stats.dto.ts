@@ -1,6 +1,21 @@
-// src/projects/dto/project-stats.dto.ts
-import { JourneyStatus, JourneyType } from 'entities/all_plans.entity';
+import { JourneyStatus, JourneyType } from "entities/all_plans.entity";
 
+export interface SalesTargetDto {
+  branchId: string;
+  branchName: string;
+  type: string; // or SalesTargetType if imported
+  targetAmount: number;
+  currentAmount: number;
+  progress: number;
+  status: string; // or SalesTargetStatus if imported
+}
+
+export interface SalesPerPromoterDto {
+  id: string;
+  name: string;
+  totalQuantity: number;
+  totalAmount: number;
+}
 
 export interface ProjectStatsDto {
   project: {
@@ -42,9 +57,10 @@ export interface ProjectStatsDto {
     totalQuantity: number;
     totalAmount: number;
     todayTotalAmount: number;
-    weekly:any
-  },
-  
+    weekly: any;
+    perPromoter?: SalesPerPromoterDto[];
+    targets?: SalesTargetDto[];
+  };
 
   stock: {
     totalSkuWithStock: number;

@@ -106,21 +106,11 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
       }
       await this.userRepo.save(team);
     }
-function parseGeoString(value: string): { lat: number; lng: number } {
-  if (!value) throw new BadRequestException('No geo value');
-
-  const parts = value.split(',').map(s => Number(s.trim()));
-  if (parts.length !== 2 || parts.some(isNaN)) {
-    throw new BadRequestException('Invalid geo format, expected "lat,lng"');
-  }
-
-  return { lat: parts[0], lng: parts[1] };
-}
 
     const branch = this.branchRepo.create({
       name: dto.name,
- geo: dto.geo ? parseGeoString(dto.geo) : null,
-      geofence_radius_meters: dto.geofence_radius_meters ?? 500,
+  geo: this.parseGeo(dto.geo),
+        geofence_radius_meters: dto.geofence_radius_meters ?? 500,
       image_url: dto.image_url,
       project,
       city,
@@ -273,7 +263,8 @@ function parseGeoString(value: string): { lat: number; lng: number } {
     });
 
     if (!branch) throw new NotFoundException('Branch not found');
-    if (branch.project.id !== user.project_id || user.project.id) throw new ForbiddenException('Access denied');
+      const projctId =await  this.usersService.resolveProjectIdFromUser(user.id)
+    if (branch.project?.id !== projctId) throw new ForbiddenException('Access denied');
 
     // Check for supervisor or team changes
     if (dto.supervisorId || dto.teamIds) {
@@ -281,6 +272,9 @@ function parseGeoString(value: string): { lat: number; lng: number } {
         where: { project: { id: branch.project.id } },
         relations: ['supervisor', 'team'],
       });
+      if (dto.geo !== undefined) {
+  branch.geo = this.parseGeo(dto.geo); // Accept string "lat,lng" or object
+}
 
       // Handle supervisor update
       if (dto.supervisorId && dto.supervisorId !== branch.supervisor?.id) {
@@ -363,7 +357,7 @@ if (dto.geo) {
     lng: dto.geo.lng,
   };
 }
-    if (dto.geofence_radius_meters !== undefined) branch.geofence_radius_meters = dto.geofence_radius_meters;
+if (dto.geofence_radius_meters !== undefined) branch.geofence_radius_meters = dto.geofence_radius_meters;
     if (dto.image_url !== undefined) branch.image_url = dto.image_url;
 
     return this.branchRepo.save(branch);
@@ -429,4 +423,24 @@ async remove(id: string, user: User) {
     return { message: 'Branch removed successfully' };
   });
 }
+
+private parseGeo(value: string | { lat: number; lng: number }): { lat: number; lng: number } {
+  if (!value) return null;
+
+  if (typeof value === 'string') {
+    const parts = value.split(',').map(s => Number(s.trim()));
+    if (parts.length !== 2 || parts.some(isNaN)) {
+      throw new BadRequestException('Invalid geo format, expected "lat,lng"');
+    }
+    return { lat: parts[0], lng: parts[1] };
+  }
+
+  if (typeof value === 'object' && value.lat !== undefined && value.lng !== undefined) {
+    return { lat: value.lat, lng: value.lng };
+  }
+
+  throw new BadRequestException('Invalid geo value');
+}
+
+
 }

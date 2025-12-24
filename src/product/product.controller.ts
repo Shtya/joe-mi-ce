@@ -13,6 +13,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { multerOptions } from 'common/multer.config';
 import { parse } from 'papaparse';
 import * as ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
 
 @UseGuards(AuthGuard)
 @Controller('products')
@@ -250,42 +251,74 @@ async importAndUpdateProducts(
   let rows: any[] = [];
 
   try {
-    /** 1️⃣ Parse file (same logic as import) */
-    if (file.mimetype.includes('csv')) {
-      const csvContent = fs.readFileSync(filePath, 'utf-8');
-      const result = parse<any>(csvContent, {
+    if (file.mimetype === 'text/csv') {
+      // ✅ CSV
+      const csvContent = fs.readFileSync(filePath, 'utf8');
+      const result = parse(csvContent, {
         header: true,
         skipEmptyLines: true,
-        transformHeader: h =>
-          h.trim().toLowerCase().replace(/\s+/g, '_'),
+        transformHeader: (header) => header.trim(),
       });
-      rows = result.data;
+
+      // Filter out empty rows
+      rows = result.data.filter((row: any) => {
+        // Check if row has any meaningful data
+        return Object.values(row).some(value =>
+          value !== undefined &&
+          value !== null &&
+          value.toString().trim() !== ''
+        );
+      });
+
+    } else if (file.mimetype === 'application/vnd.ms-excel') {
+      // ✅ REAL .xls
+      const workbook = XLSX.readFile(filePath);
+      const sheetName = workbook.SheetNames[0];
+      const data = XLSX.utils.sheet_to_json(
+        workbook.Sheets[sheetName],
+        { defval: '' },
+      );
+
+      // Filter out empty rows
+      rows = data.filter((row: any) => {
+        return Object.values(row).some(value =>
+          value !== undefined &&
+          value !== null &&
+          value.toString().trim() !== ''
+        );
+      });
+
     } else {
+      // ✅ .xlsx
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.readFile(filePath);
       const sheet = workbook.getWorksheet(1);
 
       const headers: string[] = [];
       sheet.getRow(1).eachCell((cell, i) => {
-        headers[i - 1] = cell.value
-          ?.toString()
-          .trim()
-          .toLowerCase()
-          .replace(/\s+/g, '_');
+        headers[i - 1] = cell.value?.toString().trim() || '';
       });
 
       for (let i = 2; i <= sheet.rowCount; i++) {
         const row = sheet.getRow(i);
         const obj: any = {};
+        let hasData = false;
+
         headers.forEach((h, idx) => {
           const v = row.getCell(idx + 1).value;
-          if (v !== null && v !== undefined) {
+          if (v !== null && v !== undefined && v.toString().trim() !== '') {
             obj[h] = v.toString().trim();
+            hasData = true;
           }
         });
-        if (obj.product_name || obj.name) rows.push(obj);
+
+        if (hasData) {
+          rows.push(obj);
+        }
       }
     }
+
+    console.log(`Processing ${rows.length} rows from file`);
 
     fs.unlinkSync(filePath);
 
@@ -296,6 +329,7 @@ async importAndUpdateProducts(
     );
   } catch (err) {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    console.error('Import error:', err);
     throw err;
   }
 }

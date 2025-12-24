@@ -7,13 +7,14 @@ import { User } from 'entities/user.entity';
 import { Role } from 'entities/role.entity';
 import { Project } from 'entities/project.entity';
 import { Branch } from 'entities/branch.entity';
-  
+import { UsersService } from 'src/users/users.service';
+
 
 @Module({
   imports: [TypeOrmModule.forFeature([User, Role, Project , Branch])],
   controllers: [AuthController],
-  providers: [AuthService],
-  exports: [AuthService , TypeOrmModule.forFeature([User])],
+  providers: [AuthService,UsersService],
+  exports: [AuthService , TypeOrmModule.forFeature([User]),],
 })
 export class AuthModule {}
 

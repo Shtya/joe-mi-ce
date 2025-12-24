@@ -22,7 +22,7 @@ export class BrandController {
   @Get("mobile/list")
   @Permissions(EPermission.BRAND_READ)
   findAllForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
-    return this.brandService.findAllForMobile(query, req.user);
+    return this.brandService.findBrandsForMobile(query, req.user);
   }
   @Post(':id/categories')
   @Permissions(EPermission.BRAND_UPDATE)

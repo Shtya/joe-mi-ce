@@ -9,6 +9,18 @@ import { Role } from 'entities/role.entity';
 import { Project } from 'entities/project.entity';
 import { Branch } from 'entities/branch.entity';
 import { RegisterDto, LoginDto, UpdateUserDto } from 'dto/user.dto';
+import { UsersService } from 'src/users/users.service';
+import { ImportPromoterDto } from 'dto/auth.dto';
+const PROMOTER_HEADER_MAP: Record<string, string> = {
+  'promoter username': 'username',
+  'username': 'username',
+  'promoter name': 'name',
+  'name': 'name',
+  'mobile': 'mobile',
+  'phone': 'mobile',
+};
+const normalizeHeader = (h: string) =>
+  h.trim().toLowerCase().replace(/\s+/g, ' ');
 
 @Injectable()
 export class AuthService {
@@ -18,6 +30,7 @@ export class AuthService {
     @InjectRepository(Project) private projectRepository: Repository<Project>,
     @InjectRepository(Branch) private branchRepository: Repository<Branch>,
     private jwtService: JwtService,
+    private readonly userService : UsersService
   ) {}
 
   async register(requester: User | null, dto: RegisterDto) {
@@ -245,61 +258,94 @@ const existingUserPhone = await this.userRepository.findOne({ where: { username:
     }
   }
 
-  async deleteUser(userId: any, requester: User) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['project'],
-    });
-
-    if (!user) throw new NotFoundException('User not found');
-
-    const isSuperAdmin = (requester?.role?.name?.toLowerCase?.() || '') === 'super_admin';
-
-    const targetRoleName = user?.role?.name?.toLowerCase?.();
-    if (targetRoleName && ['admin', 'super_admin'].includes(targetRoleName) && !isSuperAdmin) {
-      throw new ForbiddenException('Only super_admin can delete admin accounts');
-    }
-
-    if (requester.id === user.id) {
-      throw new ForbiddenException('You cannot delete your own account');
-    }
-
-    if (!isSuperAdmin) {
-      if (!requester.project_id) {
-        throw new ForbiddenException('Missing project context for requester');
-      }
-      if (user.project_id && requester.project_id !== user.project_id) {
-        throw new ForbiddenException('You can only delete users in your own project');
-      }
-    }
-
-    await this.userRepository.softDelete(user.id);
-    return { success: true, deletedUserId: user.id };
-  }
-
-  async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      relations: ['project'],
-      withDeleted:true
+async deleteUser(userId: any, requester: User) {
+  const user = await this.userRepository.findOne({
+    where: { id: userId },
   });
 
-    if (!user) throw new NotFoundException('User not found');
-   if(dto.mobile){
-    const userPhone = await this.userRepository.findOne({
-      where:{mobile:dto.mobile}
-    })
-    if(userPhone){
-    if (userPhone) throw new BadRequestException('Phone already exists');
-    }
-   }
-    if (requester.project?.id !== user.project_id) {
-      throw new ForbiddenException('You can only edit users in your own project');
-    }
-
-    Object.assign(user, dto);
-    return await this.userRepository.save(user);
+  if (!user) {
+    throw new NotFoundException('User not found');
   }
+
+  const isSuperAdmin =
+    (requester?.role?.name?.toLowerCase?.() || '') === 'super_admin';
+
+  const requesterProjectId =
+    await this.userService.resolveProjectIdFromUser(requester.id);
+
+  const targetRoleName = user?.role?.name?.toLowerCase?.();
+
+  if (
+    targetRoleName &&
+    ['admin', 'super_admin'].includes(targetRoleName) &&
+    !isSuperAdmin
+  ) {
+    throw new ForbiddenException(
+      'Only super_admin can delete admin accounts',
+    );
+  }
+
+  if (requester.id === user.id) {
+    throw new ForbiddenException('You cannot delete your own account');
+  }
+
+  // ✅ Same project rule
+  if (!isSuperAdmin) {
+    if (user.project_id && user.project_id !== requesterProjectId) {
+      throw new ForbiddenException(
+        'You can only delete users in your own project',
+      );
+    }
+  }
+
+  await this.userRepository.softDelete(user.id);
+  return { success: true, deletedUserId: user.id };
+}
+
+
+async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
+  const user = await this.userRepository.findOne({
+    where: { id: userId },
+    withDeleted: true,
+  });
+
+  if (!user) {
+    throw new NotFoundException('User not found');
+  }
+
+  const isSuperAdmin =
+    (requester?.role?.name?.toLowerCase?.() || '') === 'super_admin';
+
+  const requesterProjectId =
+    await this.userService.resolveProjectIdFromUser(requester.id);
+
+  // ✅ Project ownership check (same logic as delete)
+  if (!isSuperAdmin) {
+    if (user.project_id && user.project_id !== requesterProjectId) {
+      throw new ForbiddenException(
+        'You can only update users in your own project',
+      );
+    }
+  }
+
+  // ✅ Optimized mobile check
+  if (
+    dto.mobile !== undefined &&
+    dto.mobile !== user.mobile
+  ) {
+    const existingUser = await this.userRepository.findOne({
+      where: { mobile: dto.mobile },
+    });
+
+    if (existingUser) {
+      throw new BadRequestException('Phone already exists');
+    }
+  }
+
+  Object.assign(user, dto);
+  return await this.userRepository.save(user);
+}
+
 
   async updateUserRole(userId: any, roleId: any, requester: User) {
     const user = await this.userRepository.findOne({
@@ -350,4 +396,97 @@ const existingUserPhone = await this.userRepository.findOne({ where: { username:
       }),
     };
   }
+
+  async importPromoters(rows: any[], requester: User) {
+    const result = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const [index, rawRow] of rows.entries()) {
+      try {
+        const row = this.mapHeaders(rawRow);
+        console.log(row)
+        await this.importSinglePromoter(row, requester);
+        result.success++;
+      } catch (err) {
+        result.failed++;
+        result.errors.push({
+          row: index + 2,
+          error: err.message,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  /** Map Excel/CSV headers */
+  private mapHeaders(raw: any) {
+    const mapped: any = {};
+    for (const key of Object.keys(raw)) {
+      const normalized = normalizeHeader(key);
+      const mappedKey = PROMOTER_HEADER_MAP[normalized];
+      if (mappedKey) {
+        mapped[mappedKey] = raw[key];
+      }
+    }
+    return mapped;
+  }
+
+  private async importSinglePromoter(row: any, requester: User) {
+    if (!row.username || !row.name) {
+      throw new BadRequestException('Username and name are required');
+    }
+
+    const isSuperAdmin =
+      requester.role.name.toLowerCase() === 'super_admin';
+
+    const requesterProjectId =
+      await this.userService.resolveProjectIdFromUser(requester.id);
+
+    if (
+      await this.userRepository.findOne({
+        where: { username: row.username },
+        withDeleted: true,
+      })
+    ) {
+      throw new ConflictException('Username already exists');
+    }
+
+    if (row.mobile) {
+      if (
+        await this.userRepository.findOne({
+          where: { mobile: row.mobile },
+          withDeleted: true,
+        })
+      ) {
+        row.mobile = undefined
+      }
+    }
+
+
+
+    const promoterRole = await this.roleRepository.findOne({
+      where: { name: ERole.PROMOTER },
+    });
+
+    const password = row.password?.trim() || row.username;
+    const user = this.userRepository.create({
+      username: row.username,
+      name: row.name,
+      mobile: row.mobile,
+      password: await argon2.hash(password),
+      role: promoterRole,
+      project_id: requesterProjectId,
+      manager_id: requester.id,
+      is_active: true,
+      created_by: requester,
+    });
+
+    const savedUser = await this.userRepository.save(user);
+
+
+}
 }
