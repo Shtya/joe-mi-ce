@@ -17,6 +17,9 @@ import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class ProductService {
+    private categoryCache = new Map<string, Category>();
+  private brandCache = new Map<string, Brand>();
+  private productCache = new Map<string, Product>();
   constructor(
     @InjectRepository(Product)
     public productRepository: Repository<Product>,
@@ -517,14 +520,16 @@ export class ProductService {
 
 private async processUpsertProduct(row: any, project: Project): Promise<boolean> {
   // Helper function to map fields with fallback
-  const map = (keys: string[], def?: any) => {
-    for (const k of keys) {
-      if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
-        return row[k];
-      }
+const map = (keys: string[], def?: any) => {
+  for (const k of keys) {
+    if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+      return row[k];
     }
-    return def;
-  };
+  }
+  return def;
+};
+
+
 
   // Extract all fields
   const name = map(['name', 'product_name'])?.toString().trim();
@@ -541,12 +546,14 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
   const allBranchesStr = map(['all_branches'], 'false');
   const branchesRaw = map(['branches'], '');
 
-  // Validate required fields
-  if (!name) throw new Error('Product name is required');
-  if (!categoryName) throw new Error('Category name is required');
-
+if (!name) {
+  throw new BadRequestException('Product name is required');
+}
+if (!categoryName) {
+  throw new BadRequestException('Category name is required');
+}
   // Parse values
-  const price = parseFloat(priceStr);
+const price = isNaN(Number(priceStr)) ? 0 : Number(priceStr);
   const quantity = parseInt(quantityStr);
   const isHighPriority = ['true', '1', 'yes'].includes((priorityStr + '').toLowerCase());
   const allBranches = ['true', '1', 'yes'].includes((allBranchesStr + '').toLowerCase());
@@ -619,8 +626,13 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
 
   // Handle stock assignment asynchronously
   if (quantity > 0) {
-    this.assignStockWithBranches(savedProduct, project, quantity, allBranches, branchNames)
-      .catch(error => console.error(`Stock assignment error for ${savedProduct.name}:`, error));
+  await this.assignStockWithBranches(
+    savedProduct,
+    project,
+    quantity,
+    allBranches,
+    branchNames
+  );
   }
 
   return isUpdate;
@@ -670,34 +682,44 @@ private async assignStockWithBranches(
 }
 
 private async findOrCreateCategory(name: string, project: Project): Promise<Category> {
+  const key = `${project.id}:${name.toLowerCase()}`;
+
+  if (this.categoryCache.has(key)) {
+    return this.categoryCache.get(key);
+  }
+
   let category = await this.categoryRepository.findOne({
-    where: {
-      name: ILike(name),
-      project: { id: project.id }
-    }
+    where: { name: ILike(name), project: { id: project.id } }
   });
 
   if (!category) {
-    category = this.categoryRepository.create({
-      name,
-      project
-    });
-    category = await this.categoryRepository.save(category);
+    try {
+      category = await this.categoryRepository.save({ name, project });
+    } catch {
+      category = await this.categoryRepository.findOne({
+        where: { name: ILike(name), project: { id: project.id } }
+      });
+    }
   }
 
+  this.categoryCache.set(key, category);
   return category;
 }
+
 
 private async findOrCreateBrand(
   name: string,
   category: Category,
   project: Project
 ): Promise<Brand> {
+  const key = `${project.id}:${name.toLowerCase()}`;
+
+  if (this.brandCache.has(key)) {
+    return this.brandCache.get(key);
+  }
+
   let brand = await this.brandRepository.findOne({
-    where: {
-      name: ILike(name),
-      project: { id: project.id }
-    },
+    where: { name: ILike(name), project: { id: project.id } },
     relations: ['categories']
   });
 
@@ -707,15 +729,15 @@ private async findOrCreateBrand(
       project,
       categories: [category]
     });
-  } else {
-    const alreadyLinked = brand.categories?.some(c => c.id === category.id);
-    if (!alreadyLinked) {
-      brand.categories = [...(brand.categories || []), category];
-    }
+  } else if (!brand.categories.some(c => c.id === category.id)) {
+    brand.categories.push(category);
   }
 
-  return this.brandRepository.save(brand);
+  brand = await this.brandRepository.save(brand);
+  this.brandCache.set(key, brand);
+  return brand;
 }
+
 
 async importAndUpdateProducts(rows: any[], projectId: string) {
   // Set a timeout for the entire operation
@@ -739,30 +761,32 @@ async importAndUpdateProducts(rows: any[], projectId: string) {
   };
 
   // Process sequentially with timeout checks
-  for (let i = 0; i < rows.length; i++) {
-    // Check timeout
-    if (Date.now() - startTime > TIMEOUT_MS) {
-      throw new BadRequestException(`Import timed out after ${TIMEOUT_MS/1000} seconds`);
-    }
+const CHUNK_SIZE = 10;
 
-    try {
-      console.log(`Processing row ${i + 1}/${rows.length}`);
-      const isUpdate = await this.processUpsertProduct(rows[i], project);
-      isUpdate ? result.updated++ : result.created++;
-    } catch (error) {
-      result.failed++;
-      result.errors.push(`Row ${i + 1}: ${error.message}`);
-      console.error(`Error in row ${i + 1}:`, error.message);
-    }
-
-    result.processed = i + 1;
-
-    // Add small delay every 10 rows
-    if (i % 10 === 0 && i > 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
+for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
+  if (Date.now() - startTime > TIMEOUT_MS) {
+    throw new BadRequestException('Import timed out');
   }
 
+  const chunk = rows.slice(i, i + CHUNK_SIZE);
+
+  await Promise.all(
+    chunk.map(async (row, index) => {
+      try {
+        const isUpdate = await this.processUpsertProduct(row, project);
+        isUpdate ? result.updated++ : result.created++;
+      } catch (error) {
+        result.failed++;
+        result.errors.push(`Row ${i + index + 1}: ${error.message}`);
+      }
+    })
+  );
+
+  result.processed = Math.min(i + CHUNK_SIZE, rows.length);
+}
+this.categoryCache.clear();
+this.brandCache.clear();
+this.productCache.clear();
   return result;
 }
 
@@ -784,16 +808,6 @@ private async processImportRow(
     );
   }
 
-  const exists = await this.productRepository.findOne({
-    where: {
-      name: productData.name,
-      project: { id: project.id }
-    }
-  });
-
-  if (exists) {
-    throw new ConflictException(`Product "${productData.name}" already exists`);
-  }
 
   const product = this.productRepository.create({
     name: productData.name,
