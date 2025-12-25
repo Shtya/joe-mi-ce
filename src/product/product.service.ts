@@ -422,42 +422,6 @@ export class ProductService {
   /**
    * Assign stock to branches
    */
-private async assignStock(product: Product, project: Project, productData: any) {
-  const quantity = parseInt(productData.quantity || '0');
-  if (quantity <= 0) return;
-
-  const stockToInsert: Partial<Stock>[] = [];
-  const availableBranches = project.branches || [];
-
-  if (productData.all_branches || ['true','1','yes'].includes((productData.all_branches+'').toLowerCase())) {
-    // All branches
-    for (const branch of availableBranches) {
-      stockToInsert.push({ branch, product, quantity });
-    }
-  } else if (productData.branches) {
-    const branchNames = productData.branches
-      .split(',')
-      .map((n: string) => n.trim())
-      .filter((n: string) => n.length > 0);
-
-    for (const branchName of branchNames) {
-      const branch = availableBranches.find(
-        b => b.name.toLowerCase() === branchName.toLowerCase()
-      );
-      if (!branch) throw new NotFoundException(`Branch "${branchName}" not found`);
-      stockToInsert.push({ branch, product, quantity });
-    }
-  }
-
-  if (stockToInsert.length > 0) {
-    // Remove old stock for this product in these branches
-    const branchIds = stockToInsert.map(s => s.branch.id);
-    await this.stockRepository.delete({ product: { id: product.id }, branch: { id: In(branchIds) } });
-
-    // Insert new stock
-    await this.stockRepository.save(stockToInsert);
-  }
-}
 
   /**
    * Export products to Excel
@@ -550,10 +514,162 @@ private async assignStock(product: Product, project: Project, productData: any) 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
-private async findOrCreateCategory(
-  name: string,
-  project: Project
-): Promise<Category> {
+
+private async processUpsertProduct(row: any, project: Project): Promise<boolean> {
+  // Helper function to map fields with fallback
+  const map = (keys: string[], def?: any) => {
+    for (const k of keys) {
+      if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+        return row[k];
+      }
+    }
+    return def;
+  };
+
+  // Extract all fields
+  const name = map(['name', 'product_name'])?.toString().trim();
+  const description = map(['description', 'device_description'])?.toString().trim();
+  const priceStr = map(['price', 'device_price'], '0');
+  const quantityStr = map(['quantity', 'stock', 'stock_quantity'], '0');
+  const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
+  const extraSku = map(['Extra sku', 'extra_sku', 'sku'])?.toString().trim();
+  const sacoSku = map(['Saco SKU', 'saco_sku'])?.toString().trim();
+  const imageUrlRaw = map(['image_url', 'device_image_url'])?.toString();
+  const priorityStr = map(['is_high_priority', 'product_priority'], '');
+  const categoryName = map(['category_name', 'category'])?.toString().trim();
+  const brandName = map(['brand_name', 'brand'])?.toString().trim();
+  const allBranchesStr = map(['all_branches'], 'false');
+  const branchesRaw = map(['branches'], '');
+
+  // Validate required fields
+  if (!name) throw new Error('Product name is required');
+  if (!categoryName) throw new Error('Category name is required');
+
+  // Parse values
+  const price = parseFloat(priceStr);
+  const quantity = parseInt(quantityStr);
+  const isHighPriority = ['true', '1', 'yes'].includes((priorityStr + '').toLowerCase());
+  const allBranches = ['true', '1', 'yes'].includes((allBranchesStr + '').toLowerCase());
+  const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
+  const branchNames = branchesRaw ?
+    branchesRaw.split(',').map((b: string) => b.trim()).filter((b: string) => b.length > 0) :
+    [];
+
+  // Determine product display name
+  const productDisplayName = model ? `${name} ${model}` : name;
+
+  // Determine final SKU
+  const isSacoActive = sacoSku && sacoSku.toLowerCase() !== 'not actv';
+  const finalSku = isSacoActive ?
+    [extraSku, sacoSku]
+      .filter(s => s && s.toLowerCase() !== 'not actv')
+      .join(' - ') || null :
+    extraSku || null;
+
+  // Find or create category first
+  const category = await this.findOrCreateCategory(categoryName, project);
+
+  // Then find or create brand (needs category)
+  const brand = brandName ? await this.findOrCreateBrand(brandName, category, project) : undefined;
+
+  // Find existing product
+  const product = await this.productRepository.findOne({
+    where: {
+      name: productDisplayName,
+      project: { id: project.id }
+    }
+  });
+
+  const isUpdate = !!product;
+  let productToSave: Product;
+
+  if (!product) {
+    // CREATE new product
+    productToSave = this.productRepository.create({
+      name: productDisplayName,
+      model: model || null,
+      sku: finalSku,
+      description: description || null,
+      price: price || 0,
+      image_url: imageUrl || null,
+      is_high_priority: isHighPriority,
+      project,
+      category,
+      brand,
+      is_active: true,
+    });
+  } else {
+    // UPDATE existing product
+    productToSave = product;
+    this.productRepository.merge(productToSave, {
+      name: productDisplayName,
+      model: model || productToSave.model,
+      sku: finalSku || productToSave.sku,
+      description: description || productToSave.description,
+      price: price !== 0 ? price : productToSave.price,
+      image_url: imageUrl || productToSave.image_url,
+      is_high_priority: isHighPriority !== undefined ? isHighPriority : productToSave.is_high_priority,
+      category,
+      brand: brand || productToSave.brand,
+    });
+  }
+
+  // Save product
+  const savedProduct = await this.productRepository.save(productToSave);
+
+  // Handle stock assignment asynchronously
+  if (quantity > 0) {
+    this.assignStockWithBranches(savedProduct, project, quantity, allBranches, branchNames)
+      .catch(error => console.error(`Stock assignment error for ${savedProduct.name}:`, error));
+  }
+
+  return isUpdate;
+}
+
+private async assignStockWithBranches(
+  product: Product,
+  project: Project,
+  quantity: number,
+  allBranches: boolean,
+  branchNames: string[]
+): Promise<void> {
+  if (quantity <= 0) return;
+
+  const stockToInsert: Partial<Stock>[] = [];
+  const availableBranches = project.branches || [];
+
+  if (allBranches) {
+    // Assign to all branches
+    stockToInsert.push(...availableBranches.map(branch => ({
+      branch,
+      product,
+      quantity
+    })));
+  } else if (branchNames.length > 0) {
+    // Assign to specific branches
+    for (const branchName of branchNames) {
+      const branch = availableBranches.find(
+        b => b.name.toLowerCase() === branchName.toLowerCase()
+      );
+      if (!branch) throw new NotFoundException(`Branch "${branchName}" not found`);
+      stockToInsert.push({ branch, product, quantity });
+    }
+  }
+
+  if (stockToInsert.length > 0) {
+    const branchIds = stockToInsert.map(s => s.branch.id);
+    // Use transaction for stock operations
+    await this.stockRepository.manager.transaction(async (transactionalEntityManager) => {
+      await transactionalEntityManager.getRepository(Stock).delete({
+        product: { id: product.id },
+        branch: { id: In(branchIds) }
+      });
+      await transactionalEntityManager.getRepository(Stock).save(stockToInsert);
+    });
+  }
+}
+
+private async findOrCreateCategory(name: string, project: Project): Promise<Category> {
   let category = await this.categoryRepository.findOne({
     where: {
       name: ILike(name),
@@ -571,6 +687,7 @@ private async findOrCreateCategory(
 
   return category;
 }
+
 private async findOrCreateBrand(
   name: string,
   category: Category,
@@ -591,10 +708,7 @@ private async findOrCreateBrand(
       categories: [category]
     });
   } else {
-    const alreadyLinked = brand.categories?.some(
-      c => c.id === category.id
-    );
-
+    const alreadyLinked = brand.categories?.some(c => c.id === category.id);
     if (!alreadyLinked) {
       brand.categories = [...(brand.categories || []), category];
     }
@@ -602,76 +716,7 @@ private async findOrCreateBrand(
 
   return this.brandRepository.save(brand);
 }
-private async processImportRow(
-  productData: ImportProductRowDto,
-  project: Project
-): Promise<void> {
 
-  /**
-   * 1️⃣ Category (auto-create)
-   */
-  const category = await this.findOrCreateCategory(
-    productData.category_name,
-    project
-  );
-
-  /**
-   * 2️⃣ Brand (auto-create + auto-assign to category)
-   */
-  let brand: Brand | undefined;
-  if (productData.brand_name) {
-    brand = await this.findOrCreateBrand(
-      productData.brand_name,
-      category,
-      project
-    );
-  }
-
-  /**
-   * 3️⃣ Prevent duplicate product
-   */
-  const exists = await this.productRepository.findOne({
-    where: {
-      name: productData.name,
-      project: { id: project.id }
-    }
-  });
-
-  if (exists) {
-    throw new ConflictException(
-      `Product "${productData.name}" already exists`
-    );
-  }
-
-  /**
-   * 4️⃣ Create product (FULL MAPPING)
-   */
-  const product = this.productRepository.create({
-    // Excel → Product
-    name: productData.name,                  // Product Name
-    model: productData.device_name,           // Device Name
-    sku: productData.sku,                     // SKU/Reference
-    description: productData.description,     // Device Description
-    price: productData.price,                 // Device Price
-    is_high_priority: productData.product_priority || false,
-    image_url: productData.image_url,         // Device Image URL
-
-    discount: 0,
-    is_active: true,
-
-    // Relations
-    project,
-    category,
-    brand
-  });
-
-  const savedProduct = await this.productRepository.save(product);
-
-  /**
-   * 5️⃣ Stock
-   */
-  await this.assignStock(savedProduct, project, productData);
-}
 async importAndUpdateProducts(rows: any[], projectId: string) {
   const project = await this.projectRepository.findOne({
     where: { id: projectId },
@@ -687,252 +732,108 @@ async importAndUpdateProducts(rows: any[], projectId: string) {
     errors: [] as string[],
   };
 
-  for (let i = 0; i < rows.length; i++) {
-    try {
-      const updated = await this.processUpsertProduct(rows[i], project);
-      console.log(rows,project)
-      updated ? result.updated++ : result.created++;
-    } catch (err) {
-      result.failed++;
-      result.errors.push(`Row ${i + 1}: ${err.message}`);
+  // Process in batches for better performance
+  const BATCH_SIZE = 50;
+
+  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+    const batch = rows.slice(i, i + BATCH_SIZE);
+
+    // Process batch items in parallel
+    const batchPromises = batch.map(async (row, index) => {
+      try {
+        const isUpdate = await this.processUpsertProduct(row, project);
+        return { success: true, isUpdate };
+      } catch (error) {
+        return { success: false, error: `Row ${i + index + 1}: ${error.message}` };
+      }
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+
+    // Count results
+    batchResults.forEach(resultItem => {
+      if (resultItem.success) {
+        resultItem.isUpdate ? result.updated++ : result.created++;
+      } else {
+        result.failed++;
+        result.errors.push(resultItem.error);
+      }
+    });
+
+    // Small delay to prevent database overload
+    if (i + BATCH_SIZE < rows.length) {
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
   }
 
   return result;
 }
 
-private async processUpsertRow(row: any, project: Project) {
-  const map = (keys: string[], def?: any) =>
-    keys.find(k => row[k] !== undefined) ? row[keys.find(k => row[k] !== undefined)!] : def;
-
-  /** Mapping */
-  const name = map(['product_name', 'name']);
-const model = map(
-  ['device_name', 'product_name2', 'model'],
-  map(['product_name', 'name']) // fallback
-);
-const imageUrlRaw = map(['device_image_url', 'image_url']);
-
-// Remove :8080 if present
-const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
-
-  const price = parseFloat(map(['device_price', 'price'], '0'));
-  const isHighPriority = ['true', '1', 'yes'].includes(
-    (map(['product_priority', 'priority'], '') + '').toLowerCase()
-  );
-
-  /** Category */
+private async processImportRow(
+  productData: ImportProductRowDto,
+  project: Project
+): Promise<void> {
   const category = await this.findOrCreateCategory(
-    map(['category_name']),
+    productData.category_name,
     project
   );
 
-  /** Brand */
-  const brand = map(['brand_name'])
-    ? await this.findOrCreateBrand(
-        map(['brand_name']),
-        category,
-        project
-      )
-    : undefined;
-
-  /** Find product */
-let product = await this.productRepository.findOne({
-  where: [
-    { name:`${name} ${model}`, project: { id: project.id } },
-  ],
-});
-
-
-  /** CREATE */
-  if (!product) {
-    product = this.productRepository.create({
-      name:`${name} ${model}`,
-      model,
-      description: map(['device_description', 'description']),
-      price,
-      image_url: imageUrl,
-      is_high_priority: isHighPriority,
-      project,
+  let brand: Brand | undefined;
+  if (productData.brand_name) {
+    brand = await this.findOrCreateBrand(
+      productData.brand_name,
       category,
-      brand,
-      is_active: true,
-    });
-
-    await this.productRepository.save(product);
-    row._updated = false;
+      project
+    );
   }
 
-  /** UPDATE */
-  else {
-    this.productRepository.merge(product, {
-      model,
-      price,
-      image_url: imageUrl,
-      is_high_priority: isHighPriority,
-      category,
-      brand,
-    });
-
-    await this.productRepository.save(product);
-    row._updated = true;
-  }
-
-
-}
-private async processUpsertProduct(row: any, project: Project): Promise<boolean> {
-  const map = (keys: string[], def?: any) => {
-    for (const k of keys) {
-      if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
-        return row[k];
-      }
+  const exists = await this.productRepository.findOne({
+    where: {
+      name: productData.name,
+      project: { id: project.id }
     }
-    return def;
-  };
+  });
 
-  // Clean and map values
-  const name = map(['name', 'product_name'])?.toString().trim();
-  const description = map(['description', 'device_description'])?.toString().trim();
-  const price = parseFloat(map(['price', 'device_price'], '0'));
-  const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '0'));
-  const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
-  const extraSku = map(['Extra sku', 'extra_sku', 'sku'])?.toString().trim();
-  const sacoSku = map(['Saco SKU', 'saco_sku'])?.toString().trim();
-  const imageUrlRaw = map(['image_url', 'device_image_url'])?.toString();
-  const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
-  const isHighPriority = ['true', '1', 'yes'].includes((map(['is_high_priority', 'product_priority'], '') + '').toLowerCase());
-  const categoryName = map(['category_name', 'category'])?.toString().trim();
-  const brandName = map(['brand_name', 'brand'])?.toString().trim();
-  const allBranches = ['true', '1', 'yes'].includes((map(['all_branches'], 'false') + '').toLowerCase());
-  const branchesRaw = map(['branches'], '')?.toString();
-  const branchNames = branchesRaw ?
-    branchesRaw.split(',')
-      .map((b: string) => b.trim())
-      .filter((b: string) => b.length > 0) :
-    [];
-
-  // Validate required fields
-  if (!name) {
-    throw new Error('Product name is required');
+  if (exists) {
+    throw new ConflictException(`Product "${productData.name}" already exists`);
   }
 
-  if (!categoryName) {
-    throw new Error('Category name is required');
-  }
+  const product = this.productRepository.create({
+    name: productData.name,
+    model: productData.device_name,
+    sku: productData.sku,
+    description: productData.description,
+    price: productData.price,
+    is_high_priority: productData.product_priority || false,
+    image_url: productData.image_url,
+    discount: 0,
+    is_active: true,
+    project,
+    category,
+    brand
+  });
 
-  // Determine product display name
-  const productDisplayName = model ? `${name} ${model}` : name;
-
-  // Check if Saco SKU is active
-  const isSacoActive = sacoSku && sacoSku.toLowerCase() !== 'not actv';
-
-  // Determine final SKU
-  const finalSku = isSacoActive ?
-    [extraSku, sacoSku]
-      .filter(s => s && s.toLowerCase() !== 'not actv')
-      .join(' - ') || null :
-    extraSku || null;
-
-  // Category & Brand auto-create
-  const category = await this.findOrCreateCategory(categoryName, project);
-  const brand = brandName ? await this.findOrCreateBrand(brandName, category, project) : undefined;
-
-  // Find existing product by multiple criteria
-  let product = null;
-
-  // Try to find by SKUs first
-  if (finalSku) {
-    product = await this.productRepository.findOne({
-      where: {
-        sku: finalSku,
-        project: { id: project.id }
-      }
-    });
-  }
-
-  // If not found by SKU, try by name+model
-  if (!product) {
-    product = await this.productRepository.findOne({
-      where: {
-        name: productDisplayName,
-        project: { id: project.id }
-      }
-    });
-  }
-
-  // If still not found, try just by name (without model)
-  if (!product && model) {
-    product = await this.productRepository.findOne({
-      where: {
-        name: name,
-        project: { id: project.id }
-      }
-    });
-  }
-
-  const isUpdate = !!product;
-
-  if (!product) {
-    // CREATE new product
-    product = this.productRepository.create({
-      name: productDisplayName,
-      model: model || null,
-      sku: finalSku,
-      description: description || null,
-      price: price || 0,
-      image_url: imageUrl || null,
-      is_high_priority: isHighPriority || false,
-      project,
-      category,
-      brand,
-      is_active: true, // New products are active by default
-    });
-
-    await this.productRepository.save(product);
-    console.log(`Created product: ${productDisplayName}`);
-  } else {
-    // UPDATE existing product
-    this.productRepository.merge(product, {
-      name: productDisplayName,
-      model: model || null,
-      sku: finalSku,
-      description: description || product.description,
-      price: price !== 0 ? price : product.price,
-      image_url: imageUrl || product.image_url,
-      is_high_priority: isHighPriority !== undefined ? isHighPriority : product.is_high_priority,
-      category,
-      brand,
-    });
-
-    await this.productRepository.save(product);
-    console.log(`Updated product: ${productDisplayName}`);
-  }
-
-  // Assign stock if quantity is provided
-  if (quantity > 0) {
-    await this.assignStockWithBranches(product, project, quantity, allBranches, branchNames);
-  }
-
-  return isUpdate;
+  const savedProduct = await this.productRepository.save(product);
+  await this.assignStock(savedProduct, project, productData);
 }
 
-private async assignStockWithBranches(
-  product: Product,
-  project: Project,
-  quantity: number,
-  allBranches: boolean,
-  branchNames: string[]
-) {
+private async assignStock(product: Product, project: Project, productData: any) {
+  const quantity = parseInt(productData.quantity || '0');
   if (quantity <= 0) return;
 
   const stockToInsert: Partial<Stock>[] = [];
   const availableBranches = project.branches || [];
 
-  if (allBranches) {
+  if (productData.all_branches || ['true','1','yes'].includes((productData.all_branches+'').toLowerCase())) {
     for (const branch of availableBranches) {
       stockToInsert.push({ branch, product, quantity });
     }
-  } else if (branchNames.length > 0) {
+  } else if (productData.branches) {
+    const branchNames = productData.branches
+      .split(',')
+      .map((n: string) => n.trim())
+      .filter((n: string) => n.length > 0);
+
     for (const branchName of branchNames) {
       const branch = availableBranches.find(
         b => b.name.toLowerCase() === branchName.toLowerCase()
@@ -943,13 +844,10 @@ private async assignStockWithBranches(
   }
 
   if (stockToInsert.length > 0) {
-    // Remove old stock for these branches
     const branchIds = stockToInsert.map(s => s.branch.id);
     await this.stockRepository.delete({ product: { id: product.id }, branch: { id: In(branchIds) } });
-    // Insert new stock
     await this.stockRepository.save(stockToInsert);
   }
 }
-
-
 }
+
