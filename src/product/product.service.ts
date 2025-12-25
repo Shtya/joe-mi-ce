@@ -718,6 +718,10 @@ private async findOrCreateBrand(
 }
 
 async importAndUpdateProducts(rows: any[], projectId: string) {
+  // Set a timeout for the entire operation
+  const TIMEOUT_MS = 300000; // 5 minutes
+  const startTime = Date.now();
+
   const project = await this.projectRepository.findOne({
     where: { id: projectId },
     relations: ['branches'],
@@ -730,39 +734,32 @@ async importAndUpdateProducts(rows: any[], projectId: string) {
     updated: 0,
     failed: 0,
     errors: [] as string[],
+    total: rows.length,
+    processed: 0
   };
 
-  // Process in batches for better performance
-  const BATCH_SIZE = 50;
+  // Process sequentially with timeout checks
+  for (let i = 0; i < rows.length; i++) {
+    // Check timeout
+    if (Date.now() - startTime > TIMEOUT_MS) {
+      throw new BadRequestException(`Import timed out after ${TIMEOUT_MS/1000} seconds`);
+    }
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
+    try {
+      console.log(`Processing row ${i + 1}/${rows.length}`);
+      const isUpdate = await this.processUpsertProduct(rows[i], project);
+      isUpdate ? result.updated++ : result.created++;
+    } catch (error) {
+      result.failed++;
+      result.errors.push(`Row ${i + 1}: ${error.message}`);
+      console.error(`Error in row ${i + 1}:`, error.message);
+    }
 
-    // Process batch items in parallel
-    const batchPromises = batch.map(async (row, index) => {
-      try {
-        const isUpdate = await this.processUpsertProduct(row, project);
-        return { success: true, isUpdate };
-      } catch (error) {
-        return { success: false, error: `Row ${i + index + 1}: ${error.message}` };
-      }
-    });
+    result.processed = i + 1;
 
-    const batchResults = await Promise.all(batchPromises);
-
-    // Count results
-    batchResults.forEach(resultItem => {
-      if (resultItem.success) {
-        resultItem.isUpdate ? result.updated++ : result.created++;
-      } else {
-        result.failed++;
-        result.errors.push(resultItem.error);
-      }
-    });
-
-    // Small delay to prevent database overload
-    if (i + BATCH_SIZE < rows.length) {
-      await new Promise(resolve => setTimeout(resolve, 50));
+    // Add small delay every 10 rows
+    if (i % 10 === 0 && i > 0) {
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
   }
 

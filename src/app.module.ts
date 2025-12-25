@@ -49,7 +49,12 @@ import { ContactUsModule } from './contact-us/contact-us.module';
       database: process.env.DATABASE_NAME,
       autoLoadEntities: true,
       synchronize: true,
-      cache: false,
+      cache: true,
+        extra: {
+    poolSize: 20, // Increase pool size
+    connectionTimeoutMillis: 30000,
+    idleTimeoutMillis: 30000,
+  }
     }),
 
     JwtModule.register({
