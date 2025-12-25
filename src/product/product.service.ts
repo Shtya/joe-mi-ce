@@ -567,10 +567,13 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
     extraSku || null;
 
   // Find or create category first
-  const category = await this.findOrCreateCategory(categoryName, project);
+  const categoryNameClean = categoryName?.toString().trim().replace(/\s+/g, ' ');
+const category = await this.findOrCreateCategory(categoryNameClean, project);
+
 
   // Then find or create brand (needs category)
-  const brand = brandName ? await this.findOrCreateBrand(brandName, category, project) : undefined;
+const brandNameClean = brandName?.toString().trim().replace(/\s+/g, ' ');
+const brand = brandNameClean ? await this.findOrCreateBrand(brandNameClean, category, project) : undefined;
 
   // Find existing product
   const product = await this.productRepository.findOne({
