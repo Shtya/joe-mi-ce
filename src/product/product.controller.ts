@@ -147,7 +147,7 @@ export class ProductController {
       };
 
       // Import products
-      return await this.productService.importProducts(importDto);
+      return await this.productService.importProducts(importDto,req.user);
     } catch (error) {
       // Clean up temp file on error
       if (fs.existsSync(filePath)) {

@@ -28,4 +28,8 @@ export class Category extends CoreEntity {
   @Index()
   @Column({ type: 'uuid', nullable: true })
   ownerUserId: string | null;
+
+  @Column({ type: 'uuid' })
+project_id: string;
+
 }
