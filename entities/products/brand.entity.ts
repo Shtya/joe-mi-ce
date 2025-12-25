@@ -29,6 +29,8 @@ export class Brand extends CoreEntity {
     inverseJoinColumn: { name: 'category_id', referencedColumnName: 'id' }
   })
   categories: Category[];
+@Column({ type: 'uuid' })
+project_id: string;
 
   @Index()
   @Column({ type: 'uuid', nullable: true })
