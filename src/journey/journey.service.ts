@@ -199,10 +199,7 @@ export class JourneyService {
       throw new NotFoundException('Journey not found');
     }
 
-    const isWithinRadius = this.isWithinGeofence(journey.branch, dto.geo);
-    if (!isWithinRadius) {
-      throw new ConflictException('User is not within the allowed geofence radius');
-    }
+
 
     let checkIn = await this.checkInRepo.findOne({
       where: { journey: { id: dto.journeyId } },
@@ -232,7 +229,7 @@ export class JourneyService {
 
       checkIn.geo = dto.geo as any;
       checkIn.image = dto.image;
-      checkIn.isWithinRadius = isWithinRadius;
+      checkIn.isWithinRadius = true;
     } else {
       if (!dto.checkInTime) {
         throw new ConflictException('Check in time is required for first time');
@@ -249,7 +246,7 @@ export class JourneyService {
         image: dto.image,
         noteIn: dto.noteIn,
         noteOut: dto.noteOut,
-        isWithinRadius,
+        isWithinRadius:true,
       });
 
       journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
