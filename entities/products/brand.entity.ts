@@ -1,4 +1,4 @@
-import { Entity, Column, OneToMany, Index, Unique, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, Column, OneToMany, Index, Unique, ManyToMany, ManyToOne, JoinTable, JoinColumn } from 'typeorm';
 import { Product } from './product.entity';
 import { CoreEntity } from 'entities/core.entity';
 import { Category } from './category.entity';
@@ -18,9 +18,11 @@ export class Brand extends CoreEntity {
 
   @OneToMany(() => Product, product => product.brand)
   products: Product[];
-  @ManyToOne(() => Project, project => project.brands)
+
+  // 👇 Make the relation optional
+  @ManyToOne(() => Project, project => project.brands, { nullable: true })
   @JoinColumn({ name: 'project_id' })
-  project: Project;
+  project: Project | null;
 
   @ManyToMany(() => Category, category => category.brands)
   @JoinTable({
@@ -29,11 +31,11 @@ export class Brand extends CoreEntity {
     inverseJoinColumn: { name: 'category_id', referencedColumnName: 'id' }
   })
   categories: Category[];
-@Column({ type: 'uuid' })
-project_id: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  project_id: string | null;
 
   @Index()
   @Column({ type: 'uuid', nullable: true })
   ownerUserId: string | null;
 }
-
