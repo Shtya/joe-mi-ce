@@ -674,11 +674,12 @@ private async processImportRow(
    */
   await this.assignStock(savedProduct, project, productData);
 }
-async importAndUpsertProducts(rows: any[], projectId: string) {
+async importAndUpdateProducts(rows: any[], projectId: string) {
   const project = await this.projectRepository.findOne({
     where: { id: projectId },
     relations: ['branches'],
   });
+
   if (!project) throw new NotFoundException(`Project ${projectId} not found`);
 
   const result = {
@@ -688,21 +689,11 @@ async importAndUpsertProducts(rows: any[], projectId: string) {
     errors: [] as string[],
   };
 
-  // Preload categories and brands for this project
-  const categoriesMap = new Map<string, Category>();
-  const brandsMap = new Map<string, Brand>();
-
-  const existingCategories = await this.categoryRepository.find({ where: { project: { id: project.id } } });
-  existingCategories.forEach(c => categoriesMap.set(c.name.toLowerCase(), c));
-
-  const existingBrands = await this.brandRepository.find({ where: { project: { id: project.id } }, relations: ['categories'] });
-  existingBrands.forEach(b => brandsMap.set(b.name.toLowerCase(), b));
-
   for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
     try {
-      const isUpdate = await this.processUpsertRowOptimized(row, project, categoriesMap, brandsMap);
-      isUpdate ? result.updated++ : result.created++;
+      const updated = await this.processUpsertProduct(rows[i], project);
+      console.log(rows,project)
+      updated ? result.updated++ : result.created++;
     } catch (err) {
       result.failed++;
       result.errors.push(`Row ${i + 1}: ${err.message}`);
@@ -712,68 +703,55 @@ async importAndUpsertProducts(rows: any[], projectId: string) {
   return result;
 }
 
+private async processUpsertRow(row: any, project: Project) {
+  const map = (keys: string[], def?: any) =>
+    keys.find(k => row[k] !== undefined) ? row[keys.find(k => row[k] !== undefined)!] : def;
 
-private async processUpsertRowOptimized(
-  row: any,
-  project: Project,
-  categoriesMap: Map<string, Category>,
-  brandsMap: Map<string, Brand>
-): Promise<boolean> {
+  /** Mapping */
+  const name = map(['product_name', 'name']);
+const model = map(
+  ['device_name', 'product_name2', 'model'],
+  map(['product_name', 'name']) // fallback
+);
+const imageUrlRaw = map(['device_image_url', 'image_url']);
 
-  const map = (keys: string[], def?: any) => {
-    for (const k of keys) if (row[k] !== undefined && row[k] !== null && row[k] !== '') return row[k];
-    return def;
-  };
+// Remove :8080 if present
+const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
 
-  const name = map(['name', 'product_name'])?.toString().trim();
-  const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
-  const productDisplayName = model ? `${name} ${model}` : name;
-  const description = map(['description', 'device_description'], null);
-  const price = parseFloat(map(['price', 'device_price'], '0'));
-  const quantity = parseInt(map(['quantity', 'stock'], '0'));
-  const imageUrl = map(['image_url', 'device_image_url'])?.toString().replace(/:\d+/, '');
-  const isHighPriority = ['true', '1', 'yes'].includes((map(['is_high_priority', 'product_priority'], '') + '').toLowerCase());
+  const price = parseFloat(map(['device_price', 'price'], '0'));
+  const isHighPriority = ['true', '1', 'yes'].includes(
+    (map(['product_priority', 'priority'], '') + '').toLowerCase()
+  );
 
-  const categoryName = map(['category_name', 'category']);
-  if (!categoryName) throw new Error('Category name is required');
-  const brandName = map(['brand_name', 'brand']);
+  /** Category */
+  const category = await this.findOrCreateCategory(
+    map(['category_name']),
+    project
+  );
 
-  // 1️⃣ Category
-  let category = categoriesMap.get(categoryName.toLowerCase());
-  if (!category) {
-    category = this.categoryRepository.create({ name: categoryName, project });
-    category = await this.categoryRepository.save(category);
-    categoriesMap.set(categoryName.toLowerCase(), category);
-  }
+  /** Brand */
+  const brand = map(['brand_name'])
+    ? await this.findOrCreateBrand(
+        map(['brand_name']),
+        category,
+        project
+      )
+    : undefined;
 
-  // 2️⃣ Brand
-  let brand: Brand | undefined;
-  if (brandName) {
-    brand = brandsMap.get(brandName.toLowerCase());
-    if (!brand) {
-      brand = this.brandRepository.create({ name: brandName, project, categories: [category] });
-      brand = await this.brandRepository.save(brand);
-      brandsMap.set(brandName.toLowerCase(), brand);
-    } else if (!brand.categories.some(c => c.id === category.id)) {
-      brand.categories.push(category);
-      await this.brandRepository.save(brand);
-    }
-  }
+  /** Find product */
+let product = await this.productRepository.findOne({
+  where: [
+    { name:`${name} ${model}`, project: { id: project.id } },
+  ],
+});
 
-  // 3️⃣ Find existing product by SKU or name+model
-  let finalSku = map(['sku', 'extra_sku']);
-  let product = finalSku ? await this.productRepository.findOne({ where: { sku: finalSku, project: { id: project.id } } }) : null;
-  if (!product) product = await this.productRepository.findOne({ where: { name: productDisplayName, project: { id: project.id } } });
 
-  const isUpdate = !!product;
-
+  /** CREATE */
   if (!product) {
-    // CREATE
     product = this.productRepository.create({
-      name: productDisplayName,
+      name:`${name} ${model}`,
       model,
-      sku: finalSku || null,
-      description,
+      description: map(['device_description', 'description']),
       price,
       image_url: imageUrl,
       is_high_priority: isHighPriority,
@@ -782,32 +760,28 @@ private async processUpsertRowOptimized(
       brand,
       is_active: true,
     });
+
     await this.productRepository.save(product);
-  } else {
-    // UPDATE
+    row._updated = false;
+  }
+
+  /** UPDATE */
+  else {
     this.productRepository.merge(product, {
       model,
-      sku: finalSku || product.sku,
-      description: description || product.description,
-      price: price || product.price,
-      image_url: imageUrl || product.image_url,
-      is_high_priority: isHighPriority !== undefined ? isHighPriority : product.is_high_priority,
+      price,
+      image_url: imageUrl,
+      is_high_priority: isHighPriority,
       category,
       brand,
     });
+
     await this.productRepository.save(product);
+    row._updated = true;
   }
 
-  // 4️⃣ Stock
-  if (quantity > 0) {
-    const allBranches = ['true', '1', 'yes'].includes((map(['all_branches'], 'false') + '').toLowerCase());
-    const branchNames = (map(['branches'], '') || '').split(',').map((b: string) => b.trim()).filter((b: string) => b.length > 0);
-    await this.assignStockWithBranches(product, project, quantity, allBranches, branchNames);
-  }
 
-  return isUpdate;
 }
-
 private async processUpsertProduct(row: any, project: Project): Promise<boolean> {
   const map = (keys: string[], def?: any) => {
     for (const k of keys) {
@@ -979,5 +953,47 @@ private async assignStockWithBranches(
   }
 }
 
+async importAndUpdateProductsBatch(
+  rows: any[],
+  projectId: string,
+  rowIndices: number[]
+): Promise<{
+  created: number;
+  updated: number;
+  failed: number;
+  errors: string[];
+}> {
+  const project = await this.projectRepository.findOne({
+    where: { id: projectId },
+    relations: ['branches'],
+  });
 
+  if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+
+  const result = {
+    created: 0,
+    updated: 0,
+    failed: 0,
+    errors: [] as string[],
+  };
+
+  // Process batch sequentially to avoid overwhelming the database
+  for (let i = 0; i < rows.length; i++) {
+    try {
+      const isUpdate = await this.processUpsertProduct(rows[i], project);
+
+      if (isUpdate) {
+        result.updated++;
+      } else {
+        result.created++;
+      }
+    } catch (err) {
+      result.failed++;
+      result.errors.push(`Row ${rowIndices[i]}: ${err.message}`);
+      console.error(`Error processing row ${rowIndices[i]}:`, err);
+    }
+  }
+
+  return result;
+}
 }
