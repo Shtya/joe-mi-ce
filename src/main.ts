@@ -11,6 +11,11 @@ import { QueryFailedErrorFilter } from 'common/QueryFailedErrorFilter';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import * as express from 'express';
 import * as qs from 'qs';
+import * as dotenv from 'dotenv';
+import helmet from 'helmet';
+
+// Load environment variables
+dotenv.config();
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -23,6 +28,7 @@ async function configureApp(app: NestExpressApplication) {
     prefix: '/uploads/',
   });
   app.useGlobalInterceptors(new LoggingInterceptor());
+  app.use(helmet());
 
   // ✅ ACCEPT ALL ORIGINS (credentials-safe)
   app.enableCors({
