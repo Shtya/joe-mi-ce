@@ -323,7 +323,7 @@ async importAndUpdateProducts(
     fs.unlinkSync(filePath);
 
     /** 2️⃣ Call service */
-    return await this.productService.importAndUpdateProducts(
+    return await this.productService.importAndUpsertProducts(
       rows,
       user.project?.id || user.project_id
     );
