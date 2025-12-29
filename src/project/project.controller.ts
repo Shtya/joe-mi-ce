@@ -33,7 +33,7 @@ export class ProjectController {
     @Query() query: any,
     @Req() req: Request
   ) {
-  
+
 
     // Parse bracket notation manually
     const parsedFilters = query;
@@ -70,7 +70,7 @@ export class ProjectController {
 
     // Apply project_id filter
     qb.andWhere('users.project_id = :projectId', { projectId });
-
+    console.log(projectId)
     // Apply role.name filter if present
     if (filters.role?.id) {
 qb.andWhere('role.id = :roleId', {
@@ -186,4 +186,13 @@ const total = await countQb.getCount();
 
     return this.projectService.inactivate(id);
   }
+  @Get(':projectId')
+@Permissions(EPermission.PROJECT_READ)
+async findById(
+  @Param('projectId') projectId: string,
+  @Req() req: any,
+) {
+  return this.projectService.findByProjectId(projectId, req.user);
+}
+
 }
