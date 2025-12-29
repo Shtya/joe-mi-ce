@@ -88,4 +88,33 @@ export class ProjectService extends BaseService<Project> {
     project.is_active = false;
     return this.projectRepo.save(project);
   }
+  async findByProjectId(projectId: string, user: User) {
+  const project = await this.projectRepo.findOne({
+    where: { id: projectId },
+    relations: ['owner', 'branches', 'products'],
+  });
+
+  const userfind = await this.userRepo.findOne({where:{id:user.id},relations:['project','role']})
+  if(!userfind){
+        throw new NotFoundException('User is not found');
+
+  }
+
+  if (!project) {
+    throw new NotFoundException('Project not found');
+  }
+
+  // 🔒 Authorization
+  if (
+    userfind.role?.name !== ERole.SUPER_ADMIN &&
+    userfind.project_id !== projectId &&
+    userfind.project.id !== projectId 
+
+  ) {
+    throw new ForbiddenException('You cannot access this project');
+  }
+
+  return project;
+}
+
 }
