@@ -24,6 +24,8 @@ export class CreateUnplannedJourneyDto {
   @IsUUID()
   branchId: string;
 
+  @IsOptional()
+  date?:string|null
   @IsUUID()
   shiftId: string;
 
