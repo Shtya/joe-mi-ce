@@ -92,48 +92,52 @@ export class JourneyService {
 
 
   // ===== الرحلات الطارئة =====
-  async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
-    const [user, branch, shift] = await Promise.all([
-      this.userRepo.findOne({ where: { id: dto.userId } }),
-      this.branchRepo.findOne({
-        where: { id: dto.branchId },
-        relations: ['city', 'city.region', 'project'],
-      }),
-      this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
-    ]);
+async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
+    const today = new Date().toISOString().split('T')[0];
 
-    if (!user) throw new NotFoundException('User not found for given userId');
-    if (!branch) throw new NotFoundException('Branch not found for given branchId');
-    if (!shift) throw new NotFoundException('Shift not found for given shiftId');
-    if (!branch.project) {
-      throw new BadRequestException('Branch has no project assigned');
-    }
 
-    const existingJourney = await this.journeyRepo.findOne({
-      where: {
-        user: { id: dto.userId },
-        date: dto.date,
-        type: JourneyType.UNPLANNED,
-      },
-    });
+  const [user, branch, shift] = await Promise.all([
+    this.userRepo.findOne({ where: { id: dto.userId } }),
+    this.branchRepo.findOne({
+      where: { id: dto.branchId },
+      relations: ['city', 'city.region', 'project'],
+    }),
+    this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
+  ]);
 
-    if (existingJourney) {
-      throw new ConflictException('Unplanned journey already exists for this user on this day');
-    }
-
-    const newJourney = this.journeyRepo.create({
-      user,
-      branch,
-      shift,
-      projectId: branch.project.id,
-      date: dto.date,
-      type: JourneyType.UNPLANNED,
-      status: JourneyStatus.UNPLANNED_ABSENT,
-      createdBy,
-    });
-
-    return this.journeyRepo.save(newJourney);
+  if (!user) throw new NotFoundException('User not found for given userId');
+  if (!branch) throw new NotFoundException('Branch not found for given branchId');
+  if (!shift) throw new NotFoundException('Shift not found for given shiftId');
+  if (!branch.project) {
+    throw new BadRequestException('Branch has no project assigned');
   }
+
+  const existingJourney = await this.journeyRepo.findOne({
+    where: {
+      user: { id: dto.userId },
+      date: today,
+      type: JourneyType.UNPLANNED,
+    },
+  });
+
+  if (existingJourney) {
+    throw new ConflictException('Unplanned journey already exists for this user today');
+  }
+
+  const newJourney = this.journeyRepo.create({
+    user,
+    branch,
+    shift,
+    projectId: branch.project.id,
+    date: today,
+    type: JourneyType.UNPLANNED,
+    status: JourneyStatus.UNPLANNED_ABSENT,
+    createdBy,
+  });
+
+  return this.journeyRepo.save(newJourney);
+}
+
 
   // ✅ New: journeys for today for a specific user (for phone)
   async getTodayJourneysForUser(userId: string) {

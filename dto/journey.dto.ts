@@ -27,8 +27,7 @@ export class CreateUnplannedJourneyDto {
   @IsUUID()
   shiftId: string;
 
-  @IsDateString()
-  date?: string;
+
 }
 
 export class CheckInOutDto {
@@ -48,7 +47,7 @@ export class CheckInOutDto {
   checkOutTime?: string;
 
   @IsString()
-  geo: string; 
+  geo: string;
 
   @IsOptional()
   @IsString()
