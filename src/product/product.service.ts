@@ -846,7 +846,7 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
     };
 
     // Clean and map values
-    const name = map(['name', 'product_name'])?.toString().trim();
+    const name = map(['name', 'product_name'])?.toString().trim() || map(['name', 'product_name_2',"product_name2"])?.toString().trim();
     const description = map(['description', 'device_description'])?.toString().trim();
     const price = parseFloat(map(['price', 'device_price'], '0'));
     const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '0'));
