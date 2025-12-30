@@ -11,7 +11,8 @@ import { Branch } from 'entities/branch.entity';
 
 @Entity('products')
 @Index(['brand', 'category'])
-@Unique(['name', 'project'])
+@Unique(['name', 'project_id'])
+
 export class Product extends CoreEntity {
   @Column()
   name: string;
@@ -43,6 +44,9 @@ export class Product extends CoreEntity {
   @ManyToOne(() => Project, project => project.products)
   @JoinColumn({ name: 'project_id' })
   project: Project;
+
+  @Column()
+  project_id: string;
 
   @ManyToOne(() => Brand, brand => brand.products)
   @JoinColumn({ name: 'brand_id' })
