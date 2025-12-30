@@ -14,9 +14,14 @@ import { PaginationQueryDto } from 'dto/pagination.dto';
 import * as ExcelJS from 'exceljs';
 import { User } from 'entities/user.entity';
 import { UsersService } from 'src/users/users.service';
-
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
 @Injectable()
 export class ProductService {
+    private readonly uploadPath = './uploads/products';
+
   constructor(
     @InjectRepository(Product)
     public productRepository: Repository<Product>,
@@ -34,7 +39,10 @@ export class ProductService {
     private branchRepository: Repository<Branch>,
         public readonly userService: UsersService, // inject userService
 
-  ) {}
+  ) {
+        this.ensureUploadDirectory();
+
+  }
   private async projectWhere(user: any, extra: any = {}) {
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
     return { project: { id: projectId }, ...extra };
@@ -161,6 +169,10 @@ export class ProductService {
 
     // Bulk insert all stock records
     if (stockToInsert.length > 0) {
+      // Remove old stock for these branches
+      const branchIds = stockToInsert.map(s => s.branch.id);
+      await this.stockRepository.delete({ product: { id: product.id }, branch: { id: In(branchIds) } });
+      // Insert new stock
       await this.stockRepository.save(stockToInsert);
     }
   }
@@ -324,29 +336,37 @@ export class ProductService {
   /**
    * Import products from CSV/Excel
    */
-  async importProducts(dto: ImportProductsDto,user): Promise<{ success: number; failed: number; errors: string[] }> {
-
-    const pojectId =await  this.userService.resolveProjectIdFromUser(user.id)
+  async importProducts(
+    dto: ImportProductsDto,
+    user: any
+  ): Promise<{ success: number; failed: number; errors: string[]; imagesDownloaded: number }> {
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
     const project = await this.projectRepository.findOne({
-      where: { id: pojectId },
+      where: { id: projectId },
       relations: ['branches']
     });
 
     if (!project) {
-      throw new NotFoundException(`Project with ID ${dto.project_id} not found`);
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
     const results = {
       success: 0,
       failed: 0,
+      imagesDownloaded: 0,
       errors: [] as string[]
     };
 
     // Process products one by one
     for (let i = 0; i < dto.products.length; i++) {
       try {
-        await this.processImportRow(dto.products[i], project);
+        await this.processImportRowWithImage(dto.products[i], project);
         results.success++;
+
+        // Count images downloaded
+        if (dto.products[i].image_url && dto.products[i].image_url.trim() !== '') {
+          results.imagesDownloaded++;
+        }
       } catch (error) {
         results.failed++;
         results.errors.push(`Row ${i + 1}: ${error.message}`);
@@ -356,6 +376,39 @@ export class ProductService {
     return results;
   }
 
+    async cleanupUnusedImages(daysOld: number = 30): Promise<void> {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+
+    // Find products created before cutoff date
+    const oldProducts = await this.productRepository.find({
+      where: {
+        created_at: new Date(cutoffDate),
+      },
+      select: ['id', 'image_url']
+    });
+
+    // Get all image files in upload directory
+    const files = await fs.promises.readdir(this.uploadPath);
+
+    // Find unused images
+    const usedImages = oldProducts
+      .map(p => p.image_url)
+      .filter(url => url && url.includes('/uploads/products/'))
+      .map(url => path.basename(url));
+
+    for (const file of files) {
+      if (!usedImages.includes(file)) {
+        const filePath = path.join(this.uploadPath, file);
+        try {
+          await fs.promises.unlink(filePath);
+          console.log(`Cleaned up unused image: ${file}`);
+        } catch (error) {
+          console.error(`Failed to delete ${file}:`, error);
+        }
+      }
+    }
+  }
   /**
    * Process a single import row
    */
@@ -783,140 +836,156 @@ let product = await this.productRepository.findOne({
 
 }
 private async processUpsertProduct(row: any, project: Project): Promise<boolean> {
-  const map = (keys: string[], def?: any) => {
-    for (const k of keys) {
-      if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
-        return row[k];
+    const map = (keys: string[], def?: any) => {
+      for (const k of keys) {
+        if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+          return row[k];
+        }
+      }
+      return def;
+    };
+
+    // Clean and map values
+    const name = map(['name', 'product_name'])?.toString().trim();
+    const description = map(['description', 'device_description'])?.toString().trim();
+    const price = parseFloat(map(['price', 'device_price'], '0'));
+    const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '0'));
+    const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
+    const extraSku = map(['Extra sku', 'extra_sku', 'sku'])?.toString().trim();
+    const sacoSku = map(['Saco SKU', 'saco_sku'])?.toString().trim();
+    const imageUrlRaw = map(['image_url', 'device_image_url'])?.toString();
+
+    // Download and save image if URL exists
+    let savedImagePath: string = null;
+    if (imageUrlRaw && imageUrlRaw.trim() !== '' &&
+        imageUrlRaw.toLowerCase() !== 'null' &&
+        imageUrlRaw.toLowerCase() !== 'undefined') {
+
+      console.log(`Processing image for product ${name}: ${imageUrlRaw}`);
+      savedImagePath = await this.downloadAndSaveImage(imageUrlRaw);
+
+      if (savedImagePath) {
+        console.log(`✓ Image saved: ${savedImagePath}`);
+      } else {
+        console.log(`✗ Failed to download image for ${name}`);
       }
     }
-    return def;
-  };
 
-  // Clean and map values
-  const name = map(['name', 'product_name'])?.toString().trim();
-  const description = map(['description', 'device_description'])?.toString().trim();
-  const price = parseFloat(map(['price', 'device_price'], '0'));
-  const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '0'));
-  const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
-  const extraSku = map(['Extra sku', 'extra_sku', 'sku'])?.toString().trim();
-  const sacoSku = map(['Saco SKU', 'saco_sku'])?.toString().trim();
-  const imageUrlRaw = map(['image_url', 'device_image_url'])?.toString();
-  const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
-  const isHighPriority = ['true', '1', 'yes'].includes((map(['is_high_priority', 'product_priority'], '') + '').toLowerCase());
-  const categoryName = map(['category_name', 'category'])?.toString().trim();
-  const brandName = map(['brand_name', 'brand'])?.toString().trim();
-  const allBranches = ['true', '1', 'yes'].includes((map(['all_branches'], 'false') + '').toLowerCase());
-  const branchesRaw = map(['branches'], '')?.toString();
-  const branchNames = branchesRaw ?
-    branchesRaw.split(',')
-      .map((b: string) => b.trim())
-      .filter((b: string) => b.length > 0) :
-    [];
+    const isHighPriority = ['true', '1', 'yes'].includes((map(['is_high_priority', 'product_priority'], '') + '').toLowerCase());
+    const categoryName = map(['category_name', 'category'])?.toString().trim();
+    const brandName = map(['brand_name', 'brand'])?.toString().trim();
+    const allBranches = ['true', '1', 'yes'].includes((map(['all_branches'], 'false') + '').toLowerCase());
+    const branchesRaw = map(['branches'], '')?.toString();
+    const branchNames = branchesRaw ?
+      branchesRaw.split(',')
+        .map((b: string) => b.trim())
+        .filter((b: string) => b.length > 0) :
+      [];
 
-  // Validate required fields
-  if (!name) {
-    throw new Error('Product name is required');
-  }
+    // Validate required fields
+    if (!name) {
+      throw new Error('Product name is required');
+    }
 
-  if (!categoryName) {
-    throw new Error('Category name is required');
-  }
+    if (!categoryName) {
+      throw new Error('Category name is required');
+    }
 
-  // Determine product display name
-  const productDisplayName = model ? `${name} ${model}` : name;
+    const productDisplayName = model ? `${name} ${model}` : name;
+    const isSacoActive = sacoSku && sacoSku.toLowerCase() !== 'not actv';
+    const finalSku = isSacoActive ?
+      [extraSku, sacoSku]
+        .filter(s => s && s.toLowerCase() !== 'not actv')
+        .join(' - ') || null :
+      extraSku || null;
 
-  // Check if Saco SKU is active
-  const isSacoActive = sacoSku && sacoSku.toLowerCase() !== 'not actv';
+    const category = await this.findOrCreateCategory(categoryName, project);
+    const brand = brandName ? await this.findOrCreateBrand(brandName, category, project) : undefined;
 
-  // Determine final SKU
-  const finalSku = isSacoActive ?
-    [extraSku, sacoSku]
-      .filter(s => s && s.toLowerCase() !== 'not actv')
-      .join(' - ') || null :
-    extraSku || null;
+    let product = null;
 
-  // Category & Brand auto-create
-  const category = await this.findOrCreateCategory(categoryName, project);
-  const brand = brandName ? await this.findOrCreateBrand(brandName, category, project) : undefined;
+    // Try to find by SKUs first
+    if (finalSku) {
+      product = await this.productRepository.findOne({
+        where: {
+          sku: finalSku,
+          project: { id: project.id }
+        }
+      });
+    }
 
-  // Find existing product by multiple criteria
-  let product = null;
+    // If not found by SKU, try by name+model
+    if (!product) {
+      product = await this.productRepository.findOne({
+        where: {
+          name: productDisplayName,
+          project: { id: project.id }
+        }
+      });
+    }
 
-  // Try to find by SKUs first
-  if (finalSku) {
-    product = await this.productRepository.findOne({
-      where: {
-        sku: finalSku,
-        project: { id: project.id }
-      }
-    });
-  }
+    // If still not found, try just by name (without model)
+    if (!product && model) {
+      product = await this.productRepository.findOne({
+        where: {
+          name: name,
+          project: { id: project.id }
+        }
+      });
+    }
 
-  // If not found by SKU, try by name+model
-  if (!product) {
-    product = await this.productRepository.findOne({
-      where: {
+    const isUpdate = !!product;
+
+    if (!product) {
+      // CREATE new product
+      product = this.productRepository.create({
         name: productDisplayName,
-        project: { id: project.id }
+        model: model || null,
+        sku: finalSku,
+        description: description || null,
+        price: price || 0,
+        image_url: savedImagePath, // Use saved image path
+        is_high_priority: isHighPriority || false,
+        project,
+        category,
+        brand,
+        is_active: true,
+      });
+
+      await this.productRepository.save(product);
+      console.log(`Created product: ${productDisplayName} ${savedImagePath ? '(with image)' : '(no image)'}`);
+    } else {
+      // UPDATE existing product
+      const updateData: any = {
+        name: productDisplayName,
+        model: model || null,
+        sku: finalSku,
+        description: description || product.description,
+        price: price !== 0 ? price : product.price,
+        is_high_priority: isHighPriority !== undefined ? isHighPriority : product.is_high_priority,
+        category,
+        brand,
+      };
+
+      // Only update image if we successfully downloaded a new one
+      if (savedImagePath) {
+        updateData.image_url = savedImagePath;
+        console.log(`Updated product ${productDisplayName} with new image`);
       }
-    });
+
+      this.productRepository.merge(product, updateData);
+      await this.productRepository.save(product);
+      console.log(`Updated product: ${productDisplayName}`);
+    }
+
+    // Assign stock if quantity is provided
+    if (quantity > 0) {
+      await this.assignStockWithBranches(product, project, quantity, allBranches, branchNames);
+    }
+
+    return isUpdate;
   }
 
-  // If still not found, try just by name (without model)
-  if (!product && model) {
-    product = await this.productRepository.findOne({
-      where: {
-        name: name,
-        project: { id: project.id }
-      }
-    });
-  }
-
-  const isUpdate = !!product;
-
-  if (!product) {
-    // CREATE new product
-    product = this.productRepository.create({
-      name: productDisplayName,
-      model: model || null,
-      sku: finalSku,
-      description: description || null,
-      price: price || 0,
-      image_url: imageUrl || null,
-      is_high_priority: isHighPriority || false,
-      project,
-      category,
-      brand,
-      is_active: true, // New products are active by default
-    });
-
-    await this.productRepository.save(product);
-    console.log(`Created product: ${productDisplayName}`);
-  } else {
-    // UPDATE existing product
-    this.productRepository.merge(product, {
-      name: productDisplayName,
-      model: model || null,
-      sku: finalSku,
-      description: description || product.description,
-      price: price !== 0 ? price : product.price,
-      image_url: imageUrl || product.image_url,
-      is_high_priority: isHighPriority !== undefined ? isHighPriority : product.is_high_priority,
-      category,
-      brand,
-    });
-
-    await this.productRepository.save(product);
-    console.log(`Updated product: ${productDisplayName}`);
-  }
-
-  // Assign stock if quantity is provided
-  if (quantity > 0) {
-    await this.assignStockWithBranches(product, project, quantity, allBranches, branchNames);
-  }
-
-  return isUpdate;
-}
 
 private async assignStockWithBranches(
   product: Product,
@@ -953,47 +1022,236 @@ private async assignStockWithBranches(
   }
 }
 
-async importAndUpdateProductsBatch(
-  rows: any[],
-  projectId: string,
-  rowIndices: number[]
-): Promise<{
-  created: number;
-  updated: number;
-  failed: number;
-  errors: string[];
-}> {
-  const project = await this.projectRepository.findOne({
-    where: { id: projectId },
-    relations: ['branches'],
-  });
+  async importAndUpdateProductsBatch(
+    rows: any[],
+    projectId: string,
+    rowIndices: number[]
+  ): Promise<{
+    created: number;
+    updated: number;
+    failed: number;
+    errors: string[];
+    imagesDownloaded: number;
+  }> {
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId },
+      relations: ['branches'],
+    });
 
-  if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+    if (!project) throw new NotFoundException(`Project ${projectId} not found`);
 
-  const result = {
-    created: 0,
-    updated: 0,
-    failed: 0,
-    errors: [] as string[],
-  };
+    const result = {
+      created: 0,
+      updated: 0,
+      failed: 0,
+      imagesDownloaded: 0,
+      errors: [] as string[],
+    };
 
-  // Process batch sequentially to avoid overwhelming the database
-  for (let i = 0; i < rows.length; i++) {
-    try {
-      const isUpdate = await this.processUpsertProduct(rows[i], project);
+    // Process batch sequentially
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const isUpdate = await this.processUpsertProduct(rows[i], project);
 
-      if (isUpdate) {
-        result.updated++;
-      } else {
-        result.created++;
+        // Count images that were successfully downloaded
+        const imageUrl = rows[i]['image_url'] || rows[i]['device_image_url'];
+        if (imageUrl && imageUrl.trim() !== '') {
+          result.imagesDownloaded++;
+        }
+
+        if (isUpdate) {
+          result.updated++;
+        } else {
+          result.created++;
+        }
+      } catch (err) {
+        result.failed++;
+        result.errors.push(`Row ${rowIndices[i]}: ${err.message}`);
+        console.error(`Error processing row ${rowIndices[i]}:`, err);
       }
-    } catch (err) {
-      result.failed++;
-      result.errors.push(`Row ${rowIndices[i]}: ${err.message}`);
-      console.error(`Error processing row ${rowIndices[i]}:`, err);
+    }
+
+    return result;
+  }
+
+  private ensureUploadDirectory() {
+    if (!fs.existsSync(this.uploadPath)) {
+      fs.mkdirSync(this.uploadPath, { recursive: true });
     }
   }
 
-  return result;
+  /**
+   * Download image from URL and save locally
+   */
+  private async downloadAndSaveImage(imageUrl: string): Promise<string> {
+    if (!imageUrl || imageUrl.trim() === '' || imageUrl.toLowerCase() === 'null' || imageUrl.toLowerCase() === 'undefined') {
+      return null;
+    }
+
+    try {
+      console.log(`Downloading image from: ${imageUrl}`);
+
+      // Clean the URL - remove port 8080 if present
+      let cleanUrl = imageUrl;
+      if (imageUrl.includes(':8080')) {
+        cleanUrl = imageUrl.replace(':8080', '');
+      }
+
+      // Encode spaces in URL
+      cleanUrl = cleanUrl.replace(/ /g, '%20');
+
+      // Use axios with timeout and proper headers
+      const response = await axios({
+        method: 'GET',
+        url: cleanUrl,
+        responseType: 'arraybuffer',
+        timeout: 10000, // 10 second timeout
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      if (!response.data || response.data.length === 0) {
+        console.warn(`Empty response for image: ${cleanUrl}`);
+        return null;
+      }
+
+      // Determine file extension
+      let fileExtension = '.png'; // default
+      const contentType = response.headers['content-type'];
+      if (contentType) {
+        if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+          fileExtension = '.jpg';
+        } else if (contentType.includes('png')) {
+          fileExtension = '.png';
+        } else if (contentType.includes('gif')) {
+          fileExtension = '.gif';
+        } else if (contentType.includes('webp')) {
+          fileExtension = '.webp';
+        }
+      } else {
+        // Try to get extension from URL
+        const urlObj = new URL(cleanUrl);
+        const pathname = urlObj.pathname;
+        const lastDotIndex = pathname.lastIndexOf('.');
+        if (lastDotIndex !== -1) {
+          const ext = pathname.substring(lastDotIndex).toLowerCase();
+          if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) {
+            fileExtension = ext;
+          }
+        }
+      }
+
+      // Generate unique filename
+      const fileName = `${uuidv4()}${fileExtension}`;
+      const filePath = path.join(this.uploadPath, fileName);
+
+      // Save file
+      await fs.promises.writeFile(filePath, response.data);
+
+      // Return relative URL for database storage
+      const savedUrl = `/uploads/products/${fileName}`;
+      console.log(`Image saved: ${savedUrl}`);
+      return savedUrl;
+
+    } catch (error) {
+      console.error(`Error downloading image from ${imageUrl}:`, error.message);
+
+      // Try alternative method with http/https module
+      try {
+        return await this.downloadWithHttpModule(imageUrl);
+      } catch (fallbackError) {
+        console.error(`Fallback download also failed for ${imageUrl}:`, fallbackError.message);
+        return null;
+      }
+    }
+  }
+
+
+private async downloadWithHttpModule(url: string): Promise<string> {
+  try {
+    const cleanedUrl = url.replace(':8080', '').replace(/ /g, '%20');
+
+    const response = await axios({
+      method: 'GET',
+      url: cleanedUrl,
+      responseType: 'arraybuffer',
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      }
+    });
+
+    if (!response.data || response.data.length === 0) {
+      throw new Error('Empty image');
+    }
+
+    // Determine file extension
+    let fileExtension = '.png';
+    const contentType = response.headers['content-type'];
+    if (contentType) {
+      if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+        fileExtension = '.jpg';
+      } else if (contentType.includes('png')) {
+        fileExtension = '.png';
+      } else if (contentType.includes('gif')) {
+        fileExtension = '.gif';
+      }
+    }
+
+    const fileName = `${uuidv4()}${fileExtension}`;
+    const filePath = path.join(this.uploadPath, fileName);
+    await fs.promises.writeFile(filePath, response.data);
+
+    return `/uploads/products/${fileName}`;
+  } catch (error) {
+    throw error;
+  }
 }
+  private async processImportRowWithImage(
+    productData: ImportProductRowDto,
+    project: Project
+  ): Promise<void> {
+    const category = await this.findOrCreateCategory(productData.category_name, project);
+
+    let brand: Brand | undefined;
+    if (productData.brand_name) {
+      brand = await this.findOrCreateBrand(productData.brand_name, category, project);
+    }
+
+    const exists = await this.productRepository.findOne({
+      where: {
+        name: productData.name,
+        project: { id: project.id }
+      }
+    });
+
+    if (exists) {
+      throw new ConflictException(`Product "${productData.name}" already exists`);
+    }
+
+    // Download and save image if URL exists
+    let savedImagePath: string = null;
+    if (productData.image_url && productData.image_url.trim() !== '') {
+      savedImagePath = await this.downloadAndSaveImage(productData.image_url);
+    }
+
+    const product = this.productRepository.create({
+      name: productData.name,
+      model: productData.device_name,
+      sku: productData.sku,
+      description: productData.description,
+      price: productData.price,
+      is_high_priority: productData.product_priority || false,
+      image_url: savedImagePath, // Save local path instead of external URL
+      discount: 0,
+      is_active: true,
+      project,
+      category,
+      brand
+    });
+
+    const savedProduct = await this.productRepository.save(product);
+    await this.assignStock(savedProduct, project, productData);
+  }
 }

@@ -13,7 +13,7 @@ import { Project } from 'entities/project.entity';
 import { Repository } from 'typeorm';
 import { User } from 'entities/user.entity';
 import { ERole } from 'enums/Role.enum';
-import { SalesTarget, SalesTargetType } from 'entities/sales-target.entity';
+import { SalesTarget, SalesTargetStatus, SalesTargetType } from 'entities/sales-target.entity';
 import { UsersService } from 'src/users/users.service';
 
 @Injectable()
@@ -441,6 +441,429 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
 
   throw new BadRequestException('Invalid geo value');
 }
+  async importBranches(rows: any[], requester: User) {
+    const result = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    const projectId = await this.usersService.resolveProjectIdFromUser(requester.id);
+    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+
+    for (const [index, rawRow] of rows.entries()) {
+      try {
+        const row = this.mapHeaders(rawRow);
+
+        const branch = await this.importSingleBranch(row, requester, project);
+
+        // Create sales target if conditions are met
+        await this.createSalesTargetForBranch(branch, row, requester);
+
+        result.success++;
+      } catch (err) {
+        result.failed++;
+        result.errors.push({
+          row: index + 2,
+          error: err.message,
+        });
+      }
+    }
+
+    return result;
+  }
+
+  private async createSalesTargetForBranch(branch: Branch, row: any, requester: User) {
+    // Check if autoCreateSalesTargets is enabled
+    if (!branch.autoCreateSalesTargets) {
+      return;
+    }
+
+    // Check if we have target data in the row
+    const hasDirectTargetData = row.targetName;
+
+    if (hasDirectTargetData) {
+      await this.createSalesTargetFromRow(branch, row, requester);
+    } else if (branch.defaultSalesTargetAmount >= 0) {
+      // Create default sales target
+      await this.createDefaultSalesTarget(branch, requester);
+    }
+  }
+
+  private async createSalesTargetFromRow(branch: Branch, row: any, requester: User) {
+    try {
+      const salesTarget = this.salesTargetRepo.create({
+        name: row.targetName || `${branch.name} - ${this.getCurrentPeriodName(branch.salesTargetType)}`,
+        description: row.targetDescription || `Sales target for ${branch.name}`,
+        type: branch.salesTargetType,
+        status: SalesTargetStatus.ACTIVE,
+        targetAmount: parseFloat(row.targetAmount) || branch.defaultSalesTargetAmount,
+        currentAmount: 0,
+        startDate: this.parseDate(row.targetStartDate) || this.getStartDateForPeriod(branch.salesTargetType),
+        endDate: this.parseDate(row.targetEndDate) || this.getEndDateForPeriod(branch.salesTargetType),
+        autoRenew: true,
+        branch: branch,
+        createdBy: requester,
+      });
+
+      await this.salesTargetRepo.save(salesTarget);
+      console.log(`Created sales target for branch: ${branch.name}`);
+    } catch (error) {
+      console.error(`Failed to create sales target for branch ${branch.name}:`, error);
+      // Don't throw error here to prevent branch creation from failing
+    }
+  }
+
+  private async createDefaultSalesTarget(branch: Branch, requester: User) {
+
+        const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); 
+
+    const startDate = new Date(currentYear, currentMonth, 1);
+
+    const endDate = new Date(currentYear, currentMonth + 3, 0);
+
+    // Format for display
+    const startMonth = startDate.toLocaleString('default', { month: 'long' });
+    const endMonth = endDate.toLocaleString('default', { month: 'long' });
+    const year = currentYear;
+    try {
+   const salesTarget = this.salesTargetRepo.create({
+      name: `${branch.name} - ${startMonth} to ${endMonth} ${year}`,
+      description: `3-month sales target for ${branch.name}`,
+      type: branch.salesTargetType,
+      status: SalesTargetStatus.ACTIVE,
+      targetAmount: branch.defaultSalesTargetAmount,
+      currentAmount: 0,
+      startDate: startDate,
+      endDate: endDate,
+      autoRenew: true,
+      branch: branch,
+      createdBy: requester,
+    });
+
+    await this.salesTargetRepo.save(salesTarget);
+      console.log(`Created default sales target for branch: ${branch.name}`);
+    } catch (error) {
+      console.error(`Failed to create default sales target for branch ${branch.name}:`, error);
+    }
+  }
+
+  private getCurrentPeriodName(targetType: SalesTargetType): string {
+    const now = new Date();
+
+    if (targetType === SalesTargetType.MONTHLY) {
+      return now.toLocaleString('default', { month: 'long', year: 'numeric' });
+    } else if (targetType === SalesTargetType.QUARTERLY) {
+      const quarter = Math.floor(now.getMonth() / 3) + 1;
+      return `Q${quarter} ${now.getFullYear()}`;
+    }
+
+    return now.toISOString().slice(0, 7); // Default to YYYY-MM
+  }
+
+  private getStartDateForPeriod(targetType: SalesTargetType): Date {
+    const now = new Date();
+
+    if (targetType === SalesTargetType.MONTHLY) {
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    } else if (targetType === SalesTargetType.QUARTERLY) {
+      const quarter = Math.floor(now.getMonth() / 3);
+      return new Date(now.getFullYear(), quarter * 3, 1);
+    }
+
+    return new Date(now.getFullYear(), now.getMonth(), 1); // Default to month start
+  }
+
+  private getEndDateForPeriod(targetType: SalesTargetType): Date {
+    const now = new Date();
+
+    if (targetType === SalesTargetType.MONTHLY) {
+      return new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    } else if (targetType === SalesTargetType.QUARTERLY) {
+      const quarter = Math.floor(now.getMonth() / 3);
+      return new Date(now.getFullYear(), (quarter + 1) * 3, 0);
+    }
+
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0); // Default to month end
+  }
+
+  private parseDate(dateString: any): Date | null {
+    if (!dateString) return null;
+
+    try {
+      // Try parsing as ISO string
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        return date;
+      }
+
+      // Try parsing as DD/MM/YYYY or MM/DD/YYYY
+      const parts = dateString.toString().split(/[/\-.]/);
+      if (parts.length === 3) {
+        // Try different formats
+        const formats = [
+          new Date(parts[0], parts[1] - 1, parts[2]), // YYYY-MM-DD
+          new Date(parts[2], parts[1] - 1, parts[0]), // DD-MM-YYYY
+          new Date(parts[2], parts[0] - 1, parts[1]), // MM-DD-YYYY
+        ];
+
+        for (const date of formats) {
+          if (!isNaN(date.getTime())) {
+            return date;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  private mapHeaders(raw: any) {
+    const mapped: any = {};
+
+    for (const key of Object.keys(raw)) {
+      const normalized = normalizeHeader(key);
+
+      // Try to find the mapped key
+      let mappedKey = BRANCH_HEADER_MAP[normalized];
+
+      // If not found, try partial matching
+      if (!mappedKey) {
+        for (const [pattern, value] of Object.entries(BRANCH_HEADER_MAP)) {
+          if (normalized.includes(pattern) || pattern.includes(normalized)) {
+            mappedKey = value;
+            break;
+          }
+        }
+      }
+
+      if (mappedKey) {
+        mapped[mappedKey] = raw[key];
+        console.log(`Mapped to key: "${mappedKey}" with value: "${raw[key]}"`);
+      } else {
+        console.log(`No mapping found for: "${key}" (normalized: "${normalized}")`);
+      }
+    }
+
+    return mapped;
+  }
+
+  private async importSingleBranch(row: any, requester: User, project: Project): Promise<Branch> {
+    // Validate required fields
+    if (!row.name) {
+      throw new BadRequestException('Branch name is required');
+    }
+
+    if (!row.city) {
+      throw new BadRequestException('City is required');
+    }
+
+    // Get or create city
+    let city = await this.cityRepo.findOne({
+      where: { name: row.city.trim() },
+    });
+
+    if (!city) {
+      city = this.cityRepo.create({
+        name: row.city.trim(),
+      });
+      city = await this.cityRepo.save(city);
+    }
+
+    // Get or create chain
+    let chain = null;
+    if (row.chain || row.retail) {
+      const chainName = row.chain || row.retail;
+      chain = await this.chainRepo.findOne({
+        where: { name: chainName.trim() },
+      });
+
+      if (!chain) {
+        chain = this.chainRepo.create({
+          name: chainName.trim(),
+        });
+        chain = await this.chainRepo.save(chain);
+      }
+    }
+
+    // Check if branch already exists
+    const existingBranch = await this.branchRepo.findOne({
+      where: {
+        name: row.name.trim(),
+        project: { id: project.id },
+      },
+    });
+
+    if (existingBranch) {
+      throw new ConflictException(`Branch "${row.name}" already exists in this project`);
+    }
+
+    // Get supervisor if provided
+    let supervisor = null;
+    if (row.supervisor) {
+      supervisor = await this.userRepo.findOne({
+        where: [
+          { username: row.supervisor.trim() },
+          { name: row.supervisor.trim() }
+        ],
+        relations: ['role', 'project'],
+      });
+
+      if (!supervisor) {
+        throw new NotFoundException(`Supervisor "${row.supervisor}" not found`);
+      }
+    }
+
+    // Parse coordinates
+    let geo = null;
+    if (row.lat && row.lng) {
+      const lat = parseFloat(row.lat);
+      const lng = parseFloat(row.lng);
+
+      if (isNaN(lat) || isNaN(lng)) {
+        throw new BadRequestException('Invalid latitude or longitude values');
+      }
+
+      geo = {
+        lat: lat,
+        lng: lng,
+      };
+    }
+
+    // Parse geofence radius
+    let geofenceRadius = 500;
+    if (row.geofence_radius_meters) {
+      const radius = parseInt(row.geofence_radius_meters);
+      if (!isNaN(radius) && radius > 0) {
+        geofenceRadius = radius;
+      }
+    }
+
+    // Parse sales target type
+    let salesTargetType = SalesTargetType.QUARTERLY;
+    if (row.salesTargetType) {
+      const type = row.salesTargetType.toUpperCase();
+      if (Object.values(SalesTargetType).includes(type as SalesTargetType)) {
+        salesTargetType = type as SalesTargetType;
+      }
+    }
+
+    // Parse auto create sales targets
+    let autoCreateSalesTargets = true;
+    if (row.autoCreateSalesTargets !== undefined) {
+      autoCreateSalesTargets = this.parseBoolean(row.autoCreateSalesTargets);
+    }
+
+    // Parse default sales target amount
+    let defaultSalesTargetAmount = 0;
+    if (row.defaultSalesTargetAmount) {
+      const amount = parseFloat(row.defaultSalesTargetAmount);
+      if (!isNaN(amount) && amount > 0) {
+        defaultSalesTargetAmount = amount;
+      }
+    }
+
+    // Create branch
+    const branch = this.branchRepo.create({
+      name: row.name.trim(),
+      city: city,
+      chain: chain,
+      geo: geo,
+      geofence_radius_meters: geofenceRadius,
+      salesTargetType: salesTargetType,
+      autoCreateSalesTargets: autoCreateSalesTargets,
+      defaultSalesTargetAmount: defaultSalesTargetAmount,
+      supervisor: supervisor,
+      project: project,
+    });
+
+    return await this.branchRepo.save(branch);
+  }
+
+  private parseBoolean(value: any): boolean {
+    if (typeof value === 'boolean') return value;
+    if (typeof value === 'string') {
+      const str = value.toLowerCase().trim();
+      return str === 'true' || str === 'yes' || str === '1' || str === 'y';
+    }
+    if (typeof value === 'number') return value === 1;
+    return false;
+  }
 
 
+}
+
+// constants/branch.constants.ts
+export const BRANCH_HEADER_MAP = {
+  // Branch info
+  'branch name': 'name',
+  'branchname': 'name',
+  'Branch Name': 'name',
+  'name': 'name',
+
+  // Retail/Chain
+  'retail': 'retail',
+  'retailer': 'retail',
+  'Retail': 'retail',
+  'chain': 'chain',
+  'store': 'chain',
+
+  // Location
+  'city': 'city',
+  'City': 'city',
+  'location': 'city',
+
+  // Coordinates
+  'lat': 'lat',
+  'latitude': 'lat',
+  'lng': 'lng',
+  'longitude': 'lng',
+  'lon': 'lng',
+
+  // Geofence
+  'geofence_radius_meters': 'geofence_radius_meters',
+  'radius': 'geofence_radius_meters',
+  'geofence': 'geofence_radius_meters',
+
+  // Sales Target Type
+  'sales_target_type': 'salesTargetType',
+  'target_type': 'salesTargetType',
+  'sales target type': 'salesTargetType',
+
+  // Auto Create Targets
+  'auto_create_sales_targets': 'autoCreateSalesTargets',
+  'auto_targets': 'autoCreateSalesTargets',
+  'auto create targets': 'autoCreateSalesTargets',
+
+  // Default Target Amount
+  'default_sales_target_amount': 'defaultSalesTargetAmount',
+  'target_amount': 'defaultSalesTargetAmount',
+  'sales_target': 'defaultSalesTargetAmount',
+  'default target': 'defaultSalesTargetAmount',
+
+  // Supervisor
+  'supervisor': 'supervisor',
+  'supervisor_name': 'supervisor',
+  'manager': 'supervisor',
+
+  // Additional Sales Target Fields (for direct import)
+  'target_name': 'targetName',
+  'target description': 'targetDescription',
+  'sales_target_amount': 'targetAmount',
+  'start_date': 'targetStartDate',
+  'end_date': 'targetEndDate',
+  'target_start': 'targetStartDate',
+  'target_end': 'targetEndDate',
+};
+
+export function normalizeHeader(header: string): string {
+  return header
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, '_');
 }
