@@ -138,24 +138,86 @@ async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
   return this.journeyRepo.save(newJourney);
 }
 
+async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
+  const today = dayjs().format('YYYY-MM-DD');
 
-  // ✅ New: journeys for today for a specific user (for phone)
-  async getTodayJourneysForUser(userId: string) {
-    const today = dayjs().format('YYYY-MM-DD');
-
-    const where: any = {
+  const journeys = await this.journeyRepo.find({
+    where: {
       user: { id: userId },
       date: today,
+    },
+    relations: [
+      'branch',
+      'branch.city',
+      'branch.city.region',
+      'shift',
+      'checkin',
+    ],
+    order: { created_at: 'ASC' },
+  });
+
+  // 🔑 status keys (used by frontend filters)
+  const statusKeys = {
+    [JourneyStatus.ABSENT]: 'absent',
+    [JourneyStatus.PRESENT]: 'present',
+    [JourneyStatus.CLOSED]: 'closed',
+    [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned_absent',
+    [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned_present',
+    [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned_closed',
+  };
+
+  // 🌍 translations
+  const statusTranslations = {
+    [JourneyStatus.ABSENT]: { en: 'Absent', ar: 'غائب' },
+    [JourneyStatus.PRESENT]: { en: 'Present', ar: 'حاضر' },
+    [JourneyStatus.CLOSED]: { en: 'Closed', ar: 'مغلق' },
+    [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
+    [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
+    [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
+  };
+
+  return journeys.map(journey => {
+    const checkin = journey.checkin;
+
+    const attendanceStatus: JourneyStatus =
+      journey.status ?? JourneyStatus.ABSENT;
+
+    return {
+      journeyId: journey.id,
+      date: journey.date,
+
+      branchId: journey.branch?.id,
+      branchName: journey.branch?.name,
+      city: journey.branch?.city?.name,
+      region: journey.branch?.city?.region?.name,
+
+      shiftId: journey.shift?.id,
+      shiftName: journey.shift?.name,
+      shiftStartTime: journey.shift?.startTime,
+      shiftEndTime: journey.shift?.endTime,
+
+      journeyType: journey.type,
+      journeyStatus: journey.status,
+
+      // ✅ NEW (same as supervisor)
+      statusKey: statusKeys[attendanceStatus],
+      attendanceStatusText:
+        lang === 'ar'
+          ? statusTranslations[attendanceStatus].ar
+          : statusTranslations[attendanceStatus].en,
+
+      // check-in data
+      checkInTime: checkin?.checkInTime,
+      checkOutTime: checkin?.checkOutTime,
+      checkInDocument: checkin?.checkInDocument,
+      checkOutDocument: checkin?.checkOutDocument,
+      noteIn: checkin?.noteIn,
+      noteOut: checkin?.noteOut,
+      isWithinRadius: checkin?.isWithinRadius,
     };
+  });
+}
 
-    const journeys = await this.journeyRepo.find({
-      where,
-      relations: ['branch', 'branch.city', 'branch.city.region', 'shift'],
-      order: { created_at: 'ASC' },
-    });
-
-    return journeys;
-  }
   async getCheckinsForSupervisorBranches(params: { supervisorId: string; date?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) {
     const { supervisorId, date, fromDate, toDate, page = 1, limit = 20 } = params;
 
