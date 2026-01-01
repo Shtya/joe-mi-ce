@@ -540,12 +540,17 @@ async getAllPlansWithPagination(
   }
 
   // ✅ Mobile: get today's journeys for logged-in user
-  @Get('mobile/today')
-  @Permissions(EPermission.JOURNEY_READ)
-  async getTodayJourneysForMe(@Req() req, @Query('projectId') projectId?: string) {
-    return this.journeyService.getTodayJourneysForUser(req.user.id);
-  }
-
+@Get('mobile/today')
+@Permissions(EPermission.JOURNEY_READ)
+async getTodayJourneysForMe(
+  @Req() req: any,
+  @Headers('lang') lang: string = 'en',
+) {
+  return this.journeyService.getTodayJourneysForUserMobile(
+    req.user.id,
+    lang,
+  );
+}
   // ===== Check-in / Check-out with file upload =====
 
 
