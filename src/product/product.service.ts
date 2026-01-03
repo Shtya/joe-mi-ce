@@ -178,7 +178,8 @@ export class ProductService {
   }
 
   async findOne(id: string, user: any) {
-    const where = await this.projectWhere(user, { id });
+    const where = await this.projectWhere(user);
+    where.id = id;
     const product = await this.productRepository.findOne({
       where,
       relations: ['brand', 'category', 'stock', 'project'],

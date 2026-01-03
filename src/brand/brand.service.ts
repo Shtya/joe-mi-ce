@@ -109,7 +109,8 @@ export class BrandService {
 
   async findOne(id: string, user: any): Promise<Brand> {
     const brand = await this.brandRepository.findOne({
-      where: await this.projectOrOwnerWhere(user, { id })
+      where: await this.projectOrOwnerWhere(user, { id }),
+      relations: ['categories']
     });
 
     if (!brand) throw new NotFoundException('brand.not_found');
