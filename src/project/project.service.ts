@@ -9,6 +9,7 @@ import { UUID } from 'crypto';
 import { ERole } from 'enums/Role.enum';
 import { plainToInstance } from 'class-transformer';
 import { Shift } from 'entities/employee/shift.entity';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class ProjectService extends BaseService<Project> {
@@ -17,6 +18,8 @@ export class ProjectService extends BaseService<Project> {
     @InjectRepository(Shift) public shiftRepo: Repository<Shift>,
     @InjectRepository(User)
     public userRepo: Repository<User>,
+private userService: UsersService
+    
   ) {
     super(projectRepo);
   }
@@ -61,12 +64,9 @@ export class ProjectService extends BaseService<Project> {
   }
 
   async findInfo(userId: any) {
-    if (userId?.role?.name !== ERole.SUPERVISOR && userId?.role?.name !== ERole.SUPER_ADMIN && userId?.role?.name !== ERole.PROJECT_ADMIN) {
-      throw new BadRequestException('you cannot access this route');
-    }
-
+    const projectid = await this.userService.resolveProjectIdFromUser(userId)
     const projects = await this.projectRepo.find({
-      where: { id: userId?.project?.id },
+      where: { id: projectid },
       relations: ['owner'],
     });
 
