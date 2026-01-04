@@ -10,8 +10,9 @@ export class RegisterDto {
   @IsNotEmpty()
   password: string;
 
-  @IsEnum(ERole)
-  role: ERole;
+  @IsString() 
+  @IsOptional()
+  role?: string;
 
   @IsString()
   @IsOptional()
