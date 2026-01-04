@@ -64,7 +64,7 @@ private userService: UsersService
   }
 
   async findInfo(userId: any) {
-    const projectid = await this.userService.resolveProjectIdFromUser(userId)
+    const projectid = await this.userService.resolveProjectIdFromUser(userId.id)
     const projects = await this.projectRepo.find({
       where: { id: projectid },
       relations: ['owner'],
