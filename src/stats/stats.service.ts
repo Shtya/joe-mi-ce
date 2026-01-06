@@ -202,7 +202,7 @@ const salesTargets = currentTargets
     progress: t.targetAmount ? (t.currentAmount / t.targetAmount) * 100 : 0,
     status: t.status,
   }));
-const salesPerPromoter = await this.saleRepo
+const salesPerPromoterRaw = await this.saleRepo
   .createQueryBuilder('s')
   .innerJoin('s.user', 'p')
   .where('s.projectId = :projectId', { projectId })
@@ -212,6 +212,40 @@ const salesPerPromoter = await this.saleRepo
   .groupBy('p.id')
   .addGroupBy('p.name')
   .getRawMany();
+
+const salesPerPromoter = salesPerPromoterRaw.map(item => ({
+  id: item.promoterId,
+  name: item.promoterName,
+  totalQuantity: Number(item.totalQuantity),
+  totalAmount: Number(item.totalAmount),
+}));
+
+const startOfWeek = new Date(today);
+const day = today.getDay(); // Sunday - Saturday : 0 - 6
+const diff = today.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+startOfWeek.setDate(diff);
+const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
+
+const topSellingProductsRaw = await this.saleRepo
+  .createQueryBuilder('s')
+  .innerJoin('s.product', 'p') // Join with Product entity
+  .select(['p.id as productId', 'p.name as productName']) // Alias to match SalesPerPromoterDto structure if possible, or mapping later
+  .addSelect('SUM(s.quantity)', 'totalQuantity')
+  .addSelect('SUM(s.total_amount)', 'totalAmount')
+  .where('s.projectId = :projectId', { projectId })
+  .andWhere('s.sale_date >= :startOfWeek', { startOfWeek: startOfWeekStr }) // Filter by current week
+  .groupBy('p.id')
+  .addGroupBy('p.name')
+  .orderBy('SUM(s.total_amount)', 'DESC') // Order by total amount to get "Best"
+  .limit(7) // Top 7
+  .getRawMany();
+
+const topSellingProducts = topSellingProductsRaw.map(item => ({
+  id: item.productId,
+  name: item.productName,
+  totalQuantity: Number(item.totalQuantity),
+  totalAmount: Number(item.totalAmount),
+}));
 
 
 const auditsTotal = Number(auditAgg?.count) || 0;
@@ -343,8 +377,8 @@ const auditsTotal = Number(auditAgg?.count) || 0;
           totalAmount: Number(w.totalAmount),
 
         })),
-
-  perPromoter: salesPerPromoter,
+        topSellingProducts,
+        perPromoter: salesPerPromoter,
   targets: salesTargets,
       },
 
