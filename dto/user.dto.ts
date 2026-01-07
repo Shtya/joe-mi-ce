@@ -56,6 +56,10 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   branch_id?: string;
+
+  @IsString()
+  @IsOptional()
+  password?: string;
 }
 
 export class UpdateUserRoleDto {
