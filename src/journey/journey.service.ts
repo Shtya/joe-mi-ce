@@ -183,7 +183,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       journey.status ?? JourneyStatus.ABSENT;
 
     return {
-      journeyId: journey.id,
+      id: journey.id,
       date: journey.date,
 
       branch: journey.branch,
