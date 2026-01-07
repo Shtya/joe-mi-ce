@@ -226,26 +226,26 @@ const diff = today.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is
 startOfWeek.setDate(diff);
 const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
 
-const topSellingProductsRaw = await this.saleRepo
-  .createQueryBuilder('s')
-  .innerJoin('s.product', 'p') // Join with Product entity
-  .select(['p.id as productId', 'p.name as productName']) // Alias to match SalesPerPromoterDto structure if possible, or mapping later
-  .addSelect('SUM(s.quantity)', 'totalQuantity')
-  .addSelect('SUM(s.total_amount)', 'totalAmount')
-  .where('s.projectId = :projectId', { projectId })
-  .andWhere('s.sale_date >= :startOfWeek', { startOfWeek: startOfWeekStr }) // Filter by current week
-  .groupBy('p.id')
-  .addGroupBy('p.name')
-  .orderBy('SUM(s.total_amount)', 'DESC') // Order by total amount to get "Best"
-  .limit(7) // Top 7
-  .getRawMany();
+    const topSellingPromotersRaw = await this.saleRepo
+      .createQueryBuilder('s')
+      .innerJoin('s.user', 'p')
+      .select(['p.id as promoterId', 'p.name as promoterName'])
+      .addSelect('SUM(s.quantity)', 'totalQuantity')
+      .addSelect('SUM(s.total_amount)', 'totalAmount')
+      .where('s.projectId = :projectId', { projectId })
+      .andWhere('s.sale_date >= :startOfWeek', { startOfWeek: startOfWeekStr })
+      .groupBy('p.id')
+      .addGroupBy('p.name')
+      .orderBy('SUM(s.total_amount)', 'DESC')
+      .limit(7)
+      .getRawMany();
 
-const topSellingProducts = topSellingProductsRaw.map(item => ({
-  id: item.productId,
-  name: item.productName,
-  totalQuantity: Number(item.totalQuantity),
-  totalAmount: Number(item.totalAmount),
-}));
+    const topSellingPromoters = topSellingPromotersRaw.map(item => ({
+      id: item.promoterId,
+      name: item.promoterName,
+      totalQuantity: Number(item.totalQuantity),
+      totalAmount: Number(item.totalAmount),
+    }));
 
 
 const auditsTotal = Number(auditAgg?.count) || 0;
@@ -319,12 +319,10 @@ const auditsTotal = Number(auditAgg?.count) || 0;
 
     const weeklySales = await this.saleRepo
       .createQueryBuilder('s')
-      .innerJoin('s.user', 'p')
       .select(
         `EXTRACT(WEEK FROM s.sale_date)::INTEGER - EXTRACT(WEEK FROM DATE_TRUNC('month', s.sale_date))::INTEGER + 1`,
         'week',
       )
-      .addSelect('p.name', 'promoterName')
       .addSelect('COUNT(*)', 'totalOrders')
       .addSelect('SUM(s.quantity)', 'totalQuantity')
       .addSelect('SUM(s.total_amount)', 'totalAmount')
@@ -332,7 +330,6 @@ const auditsTotal = Number(auditAgg?.count) || 0;
       .andWhere('s.sale_date >= :firstDay', { firstDay: firstDayStr })
       .andWhere('s.sale_date <= :today', { today: todayStr })
       .groupBy('week')
-      .addGroupBy('p.name')
       .orderBy('week', 'ASC')
       .getRawMany();
     const totalAnswers = Number(surveyAnswersAgg?.totalAnswers) || 0;
@@ -375,12 +372,12 @@ const auditsTotal = Number(auditAgg?.count) || 0;
         todayTotalAmount: salesTodayTotalAmount,
         weekly: weeklySales.map(w => ({
           week: Number(w.week),
-          promoterName: w.promoterName,
           totalOrders: Number(w.totalOrders),
           totalQuantity: Number(w.totalQuantity),
           totalAmount: Number(w.totalAmount),
+
         })),
-        topSellingProducts,
+        topSellingPromoters,
         perPromoter: salesPerPromoter,
   targets: salesTargets,
       },

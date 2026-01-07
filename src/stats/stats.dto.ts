@@ -57,14 +57,8 @@ export interface ProjectStatsDto {
     totalQuantity: number;
     totalAmount: number;
     todayTotalAmount: number;
-    weekly: {
-      week: number;
-      promoterName: string;
-      totalOrders: number;
-      totalQuantity: number;
-      totalAmount: number;
-    }[];
-    topSellingProducts?: SalesPerPromoterDto[];
+    weekly: any;
+    topSellingPromoters?: SalesPerPromoterDto[];
     perPromoter?: SalesPerPromoterDto[];
     targets?: SalesTargetDto[];
   };
