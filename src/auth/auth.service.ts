@@ -167,7 +167,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { username:
     });
 
 		console.log(dto.username);
-    console.log(user.password);
+    console.log(user);
     console.log(dto.password);
     if (!user || !(await argon2.verify(user.password, dto.password))) {
       throw new UnauthorizedException('Invalid username or password');
