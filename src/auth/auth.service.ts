@@ -343,7 +343,12 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
     }
   }
 
-  Object.assign(user, dto);
+  if (dto.password) {
+    user.password = await argon2.hash(dto.password);
+  }
+
+  const { password, ...updateData } = dto;
+  Object.assign(user, updateData);
   return await this.userRepository.save(user);
 }
 
