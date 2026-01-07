@@ -20,8 +20,6 @@ import { SurveyFeedback, SurveyFeedbackAnswer } from 'entities/survey-feedback.e
 
 import { ProjectStatsDto } from './stats.dto';
 import { SalesTargetService } from 'src/sales-target/sales-target.service';
-import { Role } from 'entities/role.entity';
-import { ERole } from 'enums/Role.enum';
 
 @Injectable()
 export class ProjectStatsService {
@@ -94,7 +92,7 @@ export class ProjectStatsService {
       surveysCount,
     ] = await Promise.all([
       this.branchRepo.count({ where: { project: { id: projectId } } }),
-      this.userRepo.count({ where: { project_id: projectId ,role:{name:ERole.PROMOTER}} ,}),
+      this.userRepo.count({ where: { project_id: projectId } ,}),
       this.productRepo.count({ where: { project: { id: projectId } } }),
       this.competitorRepo.count({ where: { project: { id: projectId } } }),
       this.shiftRepo.count({ where: { project: { id: projectId } } }),
