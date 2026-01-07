@@ -57,8 +57,8 @@ export class UpdateUserDto {
   @IsString()
   branch_id?: string;
 
-  @IsString()
   @IsOptional()
+  @IsString()
   password?: string;
 }
 
