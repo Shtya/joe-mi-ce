@@ -316,11 +316,12 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
   const isSuperAdmin =
     (requester?.role?.name?.toLowerCase?.() || '') === 'super_admin';
 
-  const requesterProjectId =
-    await this.userService.resolveProjectIdFromUser(requester.id);
 
   // ✅ Project ownership check (same logic as delete)
   if (!isSuperAdmin) {
+      const requesterProjectId =
+    await this.userService.resolveProjectIdFromUser(requester.id);
+
     if (user.project_id && user.project_id !== requesterProjectId) {
       throw new ForbiddenException(
         'You can only update users in your own project',
