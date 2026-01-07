@@ -190,8 +190,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       city: journey.branch?.city?.name,
       region: journey.branch?.city?.region?.name,
 
-      shiftId: journey.shift?.id,
-      shiftName: journey.shift?.name,
+      shift: journey.shift,
       shiftStartTime: journey.shift?.startTime,
       shiftEndTime: journey.shift?.endTime,
 
