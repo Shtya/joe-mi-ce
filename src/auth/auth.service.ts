@@ -164,7 +164,6 @@ const existingUserPhone = await this.userRepository.findOne({ where: { username:
       where: { username: dto.username },
       relations: ['role', 'project'],
       select: ['id', 'username', 'name', 'password', 'is_active', 'device_id', 'role'],
-      withDeleted: true,
     });
 
 		console.log(dto.username);

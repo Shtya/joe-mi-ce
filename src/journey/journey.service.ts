@@ -186,8 +186,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       journeyId: journey.id,
       date: journey.date,
 
-      branchId: journey.branch?.id,
-      branchName: journey.branch?.name,
+      branch: journey.branch,
       city: journey.branch?.city?.name,
       region: journey.branch?.city?.region?.name,
 
