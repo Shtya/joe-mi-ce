@@ -92,7 +92,7 @@ export class ProjectStatsService {
       surveysCount,
     ] = await Promise.all([
       this.branchRepo.count({ where: { project: { id: projectId } } }),
-      this.userRepo.count({ where: { project_id: projectId } }),
+      this.userRepo.count({ where: { project_id: projectId } ,}),
       this.productRepo.count({ where: { project: { id: projectId } } }),
       this.competitorRepo.count({ where: { project: { id: projectId } } }),
       this.shiftRepo.count({ where: { project: { id: projectId } } }),
