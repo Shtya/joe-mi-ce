@@ -32,19 +32,31 @@ export class BrandService {
 
     const existing = await this.brandRepository.findOne({
       where: [
-        { project: { id: projectId }, name: dto.name },
-        { ownerUserId: user.id, name: dto.name }
+        { project_id: projectId, name: dto.name },
+
       ]
     });
 
     if (existing) throw new ConflictException('brand.name_exists');
+
+    let categories = [];
+    if (dto.categoryIds && dto.categoryIds.length > 0) {
+      categories = await this.categoryRepository.find({
+        where: { id: In(dto.categoryIds) }
+      });
+
+      if (categories.length !== dto.categoryIds.length) {
+        throw new NotFoundException('category.not_found');
+      }
+    }
 
     const brand = this.brandRepository.create({
       name: dto.name,
       description: dto.description,
       logo_url: logoFile ? logoFile.path : dto.logo_url,
       ownerUserId: user.id, // always assign owner
-      project: { id: projectId }
+      project: { id: projectId },
+      categories: categories
     });
 
     return this.brandRepository.save(brand);
