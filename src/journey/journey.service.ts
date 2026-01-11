@@ -246,7 +246,11 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       .getMany();
 
     return {
-      items,
+      items: items.map(item => ({
+        ...item,
+        checkInTime: item.checkInTime ? dayjs(item.checkInTime).format('YYYY-MM-DD HH:mm') : null,
+        checkOutTime: item.checkOutTime ? dayjs(item.checkOutTime).format('YYYY-MM-DD HH:mm') : null,
+      })),
       total,
       page,
       limit,
@@ -339,7 +343,11 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       });
     }
 
-    return savedCheckIn;
+    return {
+      ...savedCheckIn,
+      checkInTime: savedCheckIn.checkInTime ? dayjs(savedCheckIn.checkInTime).format('HH:mm') : null,
+      checkOutTime: savedCheckIn.checkOutTime ? dayjs(savedCheckIn.checkOutTime).format('HH:mm') : null,
+    };
   }
 
   // ===== سجل الحضور =====
