@@ -218,7 +218,9 @@ export class ProductService {
   }
   async findAllForMobile(query: PaginationQueryDto, categoryId: string, brandId: string, user: any) {
     const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
-    const where = await this.projectWhere(user, {});
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+    let where: any = {};
+    where.project = {id:projectId};
 
     if (search) where.name = ILike(`%${search}%`);
 
