@@ -36,6 +36,7 @@ import { SalesTargetModule } from './sales-target/sales-target.module';
 import { StaticPagesModule } from './static-pages/static-pages.module';
 import { ContactUs } from 'entities/contact-us.entity';
 import { ContactUsModule } from './contact-us/contact-us.module';
+import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module';
  @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -98,7 +99,8 @@ import { ContactUsModule } from './contact-us/contact-us.module';
     NotificationModule,
     SalesTargetModule,
     StaticPagesModule,
-    ContactUsModule
+    ContactUsModule,
+    DocumentbuilderModule
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
