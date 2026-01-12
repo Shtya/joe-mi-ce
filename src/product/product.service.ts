@@ -225,9 +225,8 @@ export class ProductService {
 
     const products = await this.productRepository.find({
       where: {
-        category_id: categoryId,
-        brand_id: brandId,
-        project_id: projectId,
+        category: { id: categoryId },
+        brand: { id: brandId },
         ...where
       },
       select: ['id', 'name', 'price', 'image_url'],
