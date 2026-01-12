@@ -196,7 +196,7 @@ export class ProductService {
     }
 
     if (dto.category_id) {
-      const category = await this.categoryRepository.findOne({ where: { id: dto.category_id, project: product.project } });
+      const category = await this.categoryRepository.findOne({ where: { id: dto.category_id, project_id: product.project.id } });
       if (!category) throw new NotFoundException(`Category not found in your project`);
       product.category = category;
     }
@@ -220,12 +220,10 @@ export class ProductService {
     const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
     const where = await this.projectWhere(user, {});
 
-    if (categoryId) where.category = { id: categoryId };
-    if (brandId) where.brand = { id: brandId };
     if (search) where.name = ILike(`%${search}%`);
 
     const products = await this.productRepository.find({
-      where,
+      where:{category:{id:categoryId},brand:{id:brandId},...where},
       select: ['id', 'name', 'price', 'image_url'],
       order: { [sortBy]: sortOrder },
     });
