@@ -37,7 +37,7 @@ export class AuthService {
     const existingUser = await this.userRepository.findOne({ where: { username: dto.username },withDeleted:true});
     if (existingUser) throw new BadRequestException('Username already exists');
     if(dto.mobile){
-const existingUserPhone = await this.userRepository.findOne({ where: { username: dto.mobile },withDeleted:true });
+const existingUserPhone = await this.userRepository.findOne({ where: { mobile: dto.mobile },withDeleted:true });
     if (existingUserPhone) throw new BadRequestException('mobile already exists');}
     const role = await this.roleRepository.findOne({ where: { name: dto.role } });
     if (!role) throw new BadRequestException('Invalid role specified');
@@ -166,9 +166,6 @@ const existingUserPhone = await this.userRepository.findOne({ where: { username:
       select: ['id', 'username', 'name', 'password', 'is_active', 'device_id', 'role'],
     });
 
-		console.log(dto.username);
-    console.log(user);
-    console.log(dto.password);
     if (!user || !(await argon2.verify(user.password, dto.password))) {
       throw new UnauthorizedException('Invalid username or password');
     }
