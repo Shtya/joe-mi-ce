@@ -220,12 +220,16 @@ export class ProductService {
     const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
     let where: any = {};
-    where.project = {id:projectId};
 
     if (search) where.name = ILike(`%${search}%`);
 
     const products = await this.productRepository.find({
-      where:{category:{id:categoryId},brand:{id:brandId},...where},
+      where: {
+        category_id: categoryId,
+        brand_id: brandId,
+        project_id: projectId,
+        ...where
+      },
       select: ['id', 'name', 'price', 'image_url'],
       order: { [sortBy]: sortOrder },
     });
