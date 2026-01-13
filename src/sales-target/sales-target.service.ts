@@ -290,7 +290,7 @@ export class SalesTargetService {
       .createQueryBuilder('target')
       .leftJoin('target.branch', 'branch')
       // .where('branch.projectId = :projectId', { projectId }) // REMOVED: branch.projectId might be ambiguous if column name differs
-      .where('target.project.id = :projectId', { projectId }) // NEW: Use the new relationship or project ID column
+      .where('branch.project.id = :projectId', { projectId }) // NEW: Use the new relationship or project ID column
       .select([
         'COUNT(target.id) as totalTargets',
         'SUM(CASE WHEN target.status = :active THEN 1 ELSE 0 END) as activeTargets',
