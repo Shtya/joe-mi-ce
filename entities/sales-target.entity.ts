@@ -10,6 +10,7 @@ import {
   import { CoreEntity } from './core.entity';
   import { Branch } from './branch.entity';
   import { User } from './user.entity';
+  import { Project } from './project.entity';
   
   export enum SalesTargetType {
     MONTHLY = 'monthly',
@@ -65,6 +66,9 @@ import {
     @ManyToOne(() => Branch, branch => branch.salesTargets, { onDelete: 'CASCADE' })
     branch: Branch;
   
+    @ManyToOne(() => Project, { nullable: true })
+    project: Project;
+
     @ManyToOne(() => User, { nullable: true })
     createdBy: User;
   

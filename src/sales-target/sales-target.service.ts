@@ -36,7 +36,10 @@ export class SalesTargetService {
 
     if (!branchIds.length) throw new BadRequestException('Either branchId or branchIds must be provided');
 
-    const branches = await this.branchRepository.find({ where: { id: In(branchIds) } });
+    const branches = await this.branchRepository.find({ 
+      where: { id: In(branchIds) },
+      relations: ['project']
+    });
     if (branches.length !== branchIds.length) {
       const missingIds = branchIds.filter(id => !branches.map(b => b.id).includes(id));
       throw new NotFoundException(`Branches not found: ${missingIds.join(', ')}`);
@@ -81,6 +84,7 @@ export class SalesTargetService {
         status: SalesTargetStatus.ACTIVE,
         type: targetType,
         branch,
+        project: branch.project,
         createdBy: createdBy ? { id: createdBy } : null,
       });
 
@@ -194,6 +198,7 @@ export class SalesTargetService {
       startDate,
       endDate,
       branch,
+      project: branch.project,
       autoRenew: branch.autoCreateSalesTargets,
       status: SalesTargetStatus.ACTIVE,
       currentAmount: 0,
@@ -215,7 +220,7 @@ export class SalesTargetService {
         endDate: LessThan(new Date(new Date().setHours(0, 0, 0, 0))),
         status: SalesTargetStatus.ACTIVE,
       },
-      relations: ['branch'],
+      relations: ['branch', 'branch.project'],
     });
 
     for (const target of expiredTargets) {
@@ -235,7 +240,10 @@ export class SalesTargetService {
   async initializeMissingTargets(): Promise<void> {
     this.logger.log('Checking branches without current targets...');
 
-    const branches = await this.branchRepository.find({ where: { autoCreateSalesTargets: true } });
+    const branches = await this.branchRepository.find({ 
+      where: { autoCreateSalesTargets: true },
+      relations: ['project']
+    });
     let createdCount = 0;
 
     for (const branch of branches) {
@@ -256,6 +264,7 @@ export class SalesTargetService {
 
     const branches = await this.branchRepository.find({
       where: { autoCreateSalesTargets: true },
+      relations: ['project']
     });
 
     for (const branch of branches) {
@@ -279,7 +288,8 @@ export class SalesTargetService {
     const query = this.salesTargetRepository
       .createQueryBuilder('target')
       .leftJoin('target.branch', 'branch')
-      .where('target.projectId = :projectId', { projectId })
+      // .where('branch.projectId = :projectId', { projectId }) // REMOVED: branch.projectId might be ambiguous if column name differs
+      .where('target.project.id = :projectId', { projectId }) // NEW: Use the new relationship or project ID column
       .select([
         'COUNT(target.id) as totalTargets',
         'SUM(CASE WHEN target.status = :active THEN 1 ELSE 0 END) as activeTargets',
@@ -301,7 +311,7 @@ export class SalesTargetService {
       });
 
     if (branchId) {
-      query.where('branch.id = :branchId', { branchId });
+      query.andWhere('branch.id = :branchId', { branchId });
     }
     return await query.getRawOne();
   }

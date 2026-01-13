@@ -136,6 +136,7 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
         description: `this is the deafault target of the branch ${dto.name} and the target is ${dto.defaultSalesTargetAmount}`,
         targetAmount: savedBranch.defaultSalesTargetAmount,
         autoRenew: savedBranch.autoCreateSalesTargets,
+        project: savedBranch.project,
       });
 
       await this.salesTargetRepo.save(salesTarget);
@@ -504,6 +505,7 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
         autoRenew: true,
         branch: branch,
         createdBy: requester,
+        project: branch.project,
       });
 
       await this.salesTargetRepo.save(salesTarget);
