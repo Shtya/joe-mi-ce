@@ -279,7 +279,7 @@ export class SalesTargetService {
     const query = this.salesTargetRepository
       .createQueryBuilder('target')
       .leftJoin('target.branch', 'branch')
-      .where('target.projectId = :projectId', { projectId })
+      .where('branch.projectId = :projectId', { projectId })
       .select([
         'COUNT(target.id) as totalTargets',
         'SUM(CASE WHEN target.status = :active THEN 1 ELSE 0 END) as activeTargets',
