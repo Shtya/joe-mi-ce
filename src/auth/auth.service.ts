@@ -167,21 +167,21 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
     });
 
     if (!user || !(await argon2.verify(user.password, dto.password))) {
-      throw new BadRequestException('Invalid username or password');
+      throw new ForbiddenException('Invalid username or password');
     }
 
     if (!user.is_active) {
-      throw new BadRequestException('Your account is inactive');
+      throw new ForbiddenException('Your account is inactive');
     }
 
     if ([ERole.PROMOTER, ERole.SUPERVISOR].includes(user.role.name as ERole)) {
-      if (!dto.device_id) throw new BadRequestException('Device ID is required for your role');
+      if (!dto.device_id) throw new ForbiddenException('Device ID is required for your role');
 
       if (!user.device_id) {
         await this.userRepository.update(user.id, { device_id: dto.device_id });
         user.device_id = dto.device_id;
       } else if (user.device_id !== dto.device_id) {
-        throw new BadRequestException('This account is registered to another device');
+        throw new ForbiddenException('This account is registered to another device');
       }
     }
 
@@ -200,12 +200,12 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       });
 
       if (!user || !user.is_active) {
-        throw new BadRequestException('Invalid refresh token');
+        throw new ForbiddenException('Invalid refresh token');
       }
 
       return this.generateAuthResponse(user);
     } catch {
-      throw new BadRequestException('Invalid refresh token');
+      throw new ForbiddenException('Invalid refresh token');
     }
   }
 
@@ -215,7 +215,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       relations: ['role', 'project', 'branch', 'created_by'],
     });
 
-    if (!userWithRelations) throw new BadRequestException('User not found');
+    if (!userWithRelations) throw new NotFoundException('User not found');
 
     return {
       id: userWithRelations.id,
@@ -338,7 +338,7 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
     });
 
     if (existingUser) {
-      throw new BadRequestException('Phone already exists');
+      throw new ConflictException('Phone already exists');
     }
   }
 
@@ -352,7 +352,7 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
   if(dto.username){
     const existingUser = await this.userRepository.findOne({ where: { username: dto.username } });
     if (existingUser) {
-      throw new BadRequestException('Username already exists');
+      throw new ConflictException('Username already exists');
     }
     else{
       user.username = dto.username;
