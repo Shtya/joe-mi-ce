@@ -119,8 +119,9 @@ import { UsersService } from 'src/users/users.service';
         return filters;
     }
     @Get('stats/overview')
-    async getStatistics(@Query('branchId') branchId?: string) {
-      return await this.salesTargetService.getSalesTargetStatistics(branchId);
+    async getStatistics(@Req() req:any,@Query('branchId') branchId?: string) {
+      const projectId = await this.userService.resolveProjectIdFromUser(req.user.id)
+      return await this.salesTargetService.getSalesTargetStatistics(branchId,projectId);
     }
   
     @Get('branch/:branchId/performance')
