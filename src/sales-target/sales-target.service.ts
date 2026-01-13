@@ -17,6 +17,11 @@ export class SalesTargetService {
     @InjectRepository(Branch)
     private readonly branchRepository: Repository<Branch>,
   ) {}
+  private getMonthPeriod(date: Date = new Date()) {
+    const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
+    const endDate = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+    return { startDate, endDate };
+  }
   private get3MonthPeriod(date: Date = new Date()) {
     const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
     const endDate = new Date(date.getFullYear(), date.getMonth() + 3, 0);
@@ -38,7 +43,15 @@ export class SalesTargetService {
     }
 
     const targetType = createDto.type || SalesTargetType.QUARTERLY;
-    const { startDate, endDate } = this.get3MonthPeriod();
+    let startDate: Date, endDate: Date;
+    if(targetType === SalesTargetType.MONTHLY){
+      startDate = this.getMonthPeriod().startDate;
+      endDate = this.getMonthPeriod().endDate;
+    }
+    else{
+      startDate = this.get3MonthPeriod().startDate;
+      endDate = this.get3MonthPeriod().endDate;
+    }
 
     const salesTargets: SalesTarget[] = [];
 
@@ -162,7 +175,15 @@ export class SalesTargetService {
     await this.salesTargetRepository.remove(salesTarget);
   }
   async createNewSalesTarget(branch: Branch, targetType: SalesTargetType): Promise<SalesTarget> {
-    const { startDate, endDate } = this.get3MonthPeriod();
+    let startDate: Date, endDate: Date;
+    if(targetType === SalesTargetType.MONTHLY){
+      startDate = this.getMonthPeriod().startDate;
+      endDate = this.getMonthPeriod().endDate;
+    }
+    else{
+      startDate = this.get3MonthPeriod().startDate;
+      endDate = this.get3MonthPeriod().endDate;
+    }
     const targetAmount = branch.defaultSalesTargetAmount || 0;
     const targetName = `${targetType} Sales - ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
 
@@ -191,17 +212,19 @@ export class SalesTargetService {
 
     const expiredTargets = await this.salesTargetRepository.find({
       where: {
-        endDate: Between(
-          new Date(yesterday.setHours(0, 0, 0, 0)),
-          new Date(yesterday.setHours(23, 59, 59, 999))
-        ),
+        endDate: LessThan(new Date(new Date().setHours(0, 0, 0, 0))),
         status: SalesTargetStatus.ACTIVE,
       },
       relations: ['branch'],
     });
 
     for (const target of expiredTargets) {
-      target.status = SalesTargetStatus.EXPIRED;
+      if(target.targetAmount === target.currentAmount){
+        target.status = SalesTargetStatus.COMPLETED;
+      }
+      else{
+        target.status = SalesTargetStatus.EXPIRED;
+      }
       await this.salesTargetRepository.save(target);
 
       if (target.autoRenew && target.branch.autoCreateSalesTargets) {
