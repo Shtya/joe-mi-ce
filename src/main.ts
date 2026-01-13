@@ -38,7 +38,7 @@ async function configureApp(app: NestExpressApplication) {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-lang'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-lang', 'lang',],
   });
 
   app.setGlobalPrefix('api/v1');
