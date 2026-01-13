@@ -296,7 +296,7 @@ export class SalesTargetService {
         'SUM(CASE WHEN target.status = :active THEN 1 ELSE 0 END) as activeTargets',
         'SUM(CASE WHEN target.status = :completed THEN 1 ELSE 0 END) as completedTargets',
         'SUM(CASE WHEN target.status = :expired THEN 1 ELSE 0 END) as expiredTargets',
-'AVG(target.currentAmount / NULLIF(target.targetAmount, 0)) * 100 as averageProgress',
+'AVG(target.currentAmount / NULLIF(target.targetAmount, 0)) as averageProgress',
         'SUM(target.targetAmount) as totalTargetAmount',
         'SUM(target.currentAmount) as totalCurrentAmount',
         'SUM(CASE WHEN target.type = :monthly THEN 1 ELSE 0 END) as monthlyTargets',
