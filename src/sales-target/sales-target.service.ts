@@ -219,12 +219,7 @@ export class SalesTargetService {
     });
 
     for (const target of expiredTargets) {
-      if(target.targetAmount === target.currentAmount){
-        target.status = SalesTargetStatus.COMPLETED;
-      }
-      else{
-        target.status = SalesTargetStatus.EXPIRED;
-      }
+      target.updateStatus();
       await this.salesTargetRepository.save(target);
 
       if (target.autoRenew && target.branch.autoCreateSalesTargets) {
