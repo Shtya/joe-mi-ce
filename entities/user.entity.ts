@@ -71,6 +71,7 @@ export class User extends CoreEntity {
 
   @OneToMany(() => Sale, checkin => checkin.user)
   checkins: Sale[];
+  user: Promise<Role>;
 
   async hasPermission(permission: string): Promise<boolean> {
     return this.role?.hasPermission(permission) ?? false;

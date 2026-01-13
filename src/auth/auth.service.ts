@@ -240,6 +240,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
     return {
       ...userWithRelations,
       role: userWithRelations.role.name,
+      role_id: userWithRelations.role.id,
 			project: project,
     };
   }
@@ -344,7 +345,19 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
   if (dto.password) {
     user.password = await argon2.hash(dto.password);
   }
+  if(dto.role_id){
+  this.updateUserRole(userId, dto.role_id, requester);
+  }
 
+  if(dto.username){
+    const existingUser = await this.userRepository.findOne({ where: { username: dto.username } });
+    if (existingUser) {
+      throw new BadRequestException('Username already exists');
+    }
+    else{
+      user.username = dto.username;
+    }
+  }
   const { password, ...updateData } = dto;
   Object.assign(user, updateData);
   return await this.userRepository.save(user);

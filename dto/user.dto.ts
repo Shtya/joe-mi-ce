@@ -49,6 +49,13 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   name?: string;
+  @IsOptional()
+  @IsString()
+  role_id?: string;
+
+  @IsOptional()
+  @IsString()
+  username?: string;
 
   @IsOptional()
   mobile?: string;

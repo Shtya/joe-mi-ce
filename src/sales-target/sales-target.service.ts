@@ -26,7 +26,7 @@ export class SalesTargetService {
     const branchIds = createDto.branchIds?.length
       ? createDto.branchIds
       : createDto.branchId
-        ? [createDto.branchId]
+        ? createDto.branchId
         : [];
 
     if (!branchIds.length) throw new BadRequestException('Either branchId or branchIds must be provided');
