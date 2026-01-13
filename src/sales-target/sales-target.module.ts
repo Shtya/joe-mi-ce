@@ -7,14 +7,16 @@ import { SalesTargetController } from './sales-target.controller';
 import { SalesTarget } from '../../entities/sales-target.entity';
 import { Branch } from '../../entities/branch.entity';
 import { User } from 'entities/user.entity';
+import { UsersService } from 'src/users/users.service';
+import { Project } from 'entities/project.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SalesTarget, Branch,User]),
+    TypeOrmModule.forFeature([SalesTarget, Branch,User,Project]),
     ScheduleModule.forRoot(),
   ],
   controllers: [SalesTargetController],
-  providers: [SalesTargetService],
+  providers: [SalesTargetService,UsersService],
   exports: [SalesTargetService],
 })
 export class SalesTargetModule {}

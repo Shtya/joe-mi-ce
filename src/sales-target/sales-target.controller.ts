@@ -28,6 +28,7 @@ import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { CRUD } from 'common/crud.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { UsersService } from 'src/users/users.service';
 ;
   
   @Controller('sales-targets')
@@ -35,7 +36,9 @@ import { AuthGuard } from '../auth/auth.guard';
   @UsePipes(new ValidationPipe({ transform: true }))
   @UseGuards(AuthGuard)
   export class SalesTargetController {
-    constructor( readonly salesTargetService: SalesTargetService) {}
+    constructor( readonly salesTargetService: SalesTargetService,
+      readonly userService:UsersService
+    ) {}
   
     @Post()
     @Permissions(EPermission.BRANCH_CREATE)
@@ -49,11 +52,12 @@ import { AuthGuard } from '../auth/auth.guard';
     }
   
     @Get()
-    async findAll(@Query() query: any) {
+    async findAll(@Query() query: any,@Req() req:any) {
         console.log('Query params:', query); // Add this to see what you're getting
-        
+        const projectId = await this.userService.resolveProjectIdFromUser(req.user.id)
         // Parse filters from query parameters
         const filtersObj = this.parseFiltersFromQuery(query);
+        filtersObj['branch.project.id'] = projectId;
         
         return CRUD.findAll2(
             this.salesTargetService.salesTargetRepository,

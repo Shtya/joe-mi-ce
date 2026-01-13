@@ -1,5 +1,5 @@
 // project.entity.ts
-import { Entity, Column, OneToMany, ManyToMany, JoinTable, ManyToOne, JoinColumn, OneToOne } from 'typeorm';
+import { Entity, Column, OneToMany, ManyToMany, JoinTable, ManyToOne, JoinColumn, OneToOne, BeforeInsert, BeforeUpdate } from 'typeorm';
 import { CoreEntity } from './core.entity';
 import { Branch } from './branch.entity';
 import { User } from './user.entity';
