@@ -42,7 +42,8 @@ export class SaleService {
       throw new BadRequestException('Not enough stock available');
     }
 
-    const totalAmount = dto.price * dto.quantity;
+const discount = product.discount ?? 0;
+const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
 
     // Update stock
     stock.quantity -= dto.quantity;
