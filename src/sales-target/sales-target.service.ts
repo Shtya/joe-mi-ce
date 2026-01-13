@@ -1,7 +1,7 @@
 // sales-target.service.ts
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThan, MoreThanOrEqual, Between, In } from 'typeorm';
+import { Repository, LessThan, MoreThanOrEqual, Between, In, LessThanOrEqual } from 'typeorm';
 import { Cron } from '@nestjs/schedule';
 import { SalesTarget, SalesTargetType, SalesTargetStatus } from '../../entities/sales-target.entity';
 import { Branch } from '../../entities/branch.entity';
@@ -127,11 +127,13 @@ export class SalesTargetService {
   }
   async getCurrentTarget(branchId: string): Promise<SalesTarget | null> {
     const now = new Date();
+    const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
+
     return await this.salesTargetRepository.findOne({
       where: {
         branch: { id: branchId },
-        startDate: LessThan(now),
-        endDate: MoreThanOrEqual(now),
+        startDate: LessThanOrEqual(today as any),
+        endDate: MoreThanOrEqual(today as any),
         status: SalesTargetStatus.ACTIVE,
       },
       relations: ['branch', 'createdBy'],
