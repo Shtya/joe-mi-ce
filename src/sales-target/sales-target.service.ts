@@ -285,6 +285,7 @@ export class SalesTargetService {
   }
 
   async getSalesTargetStatistics(projectId:string,branchId?: string) {
+    console.log(projectId)
     const query = this.salesTargetRepository
       .createQueryBuilder('target')
       .leftJoin('target.branch', 'branch')
