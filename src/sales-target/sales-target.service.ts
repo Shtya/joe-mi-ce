@@ -275,10 +275,11 @@ export class SalesTargetService {
     }
   }
 
-  async getSalesTargetStatistics(branchId?: string) {
+  async getSalesTargetStatistics(projectId:string,branchId?: string) {
     const query = this.salesTargetRepository
       .createQueryBuilder('target')
       .leftJoin('target.branch', 'branch')
+      .where('target.projectId = :projectId', { projectId })
       .select([
         'COUNT(target.id) as totalTargets',
         'SUM(CASE WHEN target.status = :active THEN 1 ELSE 0 END) as activeTargets',
@@ -289,6 +290,7 @@ export class SalesTargetService {
         'SUM(target.currentAmount) as totalCurrentAmount',
         'SUM(CASE WHEN target.type = :monthly THEN 1 ELSE 0 END) as monthlyTargets',
         'SUM(CASE WHEN target.type = :quarterly THEN 1 ELSE 0 END) as quarterlyTargets',
+
       ])
       .setParameters({
         active: SalesTargetStatus.ACTIVE,
@@ -301,7 +303,6 @@ export class SalesTargetService {
     if (branchId) {
       query.where('branch.id = :branchId', { branchId });
     }
-
     return await query.getRawOne();
   }
 
