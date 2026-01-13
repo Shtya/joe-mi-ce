@@ -167,11 +167,11 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
     });
 
     if (!user || !(await argon2.verify(user.password, dto.password))) {
-      throw new UnauthorizedException('Invalid username or password');
+      throw new BadRequestException('Invalid username or password');
     }
 
     if (!user.is_active) {
-      throw new UnauthorizedException('Your account is inactive');
+      throw new BadRequestException('Your account is inactive');
     }
 
     if ([ERole.PROMOTER, ERole.SUPERVISOR].includes(user.role.name as ERole)) {
@@ -181,7 +181,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
         await this.userRepository.update(user.id, { device_id: dto.device_id });
         user.device_id = dto.device_id;
       } else if (user.device_id !== dto.device_id) {
-        throw new UnauthorizedException('This account is registered to another device');
+        throw new BadRequestException('This account is registered to another device');
       }
     }
 
@@ -200,12 +200,12 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       });
 
       if (!user || !user.is_active) {
-        throw new UnauthorizedException('Invalid refresh token');
+        throw new BadRequestException('Invalid refresh token');
       }
 
       return this.generateAuthResponse(user);
     } catch {
-      throw new UnauthorizedException('Invalid refresh token');
+      throw new BadRequestException('Invalid refresh token');
     }
   }
 
