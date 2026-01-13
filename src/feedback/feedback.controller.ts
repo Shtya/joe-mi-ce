@@ -63,8 +63,8 @@ export class FeedbackController {
   }
 
   // Delete feedback
-  @Delete(':id')
-  async deleteFeedback(@Param('id') id: string) {
-    return this.feedbackService.remove(id);
-  }
+  // @Delete(':id')
+  // async deleteFeedback(@Param('id') id: string) {
+  //   return this.feedbackService.remove(id);
+  // }
 }

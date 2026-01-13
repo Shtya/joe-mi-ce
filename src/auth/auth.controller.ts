@@ -14,10 +14,13 @@ import { parse } from 'papaparse';
 import * as fs from 'fs';
 import * as ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
+import { UsersService } from 'src/users/users.service';
 
 @Controller('')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService,
+    private readonly userService: UsersService,
+  ) {}
 
   @UseGuards(AuthGuard)
   @Post('auth/register')
@@ -55,7 +58,11 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get('users')
   @Permissions(EPermission.USER_READ)
-  async getUsers(@Query() query: any, @Req() req: { user: User }) {
+  async getUsers(@Query() query: any, @Req() req: any) {
+    if(req.user.role.name !== ERole.SUPER_ADMIN){
+      const projectId = await this.userService.resolveProjectIdFromUser(req.user.id)
+      query.project_id = projectId;
+    }
     return CRUD.findAll(this.authService.userRepository, 'user', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['role', 'project', 'branch', 'created_by'], ['name', 'mobile', 'username'], {});
   }
 

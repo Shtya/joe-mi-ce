@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, Res, UsePipes, ValidationPipe, Req, Headers, BadRequestException } from '@nestjs/common';
 import { ExportService, ModuleName } from './export.service';
+import * as qs from 'qs';
 @Controller('export')
 export class ExportController {
   constructor(private readonly exportService: ExportService) {}
@@ -51,7 +52,7 @@ export class ExportController {
     ];
   
     // Create final params object
-    const finalParams: Record<string, string> = {};
+    const finalParams: Record<string, any> = {};
     
     // Add existing params (from the URL)
     Object.keys(existingParamsObj).forEach(key => {
@@ -89,7 +90,7 @@ export class ExportController {
   
     // Build the final URL
     const newQueryString = Object.keys(finalParams).length > 0
-      ? `?${new URLSearchParams(finalParams).toString()}`
+      ? `?${qs.stringify(finalParams)}`
       : '';
   
     const fullUrl = `${baseUrl}${newQueryString}`;

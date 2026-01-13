@@ -49,9 +49,11 @@ import {
   branchIds?: string[];
 
   // ✅ branchId required ONLY if branchIds is missing
-  @ValidateIf(dto => !dto.branchIds)
-  @IsUUID('4')
-  branchId?: string;
+  @ValidateIf(dto => !dto.branchId)
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsUUID('4', { each: true })
+  branchId?: string[];
   }
 
   export class UpdateSalesTargetDto {
