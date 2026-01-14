@@ -9,6 +9,7 @@ import { CRUD } from 'common/crud.service';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
 import { AuthGuard } from 'src/auth/auth.guard';
+import { UsersService } from 'src/users/users.service';
 
 
 @Controller('audits')
@@ -17,6 +18,7 @@ export class AuditsController {
   constructor(
     private readonly service: AuditsService,
     private readonly exportService: AuditExportService,
+    private readonly userService: UsersService,  
   ) {}
   @Get('discount-reasons')
   @Permissions(EPermission.AUDIT_READ)
@@ -109,23 +111,17 @@ export class AuditsController {
       ...parsedFilters,
     };
 
-    if (!user.project?.id || !user.project_id || !project_id) {
-      mergedFilters.projectId = user.project_id;
-    }
-    else{
-      throw new NotFoundException('User project not found');
-    }
+    const project = await this.userService.resolveProjectIdFromUser(user.id)
 
     // If user has a specific project, only show audits from that project
 
-
+    mergedFilters.projectId = project;
     // Apply query parameter filters (only if not already set by role-based filtering)
     if (status) mergedFilters.status = status;
     if (branch_id) mergedFilters.branchId = branch_id;
     if (promoter_id) mergedFilters.promoterId = promoter_id;
     if (product_id) mergedFilters.productId = product_id;
     if (is_national !== undefined) mergedFilters.is_national = is_national === 'true';
-    if (project_id) mergedFilters.projectId = project_id;
 
     // Enhanced brand and category filters
     if (brand_id) mergedFilters.brandId = brand_id;

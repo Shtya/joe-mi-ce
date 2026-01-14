@@ -10,11 +10,13 @@ import { AuditExportService } from './audit-export.service';
 import { Brand } from 'entities/products/brand.entity';
 import { Competitor } from 'entities/competitor.entity';
 import { AuditCompetitor } from 'entities/audit-competitor.entity';
+import { UsersService } from 'src/users/users.service';
+import { Project } from 'entities/project.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Audit, Branch, User , Product,Brand,Competitor,AuditCompetitor])],
+  imports: [TypeOrmModule.forFeature([Audit, Branch, User , Product,Brand,Competitor,AuditCompetitor,User,Project])],
   controllers: [AuditsController],
-  providers: [AuditsService,AuditExportService],
+  providers: [AuditsService,AuditExportService,UsersService],
   exports: [AuditsService],
 })
 export class AuditsModule {}
