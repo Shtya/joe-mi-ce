@@ -1,7 +1,7 @@
 // src/journey/journey.service.ts
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not } from 'typeorm';
 import * as dayjs from 'dayjs';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto } from 'dto/journey.dto';
 
@@ -402,6 +402,11 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           user: { id: plan.user.id },
           shift: { id: plan.shift.id },
           date: tomorrow,
+          status: Not(In([
+            JourneyStatus.UNPLANNED_ABSENT,
+            JourneyStatus.UNPLANNED_PRESENT,
+            JourneyStatus.UNPLANNED_CLOSED,
+          ])),
         },
       });
 
@@ -490,6 +495,11 @@ if (typeof value === 'string') {
         user: { id: plan.user.id },
         shift: { id: plan.shift.id },
         date: today,
+        status: Not(In([
+          JourneyStatus.UNPLANNED_ABSENT,
+          JourneyStatus.UNPLANNED_PRESENT,
+          JourneyStatus.UNPLANNED_CLOSED,
+        ])),
       },
     });
 
