@@ -563,12 +563,13 @@ async getTodayJourneysForMe(
   // ===== Cron test endpoint =====
   @Patch('cron/create-tomorrow')
   @Permissions(EPermission.JOURNEY_UPDATE)
-  async testCronCreateTomorrow() {
-    return this.journeyService.createJourneysForTomorrow();
+  async testCronCreateTomorrow(@Body('userId') userId?: string) {
+    return this.journeyService.createJourneysForTomorrow(userId);
   }
-    @Patch('cron/create-today')
+
+  @Patch('cron/create-today')
   @Permissions(EPermission.JOURNEY_UPDATE)
-  async testCronCreateToday() {
-    return this.journeyService.createJourneysForToday();
+  async testCronCreateToday(@Body('userId') userId?: string) {
+    return this.journeyService.createJourneysForToday(userId);
   }
 }

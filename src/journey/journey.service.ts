@@ -376,19 +376,23 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
   }
 
   // ===== الكرون جوب =====
-  async createJourneysForTomorrow() {
+  async createJourneysForTomorrow(userId?: string) {
     const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
     const dayName = dayjs(tomorrow).format('dddd').toLowerCase();
 
-    // get all plans matching tomorrow's day
-    const plans = await this.journeyPlanRepo
+    const qb = this.journeyPlanRepo
       .createQueryBuilder("plan")
       .leftJoinAndSelect("plan.user", "user")
       .leftJoinAndSelect("plan.branch", "branch")
       .leftJoinAndSelect("branch.project", "project")
       .leftJoinAndSelect("plan.shift", "shift")
-      .where(":dayName = ANY(plan.days)", { dayName })
-      .getMany();
+      .where(":dayName = ANY(plan.days)", { dayName });
+
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+
+    const plans = await qb.getMany();
 
     let createdCount = 0;
     console.log(plans)
@@ -458,19 +462,24 @@ if (typeof value === 'string') {
 
 
 // ===== الكرون جوب =====
-async createJourneysForToday() {
+  async createJourneysForToday(userId?: string) {
   const today = dayjs().format('YYYY-MM-DD');
   const dayName = dayjs(today).format('dddd').toLowerCase();
 
   // get all plans matching today's day
-  const plans = await this.journeyPlanRepo
+  const qb = this.journeyPlanRepo
     .createQueryBuilder("plan")
     .leftJoinAndSelect("plan.user", "user")
     .leftJoinAndSelect("plan.branch", "branch")
     .leftJoinAndSelect("branch.project", "project")
     .leftJoinAndSelect("plan.shift", "shift")
-    .where(":dayName = ANY(plan.days)", { dayName })
-    .getMany();
+    .where(":dayName = ANY(plan.days)", { dayName });
+
+  if (userId) {
+    qb.andWhere("user.id = :userId", { userId });
+  }
+
+  const plans = await qb.getMany();
 
   let createdCount = 0;
   console.log(plans);
