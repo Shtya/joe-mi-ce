@@ -7,10 +7,13 @@ import { City } from 'entities/locations/city.entity';
 import { Region } from 'entities/locations/region.entity';
 import { Chain } from 'entities/locations/chain.entity';
 import { User } from 'entities/user.entity';
+import { UsersService } from 'src/users/users.service';
+import { Project } from 'entities/project.entity';
+import { Branch } from 'entities/branch.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Country, City, Region, Chain, User])],
-  providers: [LocationsService],
+  imports: [TypeOrmModule.forFeature([Country,Branch, City, Region, Chain, User,Project])],
+  providers: [LocationsService,UsersService],
   controllers: [LocationsController],
   exports: [LocationsService],
 })

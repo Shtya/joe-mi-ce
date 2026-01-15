@@ -9,6 +9,7 @@ import { Competitor } from './competitor.entity';
 import { Feedback } from './feedback.entity';
 import { Brand } from './products/brand.entity';
 import { Category } from './products/category.entity';
+import { Chain } from './locations/chain.entity';
 
 @Entity()
 export class Project extends CoreEntity {
@@ -42,4 +43,7 @@ export class Project extends CoreEntity {
 
   @OneToMany(() => Feedback, fb => fb.project)
   feedbacks: Feedback[];
+
+  @OneToMany(() => Chain, chain => chain.project)
+  chains: Chain[];
 }

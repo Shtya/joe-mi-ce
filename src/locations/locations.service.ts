@@ -7,7 +7,9 @@ import { City } from 'entities/locations/city.entity';
 import { Region } from 'entities/locations/region.entity';
 import { Chain } from 'entities/locations/chain.entity';
 
-import { BulkCreateCountriesDto, BulkCreateCitiesDto, BulkCreateRegionsDto, BulkCreateChainsDto, UpdateCountryDto, UpdateRegionDto, UpdateCityDto, UpdateChainDto } from 'dto/locations.dto';
+import { BulkCreateCountriesDto, BulkCreateCitiesDto, BulkCreateRegionsDto, BulkCreateChainsDto, UpdateCountryDto, UpdateRegionDto, UpdateCityDto, UpdateChainDto, CreateChainDto } from 'dto/locations.dto';
+import { UsersService } from 'src/users/users.service';
+import { Project } from 'entities/project.entity';
 
 @Injectable()
 export class LocationsService {
@@ -23,6 +25,11 @@ export class LocationsService {
 
     @InjectRepository(Chain)
     public readonly chainRepo: Repository<Chain>,
+
+    @InjectRepository(Project)
+    public readonly projectRepo: Repository<Project>,
+
+    public readonly userService:UsersService
   ) {}
 
   // --------- COUNTRY (bulk create) ---------
@@ -96,6 +103,8 @@ export class LocationsService {
 
   // --------- CHAIN (bulk create) ---------
   async bulkCreateChains(dto: BulkCreateChainsDto): Promise<Chain[]> {
+
+
     const existing = await this.chainRepo.find({
       where: { name: In(dto.chains.map(c => c.name)) },
     });
@@ -106,7 +115,22 @@ export class LocationsService {
 
     return this.chainRepo.save(dto.chains);
   }
+  async createChainsWithProject(dto: CreateChainDto, userId:string): Promise<Chain> {
+    const projectId = await this.userService.resolveProjectIdFromUser(userId)
+    const project = await this.projectRepo.findOne({ where: { id: projectId } })
+    if (!project) throw new NotFoundException('Project not found');
+    
 
+    const existing = await this.chainRepo.find({
+      where: { name: dto.name  , project},
+    });
+
+    if (existing.length > 0) {
+      throw new ConflictException(`Chains already exist: ${existing.map(c => c.name).join(', ')}`);
+    }
+
+    return this.chainRepo.save({project,...dto});
+  }
   // ===================== Updates (Edit) =====================
 
   // COUNTRY
