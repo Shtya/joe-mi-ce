@@ -67,7 +67,6 @@ export class BulkCreateChainsDto {
   @Type(() => CreateChainDto)
   chains: CreateChainDto[];
 }
-
 export class UpdateCountryDto extends PartialType(CreateCountryDto) {}
 export class UpdateRegionDto extends PartialType(CreateRegionDto) {}
 export class UpdateCityDto extends PartialType(CreateCityDto) {}

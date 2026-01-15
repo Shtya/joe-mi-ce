@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Patch } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Patch, Request } from '@nestjs/common';
 import { LocationsService } from './locations.service';
 import { CreateCountryDto, CreateCityDto, CreateRegionDto, CreateChainDto, BulkCreateCountriesDto, BulkCreateCitiesDto, BulkCreateRegionsDto, BulkCreateChainsDto, UpdateChainDto, UpdateCityDto, UpdateRegionDto, UpdateCountryDto } from 'dto/locations.dto';
 import { PaginationQueryDto } from 'dto/pagination.dto';
@@ -34,9 +34,13 @@ export class LocationsController {
   @Post('chains')
   @Permissions(EPermission.LOCATION_CREATE)
   bulkCreateChains(@Body() dto: BulkCreateChainsDto) {
-    return this.locationsService.bulkCreateChains(dto);
+    return this.locationsService.bulkCreateChains(dto); 
   }
-
+  @Post('chains/project')
+  @Permissions(EPermission.LOCATION_CREATE)
+  bulkCreateChainsWithProject(@Body() dto: CreateChainDto, @Request() req: any) {
+    return this.locationsService.createChainsWithProject(dto,req.user.id); 
+  }
   // Get Regions by Country
   @Get('countries/:countryId/regions')
   @Permissions(EPermission.LOCATION_READ)
@@ -99,8 +103,11 @@ export class LocationsController {
   // Chains
   @Get('chains')
   @Permissions(EPermission.LOCATION_READ)
-  findAllChains(@Query() query: PaginationQueryDto) {
-    return CRUD.findAll(this.locationsService.chainRepo, 'chain', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['name'], query.filters);
+  async findAllChains(@Query() query: PaginationQueryDto,@Request() req: any) {
+    const userId = req.user.id;
+    const projectId = await this.locationsService.userService.resolveProjectIdFromUser(userId);
+
+    return CRUD.findAll(this.locationsService.chainRepo, 'chain', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['name'], { ...query.filters, project: { id: projectId } });
   }
 
   @Delete('chains/:id')
