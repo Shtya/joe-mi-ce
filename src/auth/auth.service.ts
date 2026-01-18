@@ -11,6 +11,10 @@ import { Branch } from 'entities/branch.entity';
 import { RegisterDto, LoginDto, UpdateUserDto } from 'dto/user.dto';
 import { UsersService } from 'src/users/users.service';
 import { ImportPromoterDto } from 'dto/auth.dto';
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import axios from 'axios';
 const PROMOTER_HEADER_MAP: Record<string, string> = {
   'promoter username': 'username',
   'username': 'username',
@@ -18,12 +22,22 @@ const PROMOTER_HEADER_MAP: Record<string, string> = {
   'name': 'name',
   'mobile': 'mobile',
   'phone': 'mobile',
+  'promoter picture': 'avatar_url',
+  'picture': 'avatar_url',
+  'avatar': 'avatar_url',
+  'image': 'avatar_url',
+  'user image': 'avatar_url',
+  'promoter image': 'avatar_url',
+  'password': 'password',
+  'pass': 'password',
 };
 const normalizeHeader = (h: string) =>
   h.trim().toLowerCase().replace(/\s+/g, ' ');
 
 @Injectable()
 export class AuthService {
+  private readonly uploadPath = './uploads/avatars';
+
   constructor(
     @InjectRepository(User) public userRepository: Repository<User>,
     @InjectRepository(Role) private roleRepository: Repository<Role>,
@@ -33,7 +47,7 @@ export class AuthService {
     private readonly userService : UsersService
   ) {}
 
-  async register(requester: User | null, dto: RegisterDto) {
+  async register(requester: User | null, dto: RegisterDto, file?: Express.Multer.File) {
     const existingUser = await this.userRepository.findOne({ where: { username: dto.username },withDeleted:true});
     if (existingUser) throw new BadRequestException('Username already exists');
     if(dto.mobile){
@@ -51,7 +65,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
         if (dto.role === ERole.PROJECT_ADMIN) {
           throw new ForbiddenException('You cannot create other Project Admins');
         }
-        dto.project_id = requester.project?.id ||requester.project_id;
+        dto.project_id = await this.userService.resolveProjectIdFromUser(requester.id);
       }
     } else {
       if (dto.role !== ERole.SUPER_ADMIN) {
@@ -121,6 +135,18 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       dto.project_id = project.id;
     }
 
+    let avatar_url = dto.image_url;
+    if (file) {
+      this.ensureUploadDirectory();
+      const fileExtension = path.extname(file.originalname);
+      const fileName = `${uuidv4()}${fileExtension}`;
+      const filePath = path.join(this.uploadPath, fileName);
+      
+      // Move file from temp to final destination
+      await fs.promises.rename(file.path, filePath);
+      avatar_url = `/uploads/avatars/${fileName}`;
+    }
+
     const user = this.userRepository.create({
       username: dto.username,
       password: await argon2.hash(dto.password),
@@ -134,6 +160,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       is_active: true,
       created_by: requester,
       mobile: dto.mobile,
+      avatar_url,
     });
 
     const savedUser = await this.userRepository.save(user);
@@ -421,11 +448,17 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
       errors: [],
     };
 
+    // Pre-fetch common data once
+    const requesterProjectId = await this.userService.resolveProjectIdFromUser(requester.id);
+    const promoterRole = await this.roleRepository.findOne({
+      where: { name: ERole.PROMOTER },
+    });
+
     for (const [index, rawRow] of rows.entries()) {
       try {
         const row = this.mapHeaders(rawRow);
         console.log(row)
-        await this.importSinglePromoter(row, requester);
+        await this.importSinglePromoter(row, requester, requesterProjectId, promoterRole);
         result.success++;
       } catch (err) {
         result.failed++;
@@ -439,8 +472,48 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
     return result;
   }
 
+  async importPromotersBatch(
+    rows: any[],
+    requester: User,
+    rowIndices: number[]
+  ): Promise<{
+    success: number;
+    failed: number;
+    errors: any[];
+  }> {
+    const result = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    // Pre-fetch common data once per batch
+    const requesterProjectId = await this.userService.resolveProjectIdFromUser(requester.id);
+    const promoterRole = await this.roleRepository.findOne({
+      where: { name: ERole.PROMOTER },
+    });
+
+    // Process rows in parallel within the batch for maximum speed
+    await Promise.all(
+      rows.map(async (row, i) => {
+        try {
+          await this.importSinglePromoter(row, requester, requesterProjectId, promoterRole);
+          result.success++;
+        } catch (err) {
+          result.failed++;
+          result.errors.push({
+            row: rowIndices[i],
+            error: err.message,
+          });
+        }
+      })
+    );
+
+    return result;
+  }
+
   /** Map Excel/CSV headers */
-  private mapHeaders(raw: any) {
+  public mapHeaders(raw: any) {
     const mapped: any = {};
     for (const key of Object.keys(raw)) {
       const normalized = normalizeHeader(key);
@@ -452,16 +525,18 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
     return mapped;
   }
 
-  private async importSinglePromoter(row: any, requester: User) {
+  private async importSinglePromoter(
+    row: any,
+    requester: User,
+    projectId?: string,
+    role?: Role
+  ) {
     if (!row.username || !row.name) {
       throw new BadRequestException('Username and name are required');
     }
 
-    const isSuperAdmin =
-      requester.role.name.toLowerCase() === 'super_admin';
-
     const requesterProjectId =
-      await this.userService.resolveProjectIdFromUser(requester.id);
+      projectId || (await this.userService.resolveProjectIdFromUser(requester.id));
 
     if (
       await this.userRepository.findOne({
@@ -479,15 +554,15 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
           withDeleted: true,
         })
       ) {
-        row.mobile = undefined
+        row.mobile = undefined;
       }
     }
 
-
-
-    const promoterRole = await this.roleRepository.findOne({
-      where: { name: ERole.PROMOTER },
-    });
+    const promoterRole =
+      role ||
+      (await this.roleRepository.findOne({
+        where: { name: ERole.PROMOTER },
+      }));
 
     const password = row.password?.trim() || row.username;
     const user = this.userRepository.create({
@@ -499,11 +574,81 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
       project_id: requesterProjectId,
       manager_id: requester.id,
       is_active: true,
+      avatar_url: row.avatar_url,
       created_by: requester,
     });
 
-    const savedUser = await this.userRepository.save(user);
+    if (row.avatar_url) {
+      const savedAvatar = await this.downloadAndSaveImage(row.avatar_url);
+      if (savedAvatar) {
+        user.avatar_url = savedAvatar;
+      }
+    }
 
+    return await this.userRepository.save(user);
+  }
 
-}
+  private ensureUploadDirectory() {
+    if (!fs.existsSync(this.uploadPath)) {
+      fs.mkdirSync(this.uploadPath, { recursive: true });
+    }
+  }
+
+  private async downloadAndSaveImage(imageUrl: string): Promise<string> {
+    if (!imageUrl || imageUrl.trim() === '' || imageUrl.toLowerCase() === 'null' || imageUrl.toLowerCase() === 'undefined') {
+      return null;
+    }
+
+    try {
+      this.ensureUploadDirectory();
+
+      // Clean the URL - remove port 8080 if present
+      let cleanUrl = imageUrl;
+      if (imageUrl.includes(':8080')) {
+        cleanUrl = imageUrl.replace(':8080', '');
+      }
+
+      // Encode spaces in URL
+      cleanUrl = cleanUrl.replace(/ /g, '%20');
+
+      const response = await axios({
+        method: 'GET',
+        url: cleanUrl,
+        responseType: 'arraybuffer',
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      if (!response.data || response.data.length === 0) {
+        return null;
+      }
+
+      let fileExtension = '.png';
+      const contentType = response.headers['content-type'];
+      if (contentType) {
+        if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+          fileExtension = '.jpg';
+        } else if (contentType.includes('png')) {
+          fileExtension = '.png';
+        } else if (contentType.includes('gif')) {
+          fileExtension = '.gif';
+        } else if (contentType.includes('webp')) {
+          fileExtension = '.webp';
+        }
+      }
+
+      const fileName = `${uuidv4()}${fileExtension}`;
+      const filePath = path.join(this.uploadPath, fileName);
+
+      await fs.promises.writeFile(filePath, response.data);
+
+      return `/uploads/avatars/${fileName}`;
+
+    } catch (error) {
+      console.error(`Error downloading avatar from ${imageUrl}:`, error.message);
+      return null;
+    }
+  }
 }

@@ -39,10 +39,13 @@ export class RegisterDto {
   @IsOptional()
   manager_id?: string;
 
-  // Additional fields from your entity
   @IsUUID()
   @IsOptional()
   branch_id?: string;
+
+  @IsString()
+  @IsOptional()
+  avatar?: string;
 }
 
 export class UpdateUserDto {

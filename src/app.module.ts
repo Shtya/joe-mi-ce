@@ -100,7 +100,7 @@ import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module'
     SalesTargetModule,
     StaticPagesModule,
     ContactUsModule,
-    DocumentbuilderModule
+    DocumentbuilderModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],

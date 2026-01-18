@@ -17,6 +17,11 @@ export class DocumentbuilderController {
     return this.documentbuilderService.findAll();
   }
 
+  @Get('task-fields')
+  findAllTaskFields() {
+    return this.documentbuilderService.findAllTaskFields();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.documentbuilderService.findOne(+id);
