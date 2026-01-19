@@ -106,7 +106,7 @@ export class LocationsController {
   async findAllChains(@Query() query: PaginationQueryDto,@Request() req: any) {
     const userId = req.user.id;
     const projectId = await this.locationsService.userService.resolveProjectIdFromUser(userId);
-
+    console.log(projectId)
     return CRUD.findAll(this.locationsService.chainRepo, 'chain', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['name'], { ...query.filters, project: { id: projectId } });
   }
 
