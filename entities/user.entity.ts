@@ -29,6 +29,9 @@ export class User extends CoreEntity {
   @Column({ length: 255, nullable: true })
   avatar_url: string;
 
+  @Column({ length: 255, nullable: true })
+  national_id: string;
+
   @Column({ length: 100, nullable: true })
   device_id: string;
 

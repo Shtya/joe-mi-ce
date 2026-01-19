@@ -22,6 +22,7 @@ const PROMOTER_HEADER_MAP: Record<string, string> = {
   'name': 'name',
   'mobile': 'mobile',
   'phone': 'mobile',
+  'national id': 'national_id',
   'promoter picture': 'avatar_url',
   'picture': 'avatar_url',
   'avatar': 'avatar_url',
@@ -153,6 +154,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       name: dto.name,
       project_id:project.id,
       manager_id: dto.manager_id || null,
+      national_id: dto.national_id || null,
       role,
       project: dto.role === ERole.PROJECT_ADMIN ? project : undefined,
 
@@ -190,7 +192,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
     const user = await this.userRepository.findOne({
       where: { username: dto.username },
       relations: ['role', 'project'],
-      select: ['id', 'username', 'name', 'password', 'is_active', 'device_id', 'role'],
+      select: ['id', 'username', 'name', 'password', 'is_active', 'device_id', 'role', 'national_id'],
     });
 
     if (!user || !(await argon2.verify(user.password, dto.password))) {
@@ -427,6 +429,7 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
         mobile: user.mobile,
         project_id: user.project?.id ?? user.project_id,
         is_active: user.is_active,
+        national_id: user.national_id,
       },
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,

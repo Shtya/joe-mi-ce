@@ -7,6 +7,7 @@ export class UserResponseDto {
   avatar_url: string;
   device_id: string;
   is_active: boolean;
+  national_id: string;
   role: string;
   branch?: {
     id: string;

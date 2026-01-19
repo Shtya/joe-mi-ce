@@ -131,6 +131,7 @@ async resolveUserWithProject(userId: string) {
       device_id: user.device_id,
       is_active: user.is_active,
       role: user.role?.name,
+      national_id: user.national_id,
       branch: user.branch
         ? {
             id: user.branch.id,
