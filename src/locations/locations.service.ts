@@ -102,18 +102,21 @@ export class LocationsService {
   }
 
   // --------- CHAIN (bulk create) ---------
-  async bulkCreateChains(dto: BulkCreateChainsDto): Promise<Chain[]> {
-
+  async bulkCreateChains(dto: BulkCreateChainsDto, userId:string): Promise<Chain[]> {
+    const projectId = await this.userService.resolveProjectIdFromUser(userId)
+    const project = await this.projectRepo.findOne({ where: { id: projectId } })
+    if (!project) throw new NotFoundException('Project not found');
+    
 
     const existing = await this.chainRepo.find({
-      where: { name: In(dto.chains.map(c => c.name)) },
+      where: { name: In(dto.chains.map(c => c.name)) , project},
     });
 
     if (existing.length > 0) {
       throw new ConflictException(`Chains already exist: ${existing.map(c => c.name).join(', ')}`);
     }
 
-    return this.chainRepo.save(dto.chains);
+    return this.chainRepo.save(dto.chains.map(chainDto => ({ ...chainDto, project })));
   }
   async createChainsWithProject(dto: CreateChainDto, userId:string): Promise<Chain> {
     const projectId = await this.userService.resolveProjectIdFromUser(userId)
