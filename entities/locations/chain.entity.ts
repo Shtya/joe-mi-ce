@@ -5,7 +5,7 @@ import { Entity, Column, OneToMany, PrimaryGeneratedColumn, CreateDateColumn, Ma
 
 @Entity('chains')
 @Unique(['name', 'project'])
-export class Chain {
+export class Chain extends CoreEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -17,8 +17,7 @@ export class Chain {
 
   @OneToMany(() => Branch, branch => branch.chain)
   branches: Branch[];
-  @CreateDateColumn({ type: 'timestamptz' })
-  created_at: Date;
+
 
   @ManyToOne(() => Project, project => project.chains,{ nullable: true, eager : true })
   project: Project;

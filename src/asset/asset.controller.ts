@@ -52,12 +52,9 @@ async upload(
       limit,
       sortBy,
       sortOrder,
-      [],
-      ['user'], // relations
-      [''],
-
-      
-      // { user: { id: req.user.id  }  , category, type },
+      ['user'],
+      ['filename'],
+      { user: { id: req.user.id }},
     );
   }
 

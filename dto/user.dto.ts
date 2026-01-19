@@ -30,6 +30,10 @@ export class RegisterDto {
   @IsOptional()
   image_url?: string;
 
+  @IsString()
+  @IsOptional()
+  national_id?: string;
+
   // For existing projects (when not creating new project)
   @IsUUID()
   @IsOptional()
