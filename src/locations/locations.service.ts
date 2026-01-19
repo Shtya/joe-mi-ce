@@ -108,15 +108,32 @@ export class LocationsService {
     if (!project) throw new NotFoundException('Project not found');
     
 
+    // 1. Check for duplicates in the input array
+    const names = dto.chains.map(c => c.name);
+    const uniqueNames = new Set(names);
+    if (uniqueNames.size !== names.length) {
+      throw new ConflictException('Duplicate chain names in input');
+    }
+
+    // 2. Check for existing chains in the DB (same project)
     const existing = await this.chainRepo.find({
-      where: { name: In(dto.chains.map(c => c.name)) , project},
+      where: {
+        project,
+        name: In(names),
+      },
     });
 
     if (existing.length > 0) {
-      throw new ConflictException(`Chains already exist: ${existing.map(c => c.name).join(', ')}`);
+      const existingNames = existing.map(c => c.name).join(', ');
+      throw new ConflictException(`Chains already exist in this project: ${existingNames}`);
     }
 
-    return this.chainRepo.save(dto.chains.map(chainDto => ({ ...chainDto, project })));
+    // 3. Save
+    const entities = dto.chains.map(chainDto => this.chainRepo.create({
+      ...chainDto,
+      project,
+    }));
+    return this.chainRepo.save(entities);
   }
   async createChainsWithProject(dto: CreateChainDto, userId:string): Promise<Chain> {
     const projectId = await this.userService.resolveProjectIdFromUser(userId)
