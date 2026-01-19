@@ -4,7 +4,6 @@ import { Project } from 'entities/project.entity';
 import { Entity, Column, OneToMany, PrimaryGeneratedColumn, CreateDateColumn, ManyToOne, Unique } from 'typeorm';
 
 @Entity('chains')
-@Unique(['name', 'project'])
 export class Chain extends CoreEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
