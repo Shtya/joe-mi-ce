@@ -118,7 +118,7 @@ export class LocationsService {
     // 2. Check for existing chains in the DB (same project)
     const existing = await this.chainRepo.find({
       where: {
-        project,
+        project: { id: projectId },
         name: In(names),
       },
     });
