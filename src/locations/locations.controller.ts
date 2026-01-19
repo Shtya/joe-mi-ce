@@ -33,8 +33,8 @@ export class LocationsController {
 
   @Post('chains')
   @Permissions(EPermission.LOCATION_CREATE)
-  bulkCreateChains(@Body() dto: BulkCreateChainsDto) {
-    return this.locationsService.bulkCreateChains(dto); 
+  bulkCreateChains(@Body() dto: BulkCreateChainsDto, @Request() req: any) {
+    return this.locationsService.bulkCreateChains(dto,req.user.id); 
   }
   @Post('chains/project')
   @Permissions(EPermission.LOCATION_CREATE)
