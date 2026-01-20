@@ -8,6 +8,7 @@ import { CreateSurveyDto, UpdateSurveyDto } from 'dto/survey.dto';
 import { Survey, SurveyQuestion, SurveyQuestionType } from 'entities/survey.entity';
 import { CreateSurveyFeedbackDto } from 'dto/survey-feedback.dto';
 import { SurveyFeedback, SurveyFeedbackAnswer } from 'entities/survey-feedback.entity';
+import { UsersService } from 'src/users/users.service';
 
 @Injectable()
 export class SurveyService {
@@ -16,9 +17,12 @@ export class SurveyService {
     @InjectRepository(SurveyFeedback) public feedbackRepo: Repository<SurveyFeedback>,
     @InjectRepository(SurveyFeedbackAnswer) public answerRepo: Repository<SurveyFeedbackAnswer>,
     @InjectRepository(SurveyQuestion) public questionRepo: Repository<SurveyQuestion>,
+    public userService: UsersService
   ) {}
 
   async create(dto: CreateSurveyDto, user: any) {
+    const projectId = this.userService.resolveProjectIdFromUser(user.id)
+
     dto.questions?.forEach(q => {
       if (q.type === SurveyQuestionType.DROPDOWN && (!q.options || q.options.length === 0)) {
         throw new BadRequestException(`Question "${q.text}" requires non-empty options for DROPDOWN type`);
@@ -27,11 +31,12 @@ export class SurveyService {
         q.options = null as any;
       }
     });
+    
 
     const survey = this.surveyRepo.create({
       ...dto,
       userId: user.id,
-			projectId : user
+			projectId : projectId
     } as any);
 
     return await this.surveyRepo.save(survey);

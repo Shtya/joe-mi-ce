@@ -43,6 +43,8 @@ export class SurveyQuestion extends CoreEntity {
   @Column('jsonb', { nullable: true })
   options: string[] | null;
 
+  @Column({nullable : true,default:true})
+  optional: boolean;
   @ManyToOne(() => Survey, survey => survey.questions)
   survey: Survey;
 
