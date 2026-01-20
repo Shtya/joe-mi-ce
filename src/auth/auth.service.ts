@@ -136,7 +136,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       dto.project_id = project.id;
     }
 
-    let avatar_url = dto.image_url;
+    let avatar_url = dto.image_url || dto.avatar;
     if (file) {
       this.ensureUploadDirectory();
       const fileExtension = path.extname(file.originalname);
@@ -162,7 +162,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       is_active: true,
       created_by: requester,
       mobile: dto.mobile,
-      avatar_url,
+      avatar_url:avatar_url,
     });
 
     const savedUser = await this.userRepository.save(user);

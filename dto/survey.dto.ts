@@ -1,4 +1,4 @@
-import { IsString, IsEnum, IsArray, ValidateNested, IsOptional, ValidateIf, ArrayNotEmpty, IsIn } from 'class-validator';
+import { IsString, IsEnum, IsArray, ValidateNested, IsOptional, ValidateIf, ArrayNotEmpty, IsIn, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PartialType } from '@nestjs/mapped-types';
 import { SurveyQuestionType } from 'entities/survey.entity';
@@ -18,6 +18,10 @@ export class CreateSurveyQuestionDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   options?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  optional?: boolean;
 }
 
 export class UpdateSurveyQuestionDto {
@@ -35,6 +39,10 @@ export class UpdateSurveyQuestionDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   options?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  optional?: boolean;
 }
 
 /* ---------- Survey DTOs ---------- */
