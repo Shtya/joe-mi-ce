@@ -3,7 +3,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not } from 'typeorm';
 import * as dayjs from 'dayjs';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto } from 'dto/journey.dto';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto } from 'dto/journey.dto';
 
 import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
 import { User } from 'entities/user.entity';
@@ -136,6 +136,66 @@ async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
   });
 
   return this.journeyRepo.save(newJourney);
+}
+
+async updateJourney(id: string, dto: UpdateJourneyDto) {
+  const journey = await this.journeyRepo.findOne({
+    where: { id },
+    relations: ['user', 'branch', 'shift', 'branch.project'],
+  });
+
+  if (!journey) throw new NotFoundException('Journey not found');
+
+  // Check valid status for update (optional, but good practice). 
+  // Maybe unnecessary if we just want to fix mistakes.
+  
+  if (dto.userId) {
+    const user = await this.userRepo.findOne({ where: { id: dto.userId } });
+    if (!user) throw new NotFoundException('User not found');
+    journey.user = user;
+  }
+
+  if (dto.branchId) {
+    const branch = await this.branchRepo.findOne({
+      where: { id: dto.branchId },
+      relations: ['project'],
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+    if (!branch.project) throw new BadRequestException('Branch has no project');
+    journey.branch = branch;
+    journey.projectId = branch.project.id; // Update project ID as well
+  }
+
+  if (dto.shiftId) {
+    const shift = await this.shiftRepo.findOne({ where: { id: dto.shiftId } });
+    if (!shift) throw new NotFoundException('Shift not found');
+    journey.shift = shift;
+  }
+
+  if (dto.date) {
+    journey.date = dto.date;
+  }
+
+  // Check for conflicts after updates
+  const conflict = await this.journeyRepo.findOne({
+    where: {
+      user: { id: journey.user.id },
+      date: journey.date,
+      shift: { id: journey.shift.id },
+      id: Not(journey.id), // Exclude self
+      status: Not(In([
+        JourneyStatus.UNPLANNED_ABSENT,
+        JourneyStatus.UNPLANNED_PRESENT,
+        JourneyStatus.UNPLANNED_CLOSED,
+      ])),
+    },
+  });
+
+  if (conflict) {
+    throw new ConflictException('A journey already exists for this user, date, and shift');
+  }
+
+  return this.journeyRepo.save(journey);
 }
 
 async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {

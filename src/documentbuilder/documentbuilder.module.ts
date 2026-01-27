@@ -2,10 +2,10 @@ import { Module } from '@nestjs/common';
 import { DocumentbuilderService } from './documentbuilder.service';
 import { DocumentbuilderController } from './documentbuilder.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { TaskField } from 'entities/documentbuilder.entity';
+import { TaskField, DocumentBuilder, DocumentElement } from 'entities/documentbuilder.entity';
 
 @Module({
-    imports: [TypeOrmModule.forFeature([TaskField])],
+    imports: [TypeOrmModule.forFeature([TaskField, DocumentBuilder, DocumentElement])],
   
   controllers: [DocumentbuilderController],
   providers: [DocumentbuilderService],
