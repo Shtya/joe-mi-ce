@@ -3,7 +3,7 @@
 import { Controller, Get, Post, Body, Param, Delete,Headers, UseGuards, Req, Query, Patch, UploadedFile, UseInterceptors, NotFoundException } from '@nestjs/common';
 import { JourneyService } from './journey.service';
 import { AuthGuard } from '../auth/auth.guard';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto } from 'dto/journey.dto';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto } from 'dto/journey.dto';
 import { EPermission } from 'enums/Permissions.enum';
 import { Permissions } from 'decorators/permissions.decorators';
 import { CRUD } from 'common/crud.service';
@@ -537,6 +537,12 @@ async getAllPlansWithPagination(
   @Permissions(EPermission.JOURNEY_READ)
   async getJourney(@Param('id') id: string) {
     return CRUD.findOne(this.journeyService.journeyRepo, 'journey', id, ['user', 'branch', 'branch.city', 'branch.city.region', 'shift']);
+  }
+
+  @Patch(':id')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async updateJourney(@Param('id') id: string, @Body() dto: UpdateJourneyDto) {
+    return this.journeyService.updateJourney(id, dto);
   }
 
   // ✅ Mobile: get today's journeys for logged-in user

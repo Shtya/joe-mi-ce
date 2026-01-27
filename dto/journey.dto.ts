@@ -32,6 +32,24 @@ export class CreateUnplannedJourneyDto {
 
 }
 
+export class UpdateJourneyDto {
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  shiftId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+}
+
 export class CheckInOutDto {
   @IsString()
   journeyId: string;

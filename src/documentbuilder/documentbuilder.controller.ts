@@ -17,6 +17,11 @@ export class DocumentbuilderController {
     return this.documentbuilderService.findAll();
   }
 
+  @Get('main')
+  findMain() {
+    return this.documentbuilderService.findMain();
+  }
+
   @Get('task-fields')
   findAllTaskFields() {
     return this.documentbuilderService.findAllTaskFields();
@@ -24,16 +29,16 @@ export class DocumentbuilderController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.documentbuilderService.findOne(+id);
+    return this.documentbuilderService.findOne(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateDocumentbuilderDto: UpdateDocumentbuilderDto) {
-    return this.documentbuilderService.update(+id, updateDocumentbuilderDto);
+    return this.documentbuilderService.update(id, updateDocumentbuilderDto); // validation: passing string
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.documentbuilderService.remove(+id);
+    return this.documentbuilderService.remove(id); // validation: passing string
   }
 }
