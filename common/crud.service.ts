@@ -223,13 +223,13 @@ if (search && searchFields?.length) {
         if (field.includes('.')) {
           // joined search: e.g. 'owner.username'
           const qualified = qualifyField(field);
-          qb2.orWhere(`${qualified} ILIKE :search`, { search: `%${search}%` }); // Changed to ILIKE
+          qb2.orWhere(`${qualified}::text ILIKE :search`, { search: `%${search}%` }); // Changed to ILIKE with cast
           continue;
         }
         const dbName = resolveOwnColumnName(field);
         if (!dbName) continue;
         const qualified = `${entityName}.${dbName}`;
-        qb2.orWhere(`${qualified} ILIKE :search`, { search: `%${search}%` }); // Changed to ILIKE
+        qb2.orWhere(`${qualified}::text ILIKE :search`, { search: `%${search}%` }); // Changed to ILIKE with cast
       }
     }),
   );
@@ -691,6 +691,10 @@ if (value instanceof FindOperator) {
       query.andWhere(
         new Brackets(qb => {
           searchFields.forEach(field => {
+            if (field.includes('.')) {
+               qb.orWhere(`${field}::text ILIKE :s`, { s: `%${search}%` });
+               return;
+            }
             const col = repository.metadata.columns.find(c => c.propertyName === field);
             const typeStr = String(col?.type || '').toLowerCase();
 
@@ -705,11 +709,11 @@ if (value instanceof FindOperator) {
             const isNumericType = ['int', 'int2', 'int4', 'int8', 'integer', 'bigint', 'smallint', 'numeric', 'decimal', 'float', 'float4', 'float8', 'double precision', Number].includes(col?.type as any);
 
             if (isNumericType) {
-              const n = Number(search);
-              if (!Number.isNaN(n)) {
-                qb.orWhere(`${entityName}.${field} = :n`, { n });
-              }
-              return;
+                const n = Number(search);
+                if(!Number.isNaN(n)) {
+                     qb.orWhere(`${entityName}.${field} = :n`, { n });
+                }
+                return;
             }
 
             // JSON/JSONB → cast to text + ILIKE
