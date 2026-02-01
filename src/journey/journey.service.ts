@@ -398,6 +398,16 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       });
     }
 
+    if (isCheckOut) {
+      return {
+        code: 200,
+        message: 'Checked out successfully',
+        data: {
+          checkOutTime: savedCheckIn.checkOutTime ? dayjs(savedCheckIn.checkOutTime).format('HH:mm') : null,
+        },
+      };
+    }
+    
     return savedCheckIn;
   }
 
@@ -453,11 +463,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           user: { id: plan.user.id },
           shift: { id: plan.shift.id },
           date: tomorrow,
-          status: Not(In([
-            JourneyStatus.UNPLANNED_ABSENT,
-            JourneyStatus.UNPLANNED_PRESENT,
-            JourneyStatus.UNPLANNED_CLOSED,
-          ])),
+ 
         },
       });
 
