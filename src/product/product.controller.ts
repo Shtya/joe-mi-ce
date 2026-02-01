@@ -531,49 +531,49 @@ private mapRowFields(row: any): any {
   // Comprehensive field mapping
   const fieldMappings = {
     // Product name mappings
-    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2"],
+    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج"],
 
     // SKU mappings
-    sku: ['sku', 'product_code', 'reference', 'product_reference', 'item_code', 'extra_sku'],
+    sku: ['sku', 'product_code', 'reference', 'product_reference', 'item_code', 'extra_sku', "الكود", "رمز_الصنف"],
 
     // Model mappings
-    model: ['model', 'device_model', 'device_name', 'model_number', 'modele'],
+    model: ['model', 'device_model', 'device_name', 'model_number', 'modele', "رقم_الصنف", "الموديل"],
 
     // Description mappings
-    description: ['description', 'desc', 'device_description', 'product_description', 'details'],
+    description: ['description', 'desc', 'device_description', 'product_description', 'details', "الوصف", "تفاصيل"],
 
     // Price mappings
-    price: ['price', 'device_price', 'cost', 'unit_price', 'prix'],
+    price: ['price', 'device_price', 'cost', 'unit_price', 'prix', "السعر", "الثمن"],
 
     // Category mappings
-    category_name: ['category_name', 'category', 'product_category', 'categorie', 'type'],
+    category_name: ['category_name', 'category', 'product_category', 'categorie', 'type', "التصنيف", "النوع", "الفئة", "فئة_الصنف"],
 
     // Brand mappings
-    brand_name: ['brand_name', 'brand', 'manufacturer', 'fabricant', 'marque'],
+    brand_name: ['brand_name', 'brand', 'manufacturer', 'fabricant', 'marque', "الماركة", "العلامة_التجارية", "الشركة_المصنعة"],
 
     // Quantity mappings
-    quantity: ['quantity', 'stock', 'stock_quantity', 'qty', 'inventory', 'quantite'],
+    quantity: ['quantity', 'stock', 'stock_quantity', 'qty', 'inventory', 'quantite', "الكمية", "المخزون", "العدد"],
 
     // Image URL mappings
-    image_url: ['image_url', 'image', 'image_link', 'picture', 'device_image_url', 'photo_url'],
+    image_url: ['image_url', 'image', 'image_link', 'picture', 'device_image_url', 'photo_url', "الصورة", "رابط_الصورة"],
 
     // Priority mappings
-    product_priority: ['product_priority', 'priority', 'is_high_priority', 'high_priority', 'priorite'],
+    product_priority: ['product_priority', 'priority', 'is_high_priority', 'high_priority', 'priorite', "الأولوية", "هام"],
 
     // Branches mappings
-    branches: ['branches', 'branch_names', 'branch', 'locations', 'branches_list'],
+    branches: ['branches', 'branch_names', 'branch', 'locations', 'branches_list', "الفروع", "المواقع"],
 
     // All branches flag mappings
-    all_branches: ['all_branches', 'all_branch', 'allbranches', 'apply_to_all'],
+    all_branches: ['all_branches', 'all_branch', 'allbranches', 'apply_to_all', "كل_الفروع", "جميع_الفروع"],
 
     // Origin country mappings
-    origin_country: ['origin_country', 'country', 'made_in', 'country_of_origin'],
+    origin_country: ['origin_country', 'country', 'made_in', 'country_of_origin', "بلد_المنشأ", "الصنع"],
 
     // Discount mappings
-    discount: ['discount', 'discount_percent', 'discount_%', 'reduction', 'rabais'],
+    discount: ['discount', 'discount_percent', 'discount_%', 'reduction', 'rabais', "الخصم", "نسبة_الخصم"],
 
     // Extra SKU mappings
-    extra_sku: ['extra_sku', 'additional_sku', 'sku2', 'secondary_sku','sku'],
+    extra_sku: ['extra_sku', 'additional_sku', 'sku2', 'secondary_sku','sku', "كود_إضافي"],
 
     // Saco SKU mappings
     saco_sku: ['saco_sku', 'saco_sku_code', 'supplier_sku'],
