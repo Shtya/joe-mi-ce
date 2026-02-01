@@ -41,6 +41,12 @@ export class LocationsController {
   bulkCreateChainsWithProject(@Body() dto: CreateChainDto, @Request() req: any) {
     return this.locationsService.createChainsWithProject(dto,req.user.id); 
   }
+
+  @Post('chains/assign-project')
+  @Permissions(EPermission.LOCATION_UPDATE)
+  assignProjectToChains() {
+    return this.locationsService.assignProjectToChains();
+  }
   // Get Regions by Country
   @Get('countries/:countryId/regions')
   @Permissions(EPermission.LOCATION_READ)
