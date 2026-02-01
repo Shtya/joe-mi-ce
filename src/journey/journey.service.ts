@@ -565,9 +565,9 @@ if (typeof value === 'string') {
         shift: { id: plan.shift.id },
         date: today,
         status: Not(In([
-          JourneyStatus.ABSENT,
-          JourneyStatus.PRESENT,
-          JourneyStatus.CLOSED,
+          JourneyStatus.UNPLANNED_ABSENT,
+          JourneyStatus.UNPLANNED_PRESENT,
+          JourneyStatus.UNPLANNED_CLOSED,
         ])),
       },
     });
