@@ -231,296 +231,402 @@ async findAll(@Query() q: any, @Req() req: any) {
   remove(@Param('id') id: string) {
     return CRUD.softDelete(this.productService.productRepository, 'product', id);
   }
-@Post('import/update')
-@Permissions(EPermission.PRODUCT_UPDATE)
-@UseInterceptors(FileInterceptor('file', multerOptions))
-async importAndUpdateProducts(
-  @UploadedFile() file: Express.Multer.File,
-  @Req() req: any,
-) {
-  const user = await this.productService.userRepository.findOne({
-    where: { id: req.user.id },
-    relations: ['project'],
-  });
+  /**
+   * Helper to detect header row dynamically
+   */
+  private findHeaderRow(rows: any[][]): { headerRowIndex: number; headers: string[] } {
+    const MAX_SCAN_ROWS = 20;
+    const knownHeaders = [
+      'name', 'product_name', 'product', 'device', 'nom', 'description', 'desc', 
+      'price', 'cost', 'sku', 'stock', 'quantity', 'category', 'brand', 'model', 
+      'barcode', 'image', 'url', 'الوصف', 'اسم_المنتج', 'سعر', 'كمية', 'مخزون', 'تصنيف', 'ماركة', 'موديل', 'باركود', 'صورة', 'رابط'
+    ];
+    
+    // Helper to normalize a header string
+    const normalize = (h: any) => (h?.toString() || '').trim().toLowerCase()
+      .replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF_]/g, '');
 
-  if (!file) {
-    throw new BadRequestException('File is required');
-  }
+    let bestScore = 0;
+    let bestRowIndex = 0;
+    let bestHeaders: string[] = [];
 
-  const projectId = user.project?.id || user.project_id;
-  const filePath = file.path;
-  const BATCH_SIZE = 50; // Reduced from 100 to be more memory efficient
-
-  try {
-    const result = {
-      created: 0,
-      updated: 0,
-      failed: 0,
-      errors: [] as string[],
-      processed: 0,
-      totalRows: 0
-    };
-
-    // Determine file type and process accordingly
-    if (file.mimetype === 'text/csv') {
-      await this.processCSVInBatches(filePath, projectId, BATCH_SIZE, result);
-    } else if (file.mimetype.includes('excel') || file.mimetype.includes('spreadsheet')) {
-      await this.processExcelInBatches(filePath, projectId, BATCH_SIZE, result);
-    } else {
-      throw new BadRequestException('Unsupported file format. Please use CSV or Excel files.');
-    }
-
-    // Clean up temp file
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-
-    console.log(`Import completed: Created: ${result.created}, Updated: ${result.updated}, Failed: ${result.failed}`);
-    return result;
-  } catch (err) {
-    // Clean up on error
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
-    console.error('Import error:', err);
-    throw new BadRequestException(`Import failed: ${err.message}`);
-  }
-}
-
-
-private async processCSVInBatches(
-  filePath: string,
-  projectId: string,
-  batchSize: number,
-  result: any
-): Promise<void> {
-  try {
-    console.log(`Starting CSV processing for file: ${filePath}`);
-
-    // Read file content
-    const csvContent = fs.readFileSync(filePath, 'utf8');
-
-    // Parse CSV with papaparse
-    const parseResult = parse(csvContent, {
-      delimiter: ',',
-      skipEmptyLines: true,
-      quoteChar: '"',
-      header: false, // We'll handle headers manually
-    });
-
-    const records = parseResult.data as string[][];
-    let headers: string[] = [];
-    let batch: any[] = [];
-    let processedRows = 0;
-
-    console.log(`Total CSV rows: ${records.length}`);
-
-    for (let i = 0; i < records.length; i++) {
-      const record = records[i];
-      const rowNumber = i + 1;
-
-      // First row is headers
-      if (rowNumber === 1) {
-        headers = record.map((h: string) =>
-        (h || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF_]/g, '')
-        );
-        console.log(`CSV Headers found: ${headers.join(', ')}`);
-        continue;
-      }
-
-      // Convert array to object
-      const row: any = {};
-      headers.forEach((header, colIndex) => {
-        if (record[colIndex] !== undefined && record[colIndex] !== null) {
-          row[header] = record[colIndex].toString().trim();
-        }
-      });
-
-      // Skip empty rows
-      const hasData = Object.values(row).some(v =>
-        v && v.toString().trim() !== '' && v.toString().trim().toLowerCase() !== 'null'
-      );
-
-      if (!hasData) {
-        continue;
-      }
-
-      // Map all possible field names to standard format
-      const mappedRow = this.mapRowFields(row);
-      processedRows++;
-
-      batch.push({ data: mappedRow, index: rowNumber - 1 });
-
-      // Process batch when size is reached
-      if (batch.length >= batchSize) {
-        await this.processBatch(batch, projectId, result);
-        batch = [];
-      }
-    }
-
-    // Process remaining rows
-    if (batch.length > 0) {
-      await this.processBatch(batch, projectId, result);
-    }
-
-    result.totalRows = processedRows;
-    console.log(`CSV processing complete. Processed rows: ${processedRows}`);
-
-  } catch (error) {
-    console.error('CSV processing error:', error);
-    throw error;
-  }
-}
-/**
- * Process Excel file in batches
- */
-private async processExcelInBatches(
-  filePath: string,
-  projectId: string,
-  batchSize: number,
-  result: any
-): Promise<void> {
-  let batch: any[] = [];
-
-  console.log(`Processing Excel file: ${filePath}`);
-
-  try {
-    if (filePath.endsWith('.xls')) {
-      // For .xls files
-      const workbook = XLSX.readFile(filePath, {
-        cellDates: true,
-        cellStyles: false,
-        sheetStubs: false,
-      });
-      const sheetName = workbook.SheetNames[0];
-      const rows: any[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
-        defval: '',
-        raw: false,
-        dateNF: 'yyyy-mm-dd'
-      });
-
-      console.log(`XLS file loaded. Total rows: ${rows.length}`);
-
-      if (rows.length === 0) {
-        throw new BadRequestException('Excel file contains no data');
-      }
-
-      // Get headers from first row
-      const headers = Object.keys(rows[0]).map(key =>
-        key.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF_]/g, '')
-      );
-      console.log(`Excel Headers found: ${headers.join(', ')}`);
-
-      for (let i = 0; i < rows.length; i++) {
+    // Scan the first few rows
+    const limit = Math.min(rows.length, MAX_SCAN_ROWS);
+    
+    for (let i = 0; i < limit; i++) {
         const row = rows[i];
-        const mappedRow = this.mapRowFields(row);
-
-        batch.push({ data: mappedRow, index: i + 1 });
-
-        if (batch.length >= batchSize) {
-          const currentBatch = [...batch];
-          batch = [];
-          await this.processBatch(currentBatch, projectId, result);
+        if (!Array.isArray(row) || row.length === 0) continue;
+        
+        const normalizedHeaders = row.map(normalize);
+        
+        // Count matches
+        let matchCount = 0;
+        for (const header of normalizedHeaders) {
+            if (knownHeaders.some(k => header.includes(k) || k.includes(header))) {
+                matchCount++;
+            }
         }
+        
+        // If we find 'name' or 'product_name' specifically, give it a huge boost
+        if (normalizedHeaders.some(h => 
+            ['name', 'product_name', 'product', 'device', 'اسم_المنتج', 'اسم_الصنف'].includes(h)
+        )) {
+            matchCount += 5;
+        }
+
+        if (matchCount > bestScore) {
+            bestScore = matchCount;
+            bestRowIndex = i;
+            bestHeaders = normalizedHeaders;
+        }
+    }
+    
+    // If no good match found, default to first row if it exists
+    if (bestScore === 0 && rows.length > 0) {
+        return { 
+            headerRowIndex: 0, 
+            headers: rows[0].map(normalize)
+        };
+    }
+
+    return { headerRowIndex: bestRowIndex, headers: bestHeaders };
+  }
+
+  @Post('import/update')
+  @Permissions(EPermission.PRODUCT_UPDATE)
+  @UseInterceptors(FileInterceptor('file', multerOptions))
+  async importAndUpdateProducts(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    const user = await this.productService.userRepository.findOne({
+      where: { id: req.user.id },
+      relations: ['project'],
+    });
+  
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+  
+    const projectId = user.project?.id || user.project_id;
+    const filePath = file.path;
+    const BATCH_SIZE = 50; // Reduced from 100 to be more memory efficient
+  
+    try {
+      const result = {
+        created: 0,
+        updated: 0,
+        failed: 0,
+        errors: [] as string[],
+        processed: 0,
+        totalRows: 0
+      };
+  
+      // Determine file type and process accordingly
+      if (file.mimetype === 'text/csv') {
+        await this.processCSVInBatches(filePath, projectId, BATCH_SIZE, result);
+      } else if (file.mimetype.includes('excel') || file.mimetype.includes('spreadsheet')) {
+        await this.processExcelInBatches(filePath, projectId, BATCH_SIZE, result);
+      } else {
+        throw new BadRequestException('Unsupported file format. Please use CSV or Excel files.');
       }
+  
+      // Clean up temp file
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+  
+      console.log(`Import completed: Created: ${result.created}, Updated: ${result.updated}, Failed: ${result.failed}`);
+      return result;
+    } catch (err) {
+      // Clean up on error
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      console.error('Import error:', err);
+      throw new BadRequestException(`Import failed: ${err.message}`);
+    }
+  }
 
-      result.totalRows = rows.length;
-    } else {
-      // For .xlsx files using ExcelJS with streaming
-      const workbook = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
-        sharedStrings: 'cache',
-        hyperlinks: 'ignore',
-        worksheets: 'emit',
-        entries: 'emit',
-        // parserOptions: {
-        //   ignoreNodes: ['dataValidations', 'sheetProtection', 'autoFilter']
-        // }
-      });
 
-      let worksheetProcessed = false;
-      let totalRows = 0;
+    private async processCSVInBatches(
+      filePath: string,
+      projectId: string,
+      batchSize: number,
+      result: any
+    ): Promise<void> {
+      try {
+        console.log(`Starting CSV processing for file: ${filePath}`);
+    
+        // Read file content
+        const csvContent = fs.readFileSync(filePath, 'utf8');
+    
+        // Parse CSV with papaparse
+        const parseResult = parse(csvContent, {
+          delimiter: ',',
+          skipEmptyLines: true,
+          quoteChar: '"',
+          header: false, // We'll handle headers manually
+        });
+    
+        const records = parseResult.data as string[][];
+        if (records.length === 0) return;
 
-      for await (const worksheetReader of workbook) {
-        if (worksheetProcessed) {
-          console.warn('Multiple worksheets found, only processing first worksheet');
-          break;
-        }
+        // Detect header row
+        const { headerRowIndex, headers } = this.findHeaderRow(records);
+        console.log(`CSV Headers detected at row ${headerRowIndex + 1}: ${headers.join(', ')}`);
 
-        worksheetProcessed = true;
-        let rowIndex = 0;
-        let headers: string[] = [];
-
-        for await (const row of worksheetReader) {
-          rowIndex++;
-
-          if (rowIndex === 1) {
-            // Extract headers from first row
-            headers = [];
-            row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-              const header = cell.value?.toString().trim() || `column_${colNumber}`;
-              headers[colNumber - 1] = header
-                .toLowerCase()
-                .replace(/\s+/g, '_')
-                .replace(/[^\w\u0600-\u06FF_]/g, '');
-            });
-            console.log(`Excel Headers found: ${headers.join(', ')}`);
-            continue;
-          }
-
-          const rowData: any = {};
-          let hasData = false;
-
-          row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-            const header = headers[colNumber - 1];
-            if (header) {
-              let value = cell.value;
-
-              // Convert dates to string
-              if (value instanceof Date) {
-                value = value.toISOString().split('T')[0];
-              } else if (value && typeof value === 'object') {
-                // Handle ExcelJS rich text or formula result
-                value = value.toString();
-              }
-
-              if (value !== null && value !== undefined) {
-                rowData[header] = value.toString().trim();
-                hasData = true;
-              }
+        let batch: any[] = [];
+        let processedRows = 0;
+    
+        console.log(`Total CSV rows: ${records.length}`);
+    
+        for (let i = headerRowIndex + 1; i < records.length; i++) {
+          const record = records[i];
+          const rowNumber = i + 1;
+    
+          // Convert array to object
+          const row: any = {};
+          headers.forEach((header, colIndex) => {
+            if (record[colIndex] !== undefined && record[colIndex] !== null) {
+              row[header] = record[colIndex].toString().trim();
             }
           });
-
+    
+          // Skip empty rows
+          const hasData = Object.values(row).some(v =>
+            v && v.toString().trim() !== '' && v.toString().trim().toLowerCase() !== 'null'
+          );
+    
           if (!hasData) {
             continue;
           }
-
-          const mappedRow = this.mapRowFields(rowData);
-          totalRows++;
-
-          batch.push({ data: mappedRow, index: rowIndex - 1 });
-
+    
+          // Map all possible field names to standard format
+          const mappedRow = this.mapRowFields(row);
+          processedRows++;
+    
+          batch.push({ data: mappedRow, index: rowNumber });
+    
+          // Process batch when size is reached
           if (batch.length >= batchSize) {
-            const currentBatch = [...batch];
+            await this.processBatch(batch, projectId, result);
             batch = [];
-            await this.processBatch(currentBatch, projectId, result);
           }
         }
+    
+        // Process remaining rows
+        if (batch.length > 0) {
+          await this.processBatch(batch, projectId, result);
+        }
+    
+        result.totalRows = processedRows;
+        console.log(`CSV processing complete. Processed rows: ${processedRows}`);
+    
+      } catch (error) {
+        console.error('CSV processing error:', error);
+        throw error;
+      }
+    }
+/**
+ * Process Excel file in batches
+ */
+    /**
+     * Process Excel file in batches
+     */
+    private async processExcelInBatches(
+      filePath: string,
+      projectId: string,
+      batchSize: number,
+      result: any
+    ): Promise<void> {
+      let batch: any[] = [];
+    
+      console.log(`Processing Excel file: ${filePath}`);
+    
+      try {
+        if (filePath.endsWith('.xls')) {
+          // For .xls files
+          const workbook = XLSX.readFile(filePath, {
+            cellDates: true,
+            cellStyles: false,
+            sheetStubs: false,
+          });
+          const sheetName = workbook.SheetNames[0];
+          // Use header: 1 to get raw array of arrays
+          const rows: any[][] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            header: 1,
+            defval: '',
+            raw: false,
+            dateNF: 'yyyy-mm-dd'
+          });
+    
+          console.log(`XLS file loaded. Total rows: ${rows.length}`);
+    
+          if (rows.length === 0) {
+            throw new BadRequestException('Excel file contains no data');
+          }
+    
+          // Detect header
+          const { headerRowIndex, headers } = this.findHeaderRow(rows);
+          console.log(`Excel Headers detected at row ${headerRowIndex + 1}: ${headers.join(', ')}`);
+    
+          for (let i = headerRowIndex + 1; i < rows.length; i++) {
+            const rowArray = rows[i];
+            
+            // Convert array to object using detected headers
+            const row: any = {};
+            headers.forEach((header, index) => {
+              if (rowArray[index] !== undefined && rowArray[index] !== null) {
+                row[header] = rowArray[index].toString().trim();
+              }
+            });
+            
+            const mappedRow = this.mapRowFields(row);
+    
+            batch.push({ data: mappedRow, index: i + 1 });
+    
+            if (batch.length >= batchSize) {
+              const currentBatch = [...batch];
+              batch = [];
+              await this.processBatch(currentBatch, projectId, result);
+            }
+          }
+    
+          result.totalRows = rows.length - (headerRowIndex + 1);
+        } else {
+          // For .xlsx files using ExcelJS with streaming
+          const workbook = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
+            sharedStrings: 'cache',
+            hyperlinks: 'ignore',
+            worksheets: 'emit',
+            entries: 'emit',
+          });
+    
+          let worksheetProcessed = false;
+          let totalRows = 0;
+    
+          for await (const worksheetReader of workbook) {
+            if (worksheetProcessed) {
+              console.warn('Multiple worksheets found, only processing first worksheet');
+              break;
+            }
+    
+            worksheetProcessed = true;
+            
+            // Buffered reading to find header
+            let isHeaderFound = false;
+            let headers: string[] = [];
+            let headerRowIndex = -1;
+            let rowBuffer: { values: any[], index: number }[] = [];
+            const MAX_BUFFER = 20;
 
-        result.totalRows = totalRows;
-        console.log(`Excel rows processed: ${totalRows}`);
+            let rowCounter = 0;
+    
+            for await (const row of worksheetReader) {
+              rowCounter++;
+              
+              // Extract values from row
+              const values: any[] = [];
+              row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+                let value = cell.value;
+                 // Convert dates to string
+                 if (value instanceof Date) {
+                    value = value.toISOString().split('T')[0];
+                  } else if (value && typeof value === 'object') {
+                    value = value.toString();
+                  }
+                values[colNumber - 1] = value;
+              });
+
+              if (!isHeaderFound) {
+                rowBuffer.push({ values, index: rowCounter });
+                
+                // If buffer is full or we are at the beginning, try to find header
+                if (rowBuffer.length >= MAX_BUFFER) {
+                   const { headerRowIndex: foundIndex, headers: foundHeaders } = this.findHeaderRow(rowBuffer.map(r => r.values));
+                   
+                  //  The foundIndex is relative to the buffer (0 to 19)
+                   headerRowIndex = foundIndex; 
+                   headers = foundHeaders;
+                   isHeaderFound = true;
+                   console.log(`Excel Headers detected at row ${rowBuffer[headerRowIndex].index}: ${headers.join(', ')}`);
+
+                   // Process rows in buffer that are AFTER the header
+                   for (let i = headerRowIndex + 1; i < rowBuffer.length; i++) {
+                      await this.processRowFromValues(rowBuffer[i].values, headers, rowBuffer[i].index, batch, batchSize, projectId, result);
+                   }
+                   // Clear buffer we don't need it anymore
+                   rowBuffer = [];
+                }
+              } else {
+                // Determine headers from cache, process row
+                await this.processRowFromValues(values, headers, rowCounter, batch, batchSize, projectId, result);
+              }
+              
+              totalRows++;
+            }
+            
+            // If we finished loop but still haven't found header (file < 20 rows)
+            if (!isHeaderFound && rowBuffer.length > 0) {
+                 const { headerRowIndex: foundIndex, headers: foundHeaders } = this.findHeaderRow(rowBuffer.map(r => r.values));
+                 headers = foundHeaders;
+                 console.log(`Excel Headers detected at row ${rowBuffer[foundIndex].index}: ${headers.join(', ')}`);
+                 
+                 for (let i = foundIndex + 1; i < rowBuffer.length; i++) {
+                    await this.processRowFromValues(rowBuffer[i].values, headers, rowBuffer[i].index, batch, batchSize, projectId, result);
+                 }
+            }
+    
+            result.totalRows = totalRows;
+            console.log(`Excel rows processed: ${totalRows}`);
+          }
+        }
+    
+        // Process remaining rows
+        if (batch.length > 0) {
+          await this.processBatch(batch, projectId, result);
+        }
+    
+      } catch (error) {
+        console.error('Excel processing error:', error);
+        throw error;
       }
     }
 
-    // Process remaining rows
-    if (batch.length > 0) {
-      await this.processBatch(batch, projectId, result);
+    /**
+     * Helper to process a row from array values
+     */
+    private async processRowFromValues(
+      values: any[], 
+      headers: string[], 
+      rowIndex: number, 
+      batch: any[], 
+      batchSize: number, 
+      projectId: string, 
+      result: any
+    ) {
+        const rowData: any = {};
+        let hasData = false;
+        
+        headers.forEach((header, index) => {
+            if (values[index] !== undefined && values[index] !== null) {
+                rowData[header] = values[index].toString().trim();
+                hasData = true;
+            }
+        });
+        
+        if (!hasData) return;
+        
+        const mappedRow = this.mapRowFields(rowData);
+        batch.push({ data: mappedRow, index: rowIndex });
+        
+        if (batch.length >= batchSize) {
+           const currentBatch = [...batch];
+           batch.length = 0; // Clear in-place
+           await this.processBatch(currentBatch, projectId, result);
+        }
     }
-
-  } catch (error) {
-    console.error('Excel processing error:', error);
-    throw error;
-  }
-}
 
 /**
  * Map all possible field names from various formats to standard format
@@ -531,7 +637,7 @@ private mapRowFields(row: any): any {
   // Comprehensive field mapping
   const fieldMappings = {
     // Product name mappings
-    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج",'الوصف'],
+    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج"],
 
     // SKU mappings
     sku: ['sku', 'product_code', 'reference', 'product_reference', 'item_code', 'extra_sku', "الكود", "رمز_الصنف"],
