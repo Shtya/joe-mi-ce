@@ -8,6 +8,8 @@ import { Branch } from './branch.entity';
  import { Vacation } from './employee/vacation.entity';
  import { Sale } from './products/sale.entity';
 import { Journey } from './all_plans.entity';
+import { DocumentBuilder } from './documentbuilder.entity';
+
 
 @Entity('users')
 @Index(['username'], { unique: true })
@@ -74,7 +76,12 @@ export class User extends CoreEntity {
 
   @OneToMany(() => Sale, checkin => checkin.user)
   checkins: Sale[];
+
+  @OneToMany(() => DocumentBuilder, doc => doc.user)
+  documentBuilders: DocumentBuilder[];
+
   user: Promise<Role>;
+
 
   async hasPermission(permission: string): Promise<boolean> {
     return this.role?.hasPermission(permission) ?? false;

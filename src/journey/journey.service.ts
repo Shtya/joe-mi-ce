@@ -146,9 +146,6 @@ async updateJourney(id: string, dto: UpdateJourneyDto) {
 
   if (!journey) throw new NotFoundException('Journey not found');
 
-  // Check valid status for update (optional, but good practice). 
-  // Maybe unnecessary if we just want to fix mistakes.
-  
   if (dto.userId) {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new NotFoundException('User not found');

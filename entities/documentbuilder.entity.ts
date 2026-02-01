@@ -1,4 +1,6 @@
 import { Column, Entity, ManyToOne, OneToMany } from "typeorm";
+import { User } from './user.entity';
+
 import { CoreEntity } from './core.entity';
 
 
@@ -27,6 +29,9 @@ export class DocumentBuilder extends CoreEntity {
 
     @Column({ default: false })
     isMain: boolean;
+
+    @ManyToOne(() => User, (user) => user.documentBuilders, { nullable: true })
+    user: User;
 
     @OneToMany(() => DocumentElement, (element) => element.documentBuilder, { cascade: true })
     elements: DocumentElement[];

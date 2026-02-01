@@ -476,6 +476,8 @@ async getAllPlansWithPagination(
     @Query('type') type?: JourneyType,
     @Query('status') status?: JourneyStatus,
     @Query('date') _date?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
     @Query('search') search?: string,
   ) {
     const filters: any = {
@@ -489,10 +491,21 @@ async getAllPlansWithPagination(
     if (type) filters.type = type;
     if (status) filters.status = status;
 
-    // ⭐ DO NOT USE journey.date — use simple key "date"
-    filters.date = Raw(alias => `${alias} <= :today`, {
-      today: new Date(),
-    });
+    // Date filters mapping
+    if (fromDate) filters.date_from = fromDate;
+    if (toDate) filters.date_to = toDate;
+
+    // Default behavior: if NO date filter is provided (date, fromDate, toDate), limit to <= today
+    // If ANY date filter is provided, we respect that completely and do NOT enforce <= today
+    const hasDateFilters = !!(_date || fromDate || toDate || filters.date);
+    
+    // We pass extraWhere ONLY if we need the default behavior
+    const extraWhere = !hasDateFilters
+      ? (qb) => {
+          qb.andWhere('journey.date <= :today', { today: new Date() });
+        }
+      : undefined;
+
     return CRUD.findAllRelation(
       this.journeyService.journeyRepo,
       'journey',
@@ -511,11 +524,11 @@ async getAllPlansWithPagination(
         ...(shiftId ? { shift: { id: shiftId } } : {}),
         ...(type ? { type } : {}),
         ...(status ? { status } : {}),
+        // Add mapped date filters
+        ...(fromDate ? { date_from: fromDate } : {}),
+        ...(toDate ? { date_to: toDate } : {}),
       },
-      // NEW: extra where logic
-      qb => {
-        qb.andWhere('journey.date <= :today', { today: new Date() });
-      }
+      extraWhere
     );
 
   }
