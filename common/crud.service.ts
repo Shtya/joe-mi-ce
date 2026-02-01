@@ -850,10 +850,18 @@ if (value instanceof FindOperator) {
       columns?: { header: string; key: string; width?: number }[];
     } = {},
   ) {
-    const exportLimit = Number(options.exportLimit) || 10;
+    const normalizedLimit = String(options.exportLimit).toLowerCase().trim();
+    let take: number | undefined;
+
+    if (normalizedLimit === 'all') {
+      take = undefined;
+    } else {
+      const n = Number(options.exportLimit);
+      take = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1000;
+    }
 
     const data = await repository.find({
-      take: exportLimit,
+      take,
     });
 
     const workbook = new ExcelJS.Workbook();

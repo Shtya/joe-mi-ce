@@ -322,7 +322,7 @@ private async processCSVInBatches(
       // First row is headers
       if (rowNumber === 1) {
         headers = record.map((h: string) =>
-          (h || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w_]/g, '')
+        (h || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF_]/g, '')
         );
         console.log(`CSV Headers found: ${headers.join(', ')}`);
         continue;
@@ -407,7 +407,7 @@ private async processExcelInBatches(
 
       // Get headers from first row
       const headers = Object.keys(rows[0]).map(key =>
-        key.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w_]/g, '')
+        key.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^\w\u0600-\u06FF_]/g, '')
       );
       console.log(`Excel Headers found: ${headers.join(', ')}`);
 
@@ -461,7 +461,7 @@ private async processExcelInBatches(
               headers[colNumber - 1] = header
                 .toLowerCase()
                 .replace(/\s+/g, '_')
-                .replace(/[^\w_]/g, '');
+                .replace(/[^\w\u0600-\u06FF_]/g, '');
             });
             console.log(`Excel Headers found: ${headers.join(', ')}`);
             continue;
@@ -531,7 +531,7 @@ private mapRowFields(row: any): any {
   // Comprehensive field mapping
   const fieldMappings = {
     // Product name mappings
-    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج"],
+    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج",'الوصف'],
 
     // SKU mappings
     sku: ['sku', 'product_code', 'reference', 'product_reference', 'item_code', 'extra_sku', "الكود", "رمز_الصنف"],

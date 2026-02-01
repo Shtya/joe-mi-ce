@@ -906,10 +906,10 @@ export class ExportService {
     if (rawLimit === 'all' || (typeof rawLimit === 'string' && rawLimit.toLowerCase().trim() === 'all')) {
       take = undefined;
     } else if (rawLimit === undefined || rawLimit === null || rawLimit === '') {
-      take = 10;
+      take = 1000;
     } else {
       const n = typeof rawLimit === 'number' ? rawLimit : Number(rawLimit);
-      take = Number.isFinite(n) && n > 0 ? Math.floor(n) : 10;
+      take = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1000;
     }
 
     const findOptions: any = {};
