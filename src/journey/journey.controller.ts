@@ -343,8 +343,8 @@ async getAllPlansWithPagination(
     limit,
     '', // Sort by creation date
     'DESC',
-    ['user', 'branch', 'branch.city', 'branch.city.region', 'shift', 'journeys', 'journeys.checkin'],
-    undefined,
+    ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
+    ['plan_user.name', 'plan_branch.name'],
     filters,
   );
 
