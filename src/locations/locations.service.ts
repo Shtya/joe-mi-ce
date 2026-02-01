@@ -236,4 +236,35 @@ export class LocationsService {
     const merged = this.chainRepo.merge(chain, dto);
     return this.chainRepo.save(merged);
   }
+
+  async assignProjectToChains(): Promise<{ updated: number, errors: any[] }> {
+    const chains = await this.chainRepo.find({
+      relations: ['branches', 'branches.project'],
+    });
+
+    let updatedCount = 0;
+    const errors = [];
+
+    for (const chain of chains) {
+      // Find a branch that has a project assigned
+      const branchWithProject = chain.branches.find(b => b.project);
+
+      if (branchWithProject) {
+        // If chain has no project, or we want to enforce consistency (user asked to "check the branch project id to be thet same")
+        // The request says "assign a project id to the chains automatic by check the branch project id to be thet same"
+        // So we update the chain's project to match the branch's project.
+        if (!chain.project || chain.project.id !== branchWithProject.project.id) {
+          try {
+            chain.project = branchWithProject.project;
+            await this.chainRepo.save(chain);
+            updatedCount++;
+          } catch (err) {
+              errors.push({ id: chain.id, name: chain.name, error: err.message });
+          }
+        }
+      }
+    }
+
+    return { updated: updatedCount, errors };
+  }
 }

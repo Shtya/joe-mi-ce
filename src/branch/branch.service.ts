@@ -687,6 +687,7 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
       if (!chain) {
         chain = this.chainRepo.create({
           name: chainName.trim(),
+          project: project,
         });
         chain = await this.chainRepo.save(chain);
       }
