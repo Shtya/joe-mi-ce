@@ -458,6 +458,12 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     let createdCount = 0;
     console.log(plans)
     for (const plan of plans) {
+      // Skip plans with missing relations
+      if (!plan.user || !plan.branch || !plan.shift) {
+        console.warn(`Skipping plan ${plan.id}: missing user, branch, or shift relation`);
+        continue;
+      }
+
       const exists = await this.journeyRepo.findOne({
         where: {
           user: { id: plan.user.id },
@@ -547,6 +553,12 @@ if (typeof value === 'string') {
   console.log(plans);
 
   for (const plan of plans) {
+    // Skip plans with missing relations
+    if (!plan.user || !plan.branch || !plan.shift) {
+      console.warn(`Skipping plan ${plan.id}: missing user, branch, or shift relation`);
+      continue;
+    }
+
     const exists = await this.journeyRepo.findOne({
       where: {
         user: { id: plan.user.id },
