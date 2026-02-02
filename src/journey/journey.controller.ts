@@ -14,6 +14,7 @@ import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
 import { Raw } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
+import { ERole } from 'enums/Role.enum';
 @UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
@@ -326,12 +327,13 @@ async getAllPlansWithPagination(
     req.user.id,
   );
   const projectId = user.project?.id || user.project_id || user.branch.project.id
-  if(projectId){
+  if(!projectId){
     throw new NotFoundException("the project is not assign to this user")
   }
   const filters: any = {
     ...query.filters,
-    projectId
+    ...(user.branch ? { branch: { id: user.branch.id } } : {}),
+    ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {})
   };
 
 
@@ -432,6 +434,7 @@ async getAllPlansWithPagination(
       totalJourneys: plan.journeys?.length || 0, // Total number of journeys
     };
   });
+
 
   return {
     data: transformedPlans,
