@@ -218,9 +218,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     [JourneyStatus.ABSENT]: 'absent',
     [JourneyStatus.PRESENT]: 'present',
     [JourneyStatus.CLOSED]: 'closed',
-    [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned_absent',
-    [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned_present',
-    [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned_closed',
+    [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned-absent',
+    [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned-present',
+    [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned-closed',
   };
 
   // 🌍 translations
