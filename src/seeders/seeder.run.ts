@@ -18,6 +18,7 @@ import { Category } from 'entities/products/category.entity';
 import { Product } from 'entities/products/product.entity';
 import { Stock } from 'entities/products/stock.entity';
 import { EPermission } from 'enums/Permissions.enum';
+import { seedSurveys, seedSurveyFeedbacks } from './survey.seeder';
 
 export const seedPermissions = async (dataSource: DataSource) => {
   const permissionRepository = dataSource.getRepository(Permission);
@@ -689,6 +690,10 @@ await seedProjectAdmin(dataSource, project, branch);
 
 // Staff
 await seedProjectStaff(dataSource, project, branch);
+
+    // Surveys
+    await seedSurveys(dataSource);
+    await seedSurveyFeedbacks(dataSource);
 
 
     console.log('✅ Seeding completed successfully!');

@@ -14,9 +14,9 @@ export enum JourneyStatus {
   ABSENT = 'absent',
   PRESENT = 'present',
   CLOSED = 'closed',
-  UNPLANNED_ABSENT = 'unplanned_absent',
-  UNPLANNED_PRESENT = 'unplanned_present',
-  UNPLANNED_CLOSED = 'unplanned_closed',
+  UNPLANNED_ABSENT = 'unplanned-absent',
+  UNPLANNED_PRESENT = 'unplanned-present',
+  UNPLANNED_CLOSED = 'unplanned-closed',
 }
 
 @Entity('journey_plans')
