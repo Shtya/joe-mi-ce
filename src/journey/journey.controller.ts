@@ -12,7 +12,7 @@ import { AnyFilesInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/
 import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.config';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
-import { Raw } from 'typeorm';
+import { Raw, In } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
 @UseGuards(AuthGuard)
@@ -330,10 +330,20 @@ async getAllPlansWithPagination(
   if(!projectId){
     throw new NotFoundException("the project is not assign to this user")
   }
+  
+  let supervisorBranchIds: string[] = [];
+  if (user.role.name === ERole.SUPERVISOR) {
+    const branches = await this.journeyService.getSupervisorBranches(user.id);
+    supervisorBranchIds = branches.map(b => b.id);
+  }
+
   const filters: any = {
     ...query.filters,
     ...(user.branch ? { branch: { id: user.branch.id } } : {}),
-    ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {})
+    ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
+    ...(user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0 
+      ? { branch: { id: In(supervisorBranchIds) } } 
+      : {})
   };
 
 

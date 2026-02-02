@@ -621,4 +621,9 @@ if (typeof value === 'string') {
 }
 
 
+  async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
+    return this.branchRepo.find({
+      where: { supervisor: { id: supervisorId } },
+    });
+  }
 }
