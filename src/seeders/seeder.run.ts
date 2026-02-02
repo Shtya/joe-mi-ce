@@ -19,6 +19,7 @@ import { Product } from 'entities/products/product.entity';
 import { Stock } from 'entities/products/stock.entity';
 import { EPermission } from 'enums/Permissions.enum';
 import { seedSurveys, seedSurveyFeedbacks } from './survey.seeder';
+import { seedRoaming } from './roaming.seeder';
 
 export const seedPermissions = async (dataSource: DataSource) => {
   const permissionRepository = dataSource.getRepository(Permission);
@@ -666,35 +667,37 @@ async function runSeeder() {
     // await seedBranches(dataSource);
 
 
-    await seedPermissions(dataSource);
-await seedRoles(dataSource);
+    // await seedPermissions(dataSource);
+    // await seedRoles(dataSource);
 
-// Locations
-await seedCountries(dataSource);
-await seedRegions(dataSource);
-await seedCities(dataSource);
-await seedChains(dataSource);
+    // // Locations
+    // await seedCountries(dataSource);
+    // await seedRegions(dataSource);
+    // await seedCities(dataSource);
+    // await seedChains(dataSource);
 
-// Users
-await seedSuperAdminUser(dataSource);
-const projectAdmin = await seedProjectAdminUserOnly(dataSource);
+    // // Users
+    // await seedSuperAdminUser(dataSource);
+    // const projectAdmin = await seedProjectAdminUserOnly(dataSource);
 
-// Project + Branch
-const { project, branch } = await seedProjectWithBranch(
-  dataSource,
-  projectAdmin,
-);
+    // // Project + Branch
+    // const { project, branch } = await seedProjectWithBranch(
+    //   dataSource,
+    //   projectAdmin,
+    // );
 
-// Assign project & branch to admin
-await seedProjectAdmin(dataSource, project, branch);
+    // // Assign project & branch to admin
+    // await seedProjectAdmin(dataSource, project, branch);
 
-// Staff
-await seedProjectStaff(dataSource, project, branch);
+    // // Staff
+    // await seedProjectStaff(dataSource, project, branch);
 
-    // Surveys
-    await seedSurveys(dataSource);
-    await seedSurveyFeedbacks(dataSource);
-
+    // // Surveys
+    // await seedSurveys(dataSource);
+    // await seedSurveyFeedbacks(dataSource);
+    
+    // Only running Roaming Seeder as requested
+    await seedRoaming(dataSource);
 
     console.log('✅ Seeding completed successfully!');
   } catch (error) {
