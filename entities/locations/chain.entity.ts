@@ -21,3 +21,4 @@ export class Chain extends CoreEntity {
   @ManyToOne(() => Project, project => project.chains,{ nullable: true, eager : true })
   project: Project;
 }
+

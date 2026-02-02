@@ -9,8 +9,10 @@ import { User } from 'entities/user.entity';
 import { Shift } from 'entities/employee/shift.entity';
 import { UsersService } from 'src/users/users.service';
 
+import { Chain } from 'entities/locations/chain.entity';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([Project, Branch, User , Shift])],
+  imports: [TypeOrmModule.forFeature([Project, Branch, User , Shift, Chain])],
   controllers: [ProjectController],
   providers: [ProjectService,UsersService],
   exports: [ProjectService],

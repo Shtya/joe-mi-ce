@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { ProjectService } from 'src/project/project.service';
 const PROMOTER_HEADER_MAP: Record<string, string> = {
   'promoter username': 'username',
   'username': 'username',
@@ -45,7 +46,8 @@ export class AuthService {
     @InjectRepository(Project) private projectRepository: Repository<Project>,
     @InjectRepository(Branch) private branchRepository: Repository<Branch>,
     private jwtService: JwtService,
-    private readonly userService : UsersService
+    private readonly userService : UsersService,
+    private readonly projectService: ProjectService
   ) {}
 
   async register(requester: User | null, dto: RegisterDto, file?: Express.Multer.File) {
@@ -79,14 +81,13 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
     if (dto.role === ERole.PROJECT_ADMIN && requester?.role.name === ERole.SUPER_ADMIN) {
       if (!dto.project_name) throw new BadRequestException('Project name is required when creating Project Admin');
 
-      project = await this.projectRepository.save(
-        this.projectRepository.create({
+      // Use ProjectService to create project (and auto-create Roaming chain)
+      project = await this.projectService.createProject({
           name: dto.project_name,
           image_url: dto.image_url,
           is_active: true,
           owner: null,
-        }),
-      );
+      });
     } else if (dto.role !== ERole.SUPER_ADMIN) {
       const projectId = requester?.role.name === ERole.PROJECT_ADMIN ? requester.project?.id || requester.project_id: dto.project_id;
       if (!projectId) throw new BadRequestException('Project ID is required for this role');

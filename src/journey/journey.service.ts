@@ -312,10 +312,10 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     };
   }
 
-  async checkInOut(dto: CheckInOutDto) {
+  async checkInOut(dto: CheckInOutDto, lang: string = 'en') {
     const journey = await this.journeyRepo.findOne({
       where: { id: dto.journeyId },
-      relations: ['branch', 'branch.supervisor', 'shift', 'user'],
+      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain'],
     });
 
     if (!journey) {
@@ -331,6 +331,15 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     const isCheckIn = !!dto.checkInTime && !dto.checkOutTime;
     const isCheckOut = !!dto.checkOutTime;
     const isUpdate = !!dto.checkInTime && !!dto.checkOutTime;
+
+    // Check roaming settings
+    const chainName = journey.branch?.chain?.name;
+    
+    // If roaming is enabled (true), we DO NOT check geofence.
+    // If roaming is disabled (false/undefined), we DO check geofence.
+    const isCheckGeo = chainName !== 'Roaming' ? true : false; // default to true if roaming is false
+
+    const isWithinGeofence = isCheckGeo ? this.isWithinGeofence(journey.branch, dto.geo) : true;
 
     if (checkIn) {
       if (dto.checkInTime) {
@@ -352,7 +361,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
       checkIn.geo = dto.geo as any;
       checkIn.image = dto.image;
-      checkIn.isWithinRadius = true;
+      checkIn.isWithinRadius = isWithinGeofence;
     } else {
       if (!dto.checkInTime) {
         throw new ConflictException('Check in time is required for first time');
@@ -369,7 +378,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         image: dto.image,
         noteIn: dto.noteIn,
         noteOut: dto.noteOut,
-        isWithinRadius:true,
+        isWithinRadius: isWithinGeofence,
       });
 
       journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
@@ -380,23 +389,42 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
     // 🔔 Notify supervisor if exists
     const supervisor = journey.branch?.supervisor;
-    console.log(journey);
+    
+    const type: 'checkin' | 'checkout' | 'update' = isUpdate ? 'update' : isCheckOut ? 'checkout' : 'checkin';
+    const time = type === 'checkout' ? savedCheckIn.checkOutTime : savedCheckIn.checkInTime || new Date();
+
+
+    const notifications = [];
+
+    // 1. Notify Supervisor
     if (supervisor) {
-      const type: 'checkin' | 'checkout' | 'update' = isUpdate ? 'update' : isCheckOut ? 'checkout' : 'checkin';
+      notifications.push(
+        this.notificationService.notifySupervisorOnCheckin({
+          supervisorId: supervisor.id,
+          branchId: journey.branch.id,
+          branchName: journey.branch.name,
+          promoterId: journey.user.id,
+          promoterName: journey.user.name,
+          journeyId: journey.id,
+          type,
+          time,
+        }, lang)
+      );
+    }
 
-      const time = type === 'checkout' ? savedCheckIn.checkOutTime : savedCheckIn.checkInTime || new Date();
-
-      await this.notificationService.notifySupervisorOnCheckin({
-        supervisorId: supervisor.id,
+    // 2. Notify Promoter (User)
+    notifications.push(
+      this.notificationService.notifyPromoterOnCheckin({
+        promoterId: journey.user.id,
         branchId: journey.branch.id,
         branchName: journey.branch.name,
-        promoterId: journey.user.id,
-        promoterName: journey.user.name,
         journeyId: journey.id,
         type,
         time,
-      });
-    }
+      }, lang)
+    );
+
+    await Promise.all(notifications);
 
     if (isCheckOut) {
       return {

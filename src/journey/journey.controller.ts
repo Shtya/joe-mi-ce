@@ -32,6 +32,7 @@ export class JourneyController {
   async checkInOut(
     @Req() req: any,
     @Body() dto: CheckInOutDto,
+    @Headers('lang') lang: string = 'en',
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) {
@@ -45,7 +46,7 @@ export class JourneyController {
 
     if (!dto.userId) dto.userId = req.user.id;
 
-    return this.journeyService.checkInOut(dto);
+    return this.journeyService.checkInOut(dto, lang);
   }
 
 

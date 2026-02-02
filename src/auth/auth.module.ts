@@ -10,8 +10,10 @@ import { Branch } from 'entities/branch.entity';
 import { UsersService } from 'src/users/users.service';
 
 
+import { ProjectModule } from '../project/project.module';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Role, Project , Branch])],
+  imports: [TypeOrmModule.forFeature([User, Role, Project , Branch]), ProjectModule],
   controllers: [AuthController],
   providers: [AuthService,UsersService],
   exports: [AuthService , TypeOrmModule.forFeature([User]),],
