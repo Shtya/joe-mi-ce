@@ -33,7 +33,7 @@ export class UsersService {
 async resolveUserWithProject(userId: string) {
   const user = await this.userRepository.findOne({
     where: { id: userId },
-    relations: ['project', 'branch', 'branch.project'],
+    relations: ['project', 'branch', 'branch.project', 'role'],
   });
 
   if (!user) {
