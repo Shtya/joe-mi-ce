@@ -11,6 +11,8 @@ import { plainToInstance } from 'class-transformer';
 import { Shift } from 'entities/employee/shift.entity';
 import { UsersService } from 'src/users/users.service';
 
+import { Chain } from 'entities/locations/chain.entity';
+
 @Injectable()
 export class ProjectService extends BaseService<Project> {
   constructor(
@@ -18,11 +20,27 @@ export class ProjectService extends BaseService<Project> {
     @InjectRepository(Shift) public shiftRepo: Repository<Shift>,
     @InjectRepository(User)
     public userRepo: Repository<User>,
-private userService: UsersService
+    @InjectRepository(Chain)
+    public chainRepo: Repository<Chain>,
+    private userService: UsersService
     
   ) {
     super(projectRepo);
   }
+
+  async createProject(data: Partial<Project>): Promise<Project> {
+      const project = await this.projectRepo.save(this.projectRepo.create(data));
+      
+      // Auto-create Roaming Chain
+      const roamingChain = this.chainRepo.create({
+          name: 'Roaming', // or any default name
+          project: project,
+      });
+      await this.chainRepo.save(roamingChain);
+
+      return project;
+  }
+
   async findTeamsByProject(projectId: string): Promise<User[]> {
     return this.userRepo.find({
       where: {

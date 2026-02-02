@@ -21,6 +21,15 @@ export interface SupervisorCheckinPayload {
   time: Date;
 }
 
+export interface PromoterCheckinPayload {
+  promoterId: string;
+  branchId: string;
+  branchName: string;
+  journeyId: string;
+  type: SupervisorCheckinType;
+  time: Date;
+}
+
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger(NotificationService.name);
@@ -32,8 +41,14 @@ export class NotificationService {
 
   // ====== PUBLIC API FOR OTHER MODULES ======
 
-  async notifySupervisorOnCheckin(payload: SupervisorCheckinPayload) {
+  async notifySupervisorOnCheckin(payload: SupervisorCheckinPayload, lang: string = 'en') {
     const type = payload.type === 'checkin' ? NotificationType.JOURNEY_CHECKIN : payload.type === 'checkout' ? NotificationType.JOURNEY_CHECKOUT : NotificationType.JOURNEY_UPDATE;
+
+    const titleEn = payload.type === 'checkin' ? 'New check-in on your branch' : payload.type === 'checkout' ? 'Check-out completed on your branch' : 'Journey status updated on your branch';
+    const titleAr = payload.type === 'checkin' ? 'تسجيل دخول جديد في فرعك' : payload.type === 'checkout' ? 'تم تسجيل الخروج في فرعك' : 'تم تحديث حالة الرحلة في فرعك';
+
+    const messageEn = `${payload.promoterName || 'Promoter'} did ${payload.type} at ${payload.branchName}`;
+    const messageAr = `${payload.promoterName || 'المروج'} قام بـ ${this.translateType(payload.type)} في ${payload.branchName}`;
 
     const notification = this.notificationRepo.create({
       user: { id: payload.supervisorId } as User,
@@ -41,17 +56,50 @@ export class NotificationService {
       journey: { id: payload.journeyId } as Journey,
       sale: null,
       type,
-      title: type === NotificationType.JOURNEY_CHECKIN ? 'New check-in on your branch' : type === NotificationType.JOURNEY_CHECKOUT ? 'Check-out completed on your branch' : 'Journey status updated on your branch',
-      message: `${payload.promoterName || 'Promoter'} did ${payload.type} at ${payload.branchName}`,
+      title: lang === 'ar' ? titleAr : titleEn,
+      message: lang === 'ar' ? messageAr : messageEn,
       meta: {
         ...payload,
       },
     });
 
     await this.notificationRepo.save(notification);
-
-    // 🔔 هنا تقدر تضيف WebSocket / FCM / WhatsApp / Email
     this.logger.log(`Notification stored for supervisor ${payload.supervisorId} (journey ${payload.journeyId})`);
+  }
+
+  async notifyPromoterOnCheckin(payload: PromoterCheckinPayload, lang: string = 'en') {
+    const type = payload.type === 'checkin' ? NotificationType.JOURNEY_CHECKIN : payload.type === 'checkout' ? NotificationType.JOURNEY_CHECKOUT : NotificationType.JOURNEY_UPDATE;
+
+    const titleEn = payload.type === 'checkin' ? 'Check-in Successful' : payload.type === 'checkout' ? 'Check-out Successful' : 'Journey Updated';
+    const titleAr = payload.type === 'checkin' ? 'تم تسجيل الدخول بنجاح' : payload.type === 'checkout' ? 'تم تسجيل الخروج بنجاح' : 'تم تحديث الرحلة';
+
+    const messageEn = `You have successfully ${payload.type === 'checkin' ? 'checked in' : payload.type === 'checkout' ? 'checked out' : 'updated status'} at ${payload.branchName}`;
+    const messageAr = `لقد قمت ${payload.type === 'checkin' ? 'بتسجيل الدخول' : payload.type === 'checkout' ? 'بتسجيل الخروج' : 'بتحديث الحالة'} بنجاح في ${payload.branchName}`;
+
+    const notification = this.notificationRepo.create({
+      user: { id: payload.promoterId } as User,
+      branch: { id: payload.branchId } as Branch,
+      journey: { id: payload.journeyId } as Journey,
+      sale: null,
+      type,
+      title: lang === 'ar' ? titleAr : titleEn,
+      message: lang === 'ar' ? messageAr : messageEn,
+      meta: {
+        ...payload,
+      },
+    });
+
+    await this.notificationRepo.save(notification);
+    this.logger.log(`Notification stored for promoter ${payload.promoterId} (journey ${payload.journeyId})`);
+  }
+
+  private translateType(type: string): string {
+    switch (type) {
+      case 'checkin': return 'تسجيل الدخول';
+      case 'checkout': return 'تسجيل الخروج';
+      case 'update': return 'تحديث';
+      default: return type;
+    }
   }
 
   // ====== UI – GET LIST FOR CURRENT USER ======

@@ -32,6 +32,7 @@ export class JourneyController {
   async checkInOut(
     @Req() req: any,
     @Body() dto: CheckInOutDto,
+    @Headers('lang') lang: string = 'en',
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) {
@@ -45,7 +46,7 @@ export class JourneyController {
 
     if (!dto.userId) dto.userId = req.user.id;
 
-    return this.journeyService.checkInOut(dto);
+    return this.journeyService.checkInOut(dto, lang);
   }
 
 
@@ -158,9 +159,9 @@ async getOptimizedPlans(
     [JourneyStatus.ABSENT]: 'absent',
     [JourneyStatus.PRESENT]: 'present',
     [JourneyStatus.CLOSED]: 'closed',
-    [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned_absent',
-    [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned_present',
-    [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned_closed',
+    [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned-absent',
+    [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned-present',
+    [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned-closed',
   };
 
   // Define multilingual translations for display
