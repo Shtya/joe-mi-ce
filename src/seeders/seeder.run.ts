@@ -632,7 +632,7 @@ async function runSeeder() {
     username: process.env.DATABASE_USER,
     password: process.env.DATABASE_PASSWORD,
     database: process.env.DATABASE_NAME,
-    entities: [__dirname + '/../**/*.entity{.ts,.js}'], // Adjusted path
+    entities: [__dirname + '/../../entities/**/*.entity{.ts,.js}'], // Adjusted path
     synchronize: true,
   });
 
