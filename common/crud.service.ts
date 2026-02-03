@@ -617,17 +617,37 @@ function flatten(obj: any, prefix = ''): Record<string, any> {
 
 if (value instanceof FindOperator) {
   const paramKey = flatKey.replace(/\./g, '_');
+  let qualifiedName = `${entityName}.${flatKey}`;
+
+  // Handle nested paths for FindOperator
+  if (flatKey.includes('.')) {
+    const parts = flatKey.split('.');
+    const column = parts.pop()!;
+    let alias = entityName;
+    for (const seg of parts) {
+      alias = `${alias}_${seg}`;
+    }
+    qualifiedName = `${alias}.${column}`;
+  }
 
   if (value.type === 'lessThanOrEqual') {
-    query.andWhere(`${entityName}.${flatKey} <= :${paramKey}`, {
+    query.andWhere(`${qualifiedName} <= :${paramKey}`, {
       [paramKey]: value.value,
     });
     return;
   }
 
   if (value.type === 'moreThanOrEqual') {
-    query.andWhere(`${entityName}.${flatKey} >= :${paramKey}`, {
+    query.andWhere(`${qualifiedName} >= :${paramKey}`, {
       [paramKey]: value.value,
+    });
+    return;
+  }
+  
+  // SUPPORT FOR 'IN' OPERATOR
+  if (value.type === 'in') {
+    query.andWhere(`${qualifiedName} IN (:...${paramKey})`, {
+       [paramKey]: value.value,
     });
     return;
   }
