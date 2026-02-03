@@ -48,7 +48,7 @@ export class ExportController {
   
     // Filter out export-related parameters and parameters that conflict with path
     const exportParams = [
-      'module', 'limit', 'page', 'perPage', 'exportLimit', 'simpleView', 'fileName'
+      'page', 'perPage', 'exportLimit', 'simpleView', 'fileName'
     ];
   
     // Create final params object
@@ -86,6 +86,11 @@ export class ExportController {
           delete finalParams[key];
         }
       });
+    }
+
+    // Default limit if not provided
+    if (!finalParams.limit) {
+      finalParams.limit = 100000;
     }
   
     // Build the final URL
