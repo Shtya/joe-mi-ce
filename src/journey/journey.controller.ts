@@ -126,7 +126,6 @@ async getOptimizedPlans(
   if (branchId) {
     filters.branch = { id: branchId };
   }
-
   const plans = await CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
     'plan',
@@ -335,7 +334,9 @@ async getAllPlansWithPagination(
     const user = await this.usersService.resolveUserWithProject(
     req.user.id,
   );
-  const projectId = user.project?.id || user.project_id || user.branch.project.id
+    const projectId = await this.usersService.resolveProjectIdFromUser(
+    req.user.id,
+  );
   if(!projectId){
     throw new NotFoundException("the project is not assign to this user")
   }
@@ -347,6 +348,7 @@ async getAllPlansWithPagination(
   }
 
   const filters: any = {
+    projectId,
     ...query.filters,
     ...(user.branch ? { branch: { id: user.branch.id } } : {}),
     ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
