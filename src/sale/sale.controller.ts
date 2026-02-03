@@ -6,11 +6,12 @@ import { CRUD } from 'common/crud.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
+import { UsersService } from 'src/users/users.service';
 
 @UseGuards(AuthGuard)
 @Controller('sales')
 export class SaleController {
-  constructor(private readonly saleService: SaleService) {}
+  constructor(private readonly saleService: SaleService,private readonly userService: UsersService) {}
 
   // 🔹 Export sales data to Excel
   @Get('/export')
@@ -35,8 +36,20 @@ export class SaleController {
     // if (query.filters.toDate) {
     //   mergedFilters.audit_date_to = query.filters.toDate; // will map to audit.audit_date <= toDate
     // }
+    const project = this.userService.resolveProjectIdFromUser(req.user.id);
+    const mergedFilters: any = {
+      projectId : project,
+      ...query.filters,
+    };
 
-    return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], {projectId : req.user.project?.id ||req.user.project_id , ...query.filters});
+   if (query.filters?.fromDate) {
+      mergedFilters.sale_date_from = query.filters.fromDate; 
+    }
+    if (query.filters?.toDate) {
+      mergedFilters.sale_date_to = query.filters.toDate; 
+    }
+
+    return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
   }
   @Post()
   @Permissions(EPermission.SALE_CREATE)

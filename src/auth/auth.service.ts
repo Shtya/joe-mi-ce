@@ -52,10 +52,21 @@ export class AuthService {
 
   async register(requester: User | null, dto: RegisterDto, file?: Express.Multer.File) {
     const existingUser = await this.userRepository.findOne({ where: { username: dto.username },withDeleted:true});
-    if (existingUser) throw new BadRequestException('Username already exists');
+    if (existingUser) 
+      if(existingUser.deleted_at){
+        existingUser.deleted_at = null;
+        await this.userRepository.save(existingUser);
+      }
+      else throw new BadRequestException('username already exists');
     if(dto.mobile){
 const existingUserPhone = await this.userRepository.findOne({ where: { mobile: dto.mobile },withDeleted:true });
-    if (existingUserPhone) throw new BadRequestException('mobile already exists');}
+
+    if (existingUserPhone)
+      if(existingUserPhone.deleted_at){
+        existingUserPhone.deleted_at = null;
+        await this.userRepository.save(existingUserPhone);
+      }
+      else throw new BadRequestException('mobile already exists');}
     const role = await this.roleRepository.findOne({ where: { name: dto.role } });
     if (!role) throw new BadRequestException('Invalid role specified');
 
