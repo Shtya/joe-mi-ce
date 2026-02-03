@@ -53,6 +53,10 @@ export class CreateBranchDto {
 
   @IsArray()
   @IsOptional()
+  supervisorIds?: string[];
+
+  @IsArray()
+  @IsOptional()
   teamIds?: string[];
 
   salesTargetType?: SalesTargetType;

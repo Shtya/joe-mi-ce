@@ -10,7 +10,7 @@ import { Branch } from 'entities/branch.entity';
 import { Chain } from 'entities/locations/chain.entity';
 import { City } from 'entities/locations/city.entity';
 import { Project } from 'entities/project.entity';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { User } from 'entities/user.entity';
 import { ERole } from 'enums/Role.enum';
 import { SalesTarget, SalesTargetStatus, SalesTargetType } from 'entities/sales-target.entity';
@@ -50,24 +50,31 @@ export class BranchService {
 
     const projectBranches = await this.branchRepo.find({
       where: { project: { id: project.id } },
-      relations: ['supervisor', 'team'],
+      relations: ['supervisor', 'team', 'supervisors'],
     });
-function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
-  const startDate = new Date(startMonthDate.getFullYear(), startMonthDate.getMonth(), 1);
 
-  // End date: 3 months later minus 1 day
-  const endDate = new Date(startMonthDate.getFullYear(), startMonthDate.getMonth() + 3, 0);
+    function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
+      const startDate = new Date(startMonthDate.getFullYear(), startMonthDate.getMonth(), 1);
+      // End date: 3 months later minus 1 day
+      const endDate = new Date(startMonthDate.getFullYear(), startMonthDate.getMonth() + 3, 0);
+      return { startDate, endDate };
+    }
 
-  return { startDate, endDate };
-}
-
+    // Collect all supervisor IDs (legacy + new)
+    const allSupervisorIds = new Set<string>();
+    if (dto.supervisorId) allSupervisorIds.add(dto.supervisorId);
+    if (dto.supervisorIds) dto.supervisorIds.forEach(id => allSupervisorIds.add(id));
 
     // Supervisor duplication check
-    if (dto.supervisorId) {
-      const isSupervisorTaken = projectBranches.some(b => b.supervisor?.id === dto.supervisorId);
-      const isInTeam = projectBranches.some(b => b.team?.some(user => user.id === dto.supervisorId));
+    for (const supId of allSupervisorIds) {
+      const isSupervisorTaken = projectBranches.some(b => 
+        (b.supervisor?.id === supId) || 
+        (b.supervisors?.some(s => s.id === supId))
+      );
+      const isInTeam = projectBranches.some(b => b.team?.some(user => user.id === supId));
+      
       if (isSupervisorTaken || isInTeam) {
-        throw new ConflictException('Supervisor is already assigned to another branch');
+        throw new ConflictException(`Supervisor with ID ${supId} is already assigned to another branch`);
       }
     }
 
@@ -75,29 +82,41 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
     if (dto.teamIds && dto.teamIds.length > 0) {
       for (const teamId of dto.teamIds) {
         const isTeamTaken = projectBranches.some(b => b.team?.some(user => user.id === teamId));
-        const isSupervisor = projectBranches.some(b => b.supervisor?.id === teamId);
+        // Check if team member is assigned as supervisor elsewhere
+        const isSupervisor = projectBranches.some(b => 
+          (b.supervisor?.id === teamId) ||
+          (b.supervisors?.some(s => s.id === teamId))
+        );
         if (isTeamTaken || isSupervisor) {
           throw new ConflictException(`User with ID ${teamId} is already assigned to another branch`);
         }
       }
     }
 
-    const supervisor = dto.supervisorId ? await this.userRepo.findOneBy({ id: dto.supervisorId }) : null;
-    let team: User[] = [];
+    let supervisors: User[] = [];
+    if (allSupervisorIds.size > 0) {
+      supervisors = await this.userRepo.find({ where: { id: In(Array.from(allSupervisorIds)) } });
+    }
 
+    // Use the first supervisor as the legacy 'supervisor' field
+    const legacySupervisor = supervisors.length > 0 ? supervisors[0] : null;
+
+    let team: User[] = [];
     if (dto.teamIds && dto.teamIds.length > 0) {
       team = await this.userRepo.findByIds(dto.teamIds);
     }
 
-    // ✅ Add supervisor to team if not already in it
-    if (supervisor && !team.some(user => user.id === supervisor.id)) {
-      team.push(supervisor);
+    // ✅ Add supervisors to team if not already in it
+    for (const sup of supervisors) {
+      if (!team.some(user => user.id === sup.id)) {
+        team.push(sup);
+      }
     }
 
-    // ✅ Assign project ID to supervisor and team members
-    if (supervisor) {
-      supervisor.project_id = project.id;
-      await this.userRepo.save(supervisor);
+    // ✅ Assign project ID to supervisors and team members
+    for (const sup of supervisors) {
+      sup.project_id = project.id;
+      await this.userRepo.save(sup);
     }
 
     if (team.length > 0) {
@@ -109,13 +128,14 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
 
     const branch = this.branchRepo.create({
       name: dto.name,
-  geo: this.parseGeo(dto.geo),
-        geofence_radius_meters: dto.geofence_radius_meters ?? 500,
+      geo: this.parseGeo(dto.geo),
+      geofence_radius_meters: dto.geofence_radius_meters ?? 500,
       image_url: dto.image_url,
       project,
       city,
       chain,
-      supervisor,
+      supervisor: legacySupervisor, // Legacy field
+      supervisors: supervisors,     // New field
       team,
       salesTargetType: dto.salesTargetType ?? SalesTargetType.QUARTERLY,
       autoCreateSalesTargets: dto.autoCreateSalesTargets ?? true,
@@ -260,49 +280,80 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
   async update(id: string, dto: UpdateBranchDto, user: User): Promise<Branch> {
     const branch = await this.branchRepo.findOne({
       where: { id },
-      relations: ['project', 'project.owner', 'supervisor', 'team']
+      relations: ['project', 'project.owner', 'supervisor', 'team', 'supervisors']
     });
 
     if (!branch) throw new NotFoundException('Branch not found');
-      const projctId =await  this.usersService.resolveProjectIdFromUser(user.id)
+    const projctId = await this.usersService.resolveProjectIdFromUser(user.id)
     if (branch.project?.id !== projctId) throw new ForbiddenException('Access denied');
 
+    if (dto.geo !== undefined) {
+      branch.geo = this.parseGeo(dto.geo);
+    }
+
     // Check for supervisor or team changes
-    if (dto.supervisorId || dto.teamIds) {
+    if (dto.supervisorId || dto.supervisorIds || dto.teamIds) {
       const projectBranches = await this.branchRepo.find({
         where: { project: { id: branch.project.id } },
-        relations: ['supervisor', 'team'],
+        relations: ['supervisor', 'team', 'supervisors'],
       });
-      if (dto.geo !== undefined) {
-  branch.geo = this.parseGeo(dto.geo); // Accept string "lat,lng" or object
-}
 
       // Handle supervisor update
-      if (dto.supervisorId && dto.supervisorId !== branch.supervisor?.id) {
-        const newSupervisor = await this.userRepo.findOneByOrFail({ id: dto.supervisorId });
+      if (dto.supervisorId || dto.supervisorIds) {
+        // Collect desired supervisor IDs
+        const newSupervisorIds = new Set<string>();
+        if (dto.supervisorIds) dto.supervisorIds.forEach(id => newSupervisorIds.add(id));
+        if (dto.supervisorId) newSupervisorIds.add(dto.supervisorId);
 
-        // Check if new supervisor is already assigned elsewhere
-        const isSupervisorTaken = projectBranches.some(b =>
-          b.id !== id && b.supervisor?.id === dto.supervisorId
-        );
-        const isInTeamElsewhere = projectBranches.some(b =>
-          b.id !== id && b.team?.some(user => user.id === dto.supervisorId)
-        );
-
-        if (isSupervisorTaken || isInTeamElsewhere) {
-          throw new ConflictException('New supervisor is already assigned to another branch');
+        // If neither provided (empty update), we might skip or clear. 
+        // Assuming partial update: if provided, replace. 
+        // If passed explicit empty array, clear supervisors.
+        
+        let targetSupervisors: User[] = [];
+        if (newSupervisorIds.size > 0) {
+           targetSupervisors = await this.userRepo.find({ where: { id: In(Array.from(newSupervisorIds)) } });
+           if (targetSupervisors.length !== newSupervisorIds.size) {
+             throw new NotFoundException('Some supervisors not found');
+           }
         }
 
-        // Update project ID for new supervisor
-        newSupervisor.project_id = branch.project.id;
-        await this.userRepo.save(newSupervisor);
+        // Check if new supervisors are assigned elsewhere
+        for (const sup of targetSupervisors) {
+          // Check other branches
+          const isTaken = projectBranches.some(b => 
+            b.id !== id && (
+              b.supervisor?.id === sup.id || 
+              b.supervisors?.some(s => s.id === sup.id)
+            )
+          );
+          // Check if in team of other branches
+          const isInTeamElsewhere = projectBranches.some(b => 
+            b.id !== id && b.team?.some(t => t.id === sup.id)
+          );
 
-        // Add new supervisor to team if not already there
-        if (!branch.team.some(teamMember => teamMember.id === newSupervisor.id)) {
-          branch.team.push(newSupervisor);
+          if (isTaken || isInTeamElsewhere) {
+            throw new ConflictException(`Supervisor ${sup.name || sup.id} is already assigned to another branch`);
+          }
         }
 
-        branch.supervisor = newSupervisor;
+        // Update project ID
+        for (const sup of targetSupervisors) {
+          sup.project_id = branch.project.id;
+          await this.userRepo.save(sup);
+        }
+
+        // Add metadata to branch
+        branch.supervisors = targetSupervisors;
+        // Legacy support
+        branch.supervisor = targetSupervisors.length > 0 ? targetSupervisors[0] : null;
+
+        // Ensure they are in the team
+         if (!branch.team) branch.team = [];
+         for (const sup of targetSupervisors) {
+           if (!branch.team.some(t => t.id === sup.id)) {
+             branch.team.push(sup);
+           }
+         }
       }
 
       // Handle team updates
@@ -314,12 +365,13 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
         const usersToAdd = newTeamIds.filter(id => !currentTeamIds.includes(id));
         const usersToRemove = currentTeamIds.filter(id => !newTeamIds.includes(id));
 
-        // Check if any users to add are already assigned elsewhere
+        // Check availability
         for (const userId of usersToAdd) {
           const isUserTaken = projectBranches.some(b =>
             b.id !== id && (
               b.team?.some(user => user.id === userId) ||
-              b.supervisor?.id === userId
+              b.supervisor?.id === userId ||
+              b.supervisors?.some(s => s.id === userId)
             )
           );
 
@@ -328,22 +380,24 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
           }
         }
 
-        // Add new users to team
+        // Add new users
         if (usersToAdd.length > 0) {
           const newTeamMembers = await this.userRepo.findByIds(usersToAdd);
-
-          // Update project ID for new team members
           for (const teamMember of newTeamMembers) {
             teamMember.project_id = branch.project.id;
           }
           await this.userRepo.save(newTeamMembers);
-
           branch.team = [...branch.team, ...newTeamMembers];
         }
 
-        // Remove users from team
+        // Remove users (but ensure supervisors stay in team if they are supervisors)
         if (usersToRemove.length > 0) {
-          branch.team = branch.team.filter(user => !usersToRemove.includes(user.id));
+          branch.team = branch.team.filter(user => {
+            // Keep if user is in usersToRemove BUT is a supervisor
+            const isSupervisor = branch.supervisors?.some(s => s.id === user.id);
+            if (isSupervisor) return true; 
+            return !usersToRemove.includes(user.id);
+          });
         }
       }
     }
@@ -352,16 +406,80 @@ function getTargetStartAndEnd(startMonthDate: Date = new Date()) {
     if (dto.cityId) branch.city = await this.cityRepo.findOneByOrFail({ id: dto.cityId });
     if (dto.chainId !== undefined) branch.chain = dto.chainId ? await this.chainRepo.findOneBy({ id: dto.chainId }) : null;
     if (dto.name) branch.name = dto.name;
-if (dto.geo) {
-  branch.geo = {
-    lat: dto.geo.lat,
-    lng: dto.geo.lng,
-  };
-}
-if (dto.geofence_radius_meters !== undefined) branch.geofence_radius_meters = dto.geofence_radius_meters;
+    if (dto.geofence_radius_meters !== undefined) branch.geofence_radius_meters = dto.geofence_radius_meters;
     if (dto.image_url !== undefined) branch.image_url = dto.image_url;
 
     return this.branchRepo.save(branch);
+  }
+
+  async migrateSupervisors(): Promise<{ migrated: number }> {
+    const branches = await this.branchRepo.find({
+      relations: ['supervisor', 'supervisors'],
+    });
+
+    let count = 0;
+    for (const branch of branches) {
+      if (branch.supervisor) {
+        if (!branch.supervisors) branch.supervisors = [];
+        
+        const alreadyExists = branch.supervisors.some(s => s.id === branch.supervisor.id);
+        if (!alreadyExists) {
+          branch.supervisors.push(branch.supervisor);
+          await this.branchRepo.save(branch);
+          count++;
+        }
+      }
+    }
+    return { migrated: count };
+  }
+
+  async fixChainConsistency(): Promise<{ fixed: number; details: string[] }> {
+    const branches = await this.branchRepo.find({
+      relations: ['project', 'chain', 'chain.project'],
+    });
+
+    let fixedCount = 0;
+    const details: string[] = [];
+
+    for (const branch of branches) {
+      if (branch.chain && branch.project) {
+        // Check for mismatch: chain has no project OR chain's project ID != branch's project ID
+        const chainProject = branch.chain.project;
+        const chainProjectId = chainProject ? chainProject.id : null;
+        const branchProjectId = branch.project.id;
+
+        if (chainProjectId !== branchProjectId) {
+          const chainName = branch.chain.name;
+          
+          // Look for valid chain in the CORRECT project
+          let validChain = await this.chainRepo.findOne({
+            where: {
+              name: chainName,
+              project: { id: branchProjectId }
+            }
+          });
+
+          if (!validChain) {
+            // Create new chain specific to this project
+            validChain = this.chainRepo.create({
+              name: chainName,
+              project: branch.project,
+              logoUrl: branch.chain.logoUrl
+            });
+            await this.chainRepo.save(validChain);
+            details.push(`Created chain '${chainName}' for project '${branch.project.name || branchProjectId}'`);
+          }
+
+          // Re-assign branch to the valid chain
+          branch.chain = validChain;
+          await this.branchRepo.save(branch);
+          fixedCount++;
+          details.push(`Fixed branch '${branch.name}' (ID: ${branch.id}) linked to chain '${chainName}'`);
+        }
+      }
+    }
+
+    return { fixed: fixedCount, details };
   }
 
   async findOne(id: string): Promise<Branch> {

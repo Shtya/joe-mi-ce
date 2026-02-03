@@ -188,4 +188,16 @@ export class BranchController {
     }
   }
 
+  @Post('migrate-supervisors')
+  @Permissions(EPermission.BRANCH_UPDATE)
+  async migrateSupervisors() {
+    return this.branchService.migrateSupervisors();
+  }
+
+  @Post('fix-chain-consistency')
+  @Permissions(EPermission.BRANCH_UPDATE)
+  async fixChainConsistency() {
+    return this.branchService.fixChainConsistency();
+  }
+
 }
