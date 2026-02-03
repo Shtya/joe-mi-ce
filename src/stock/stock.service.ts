@@ -1129,7 +1129,9 @@ async getOutOfStockByUserBranchMobile(
 
   // Apply additional filters
   if (filters) {
+    const reservedKeys = ['page', 'limit', 'search', 'sortBy', 'sortOrder', 'threshold'];
     Object.entries(filters).forEach(([key, value]) => {
+      if (reservedKeys.includes(key)) return;
       if (value !== null && value !== undefined && value !== '') {
         if (key.includes('.')) {
           const [relation, field] = key.split('.');
