@@ -660,13 +660,8 @@ async findSalesByUserOptimized(
   if (search) {
     qb.andWhere(
       new Brackets(subQb => {
-        subQb.where('sale.status ILIKE :search', { search: `%${search}%` })
-            .orWhere('product.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('brand.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('category.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('branch.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('branch.city ILIKE :search', { search: `%${search}%` })
-            .orWhere('user.name ILIKE :search', { search: `%${search}%` });
+        subQb.where('product.name ILIKE :search', { search: `%${search}%` })
+
       })
     );
   }

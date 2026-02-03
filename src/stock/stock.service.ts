@@ -678,9 +678,7 @@ if (!branch) {
     qb.andWhere(
       new Brackets(subQb => {
         subQb.where('product.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('brand.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('category.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('product.sku ILIKE :search', { search: `%${search}%` });
+
       })
     );
   }
@@ -1122,9 +1120,7 @@ async getOutOfStockByUserBranchMobile(
     qb.andWhere(
       new Brackets(subQb => {
         subQb.where('product.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('brand.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('category.name ILIKE :search', { search: `%${search}%` })
-            .orWhere('product.sku ILIKE :search', { search: `%${search}%` });
+
       })
     );
   }
