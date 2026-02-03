@@ -64,14 +64,14 @@ async getPromotersAndSupervisors(@Request() req) {
 
   return this.usersService.getPromotersAndSupervisorsByProject(projectId);
 }
-  @Delete('delete/account')
-  async deleteUser(
-    @Body('userId') userId: string, // optional
- @Req() req
-  ) {
+//   @Delete('delete/account')
+//   async deleteUser(
+//     @Body('userId') userId: string, // optional
+//  @Req() req
+//   ) {
 
-    const lang = req.headers['lang']?.toLowerCase() || 'en';
-    const user = userId || req.user.id
-    return this.usersService.deleteUser(user, lang);
-  }
+//     const lang = req.headers['lang']?.toLowerCase() || 'en';
+//     const user = userId || req.user.id
+//     return this.usersService.deleteUser(user, lang);
+//   }
 }
