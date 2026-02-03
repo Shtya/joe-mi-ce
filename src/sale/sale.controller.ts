@@ -39,15 +39,22 @@ export class SaleController {
     const project = this.userService.resolveProjectIdFromUser(req.user.id);
     const mergedFilters: any = {
       projectId : project,
-      ...query.filters,
+      ...query.filters, // This might spread 'fromDate'/'toDate' if they exist in query.filters
     };
 
-   if (query.filters?.fromDate) {
+    if (query.filters?.fromDate) {
       mergedFilters.sale_date_from = query.filters.fromDate; 
+      delete mergedFilters.fromDate; // Remove from filters to avoid column error
     }
     if (query.filters?.toDate) {
       mergedFilters.sale_date_to = query.filters.toDate; 
+      delete mergedFilters.toDate; // Remove from filters to avoid column error
     }
+    
+    // Also remove from date if present
+    if (mergedFilters.fromDate) delete mergedFilters.fromDate;
+    if (mergedFilters.toDate) delete mergedFilters.toDate;
+    if (mergedFilters.date) delete mergedFilters.date;
 
     return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
   }
@@ -95,6 +102,11 @@ export class SaleController {
   @Get('by-branch/:branchId')
   @Permissions(EPermission.SALE_READ)
   findByBranch(@Param('branchId') branchId: string, @Query() query: any) {
+    const filters = { ...query.filters };
+    delete filters.fromDate;
+    delete filters.toDate;
+    delete filters.date;
+
     return this.saleService.findSalesWithBrand(
       'sale',
       query.search,
@@ -104,14 +116,20 @@ export class SaleController {
       query.sortOrder,
       ["user", "product", "branch","branch.salesTargets"],
       ['status'],
-      { branch: { id: branchId }, ...query.filters }
+      { branch: { id: branchId }, ...filters }
     );
   }
+
 
 
   @Get('by-product/:productId')
   @Permissions(EPermission.SALE_READ)
   findByProduct(@Param('productId') productId: string, @Query() query: any) {
+    const filters = { ...query.filters };
+    delete filters.fromDate;
+    delete filters.toDate;
+    delete filters.date;
+
     return this.saleService.findSalesWithBrand(
       'sale',
       query.search,
@@ -121,7 +139,7 @@ export class SaleController {
       query.sortOrder,
       ["user", "product", "branch"],
       ['status'],
-      { product: { id: productId }, ...query.filters }
+      { product: { id: productId }, ...filters }
     );
   }
 
@@ -129,6 +147,11 @@ export class SaleController {
 @Get('by-user/:userId')
 @Permissions(EPermission.SALE_READ)
 findByUser(@Param('userId') userId: string, @Query() query: any) {
+  const filters = { ...query.filters };
+  delete filters.fromDate;
+  delete filters.toDate;
+  delete filters.date;
+
   return this.saleService.findSalesByUserOptimized(
     userId,
     query.search,
@@ -136,7 +159,7 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
     query.limit,
     query.sortBy,
     query.sortOrder,
-    { ...query.filters }
+    { ...filters }
   );
 }
   @Get('branch/:branchId/progress')

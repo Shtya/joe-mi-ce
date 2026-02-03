@@ -1,5 +1,5 @@
 // branch.entity.ts
-import { Entity, Column, ManyToOne, OneToMany, Index } from 'typeorm';
+import { Entity, Column, ManyToOne, OneToMany, Index, ManyToMany, JoinTable } from 'typeorm';
 import { CoreEntity } from './core.entity';
 import { Project } from './project.entity';
 import { User } from './user.entity';
@@ -53,6 +53,10 @@ export class Branch extends CoreEntity {
 
   @ManyToOne(() => User, { nullable: true , eager : true})
   supervisor: User;
+
+  @ManyToMany(() => User)
+  @JoinTable({ name: 'branch_supervisors' })
+  supervisors: User[];
 
   @OneToMany(() => User, user => user.branch)
   team: User[];

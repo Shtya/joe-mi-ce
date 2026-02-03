@@ -68,6 +68,10 @@ async getPlans(
     ...query.filters,
   };
 
+  delete filters.fromDate;
+  delete filters.toDate;
+  delete filters.date;
+
   if (userId) {
     filters.user = { id: userId };
   }
@@ -109,6 +113,11 @@ async getOptimizedPlans(
     projectId,
     ...query.filters,
   };
+
+  // Clean filters
+  delete filters.fromDate;
+  delete filters.toDate;
+  delete filters.date;
 
   if (userId) {
     filters.user = { id: userId };
@@ -345,6 +354,10 @@ async getAllPlansWithPagination(
       ? { branch: { id: In(supervisorBranchIds) } } 
       : {})
   };
+
+  delete filters.fromDate;
+  delete filters.toDate;
+  delete filters.date;
 
 
 
