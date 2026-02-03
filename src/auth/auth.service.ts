@@ -55,18 +55,14 @@ export class AuthService {
     if (existingUser) 
       if(existingUser.deleted_at){
         existingUser.deleted_at = null;
-        await this.userRepository.save(existingUser);
+        
+        return await this.userRepository.save(existingUser);
       }
       else throw new BadRequestException('username already exists');
     if(dto.mobile){
 const existingUserPhone = await this.userRepository.findOne({ where: { mobile: dto.mobile },withDeleted:true });
 
-    if (existingUserPhone)
-      if(existingUserPhone.deleted_at){
-        existingUserPhone.deleted_at = null;
-        await this.userRepository.save(existingUserPhone);
-      }
-      else throw new BadRequestException('mobile already exists');}
+    if (existingUserPhone)throw new BadRequestException('mobile already exists');}
     const role = await this.roleRepository.findOne({ where: { name: dto.role } });
     if (!role) throw new BadRequestException('Invalid role specified');
 
