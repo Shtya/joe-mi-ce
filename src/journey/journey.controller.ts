@@ -498,6 +498,13 @@ async getAllPlansWithPagination(
       projectId,
       ...query.filters,
     };
+    
+    // Clean up filters to avoid "column does not exist" error
+    // If fromDate/toDate are passed in query.filters (e.g. from export url), remove them
+    // because we map them manually below to date_from/date_to
+    delete filters.fromDate;
+    delete filters.toDate;
+    delete filters.date;
 
     if (userId) filters.user = { id: userId };
     if (branchId) filters.branch = { id: branchId };
@@ -531,8 +538,7 @@ async getAllPlansWithPagination(
       ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
       undefined,
       {
-        projectId,
-        ...query.filters,
+        ...filters,
         ...(userId ? { user: { id: userId } } : {}),
         ...(branchId ? { branch: { id: branchId } } : {}),
         ...(shiftId ? { shift: { id: shiftId } } : {}),

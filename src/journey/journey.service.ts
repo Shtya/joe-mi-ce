@@ -117,6 +117,7 @@ async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
       user: { id: dto.userId },
       date: today,
       type: JourneyType.UNPLANNED,
+      shift:shift
     },
   });
 
