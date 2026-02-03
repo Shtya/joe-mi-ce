@@ -9,10 +9,12 @@ import { Stock } from 'entities/products/stock.entity';
 import { SaleService } from './sale.service';
 import { SaleController } from './sale.controller';
 import { SalesTarget } from 'entities/sales-target.entity';
+import { UsersService } from 'src/users/users.service';
+import { Project } from 'entities/project.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Sale, Product, Stock, User, Branch,SalesTarget])],
+  imports: [TypeOrmModule.forFeature([Sale, Product, Stock, User, Branch,SalesTarget,Project])],
   controllers: [SaleController],
-  providers: [SaleService],
+  providers: [SaleService,UsersService],
 })
 export class SaleModule {}
