@@ -1162,4 +1162,269 @@ if (value instanceof FindOperator) {
       records: data,
     };
   }
+  static async exportEntityToExcel2<T>(
+    repository: Repository<T>,
+    entityName: string,
+    fileName: string,
+    res: any,
+    options: {
+      exportLimit?: number | string;
+      columns?: { header: string; key: string; width?: number }[];
+      search?: string;
+      filters?: Record<string, any>;
+      sortBy?: string;
+      sortOrder?: 'ASC' | 'DESC';
+      relations?: string[];
+      searchFields?: string[];
+    } = {},
+  ) {
+    const normalizedLimit = String(options.exportLimit).toLowerCase().trim();
+    let take: number | undefined;
+
+    if (normalizedLimit === 'all') {
+      take = undefined;
+    } else {
+      const n = Number(options.exportLimit);
+      take = Number.isFinite(n) && n > 0 ? Math.floor(n) : 1000;
+    }
+
+    const qb = repository.createQueryBuilder(entityName);
+    if (take) {
+        qb.take(take);
+    }
+
+    // --- helpers/meta ---
+    const meta = repository.metadata;
+    const colByProp = new Map(meta.columns.map(c => [c.propertyName, c]));
+    const colByDb = new Map(meta.columns.map(c => [c.databaseName, c]));
+
+    function resolveOwnColumnName(field: string): string | null {
+      const col = colByProp.get(field) || colByDb.get(field) || (field === 'created_at' ? colByProp.get('createdAt') : null) || (field === 'createdAt' ? colByDb.get('created_at') : null);
+      return col ? col.databaseName : null;
+    }
+
+    function flatten(obj: any, prefix = ''): Record<string, any> {
+      const out: Record<string, any> = {};
+      if (!obj || typeof obj !== 'object') return out;
+      for (const [k, v] of Object.entries(obj)) {
+        const key = prefix ? `${prefix}.${k}` : k;
+        if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(out, flatten(v, key));
+        else out[key] = v;
+      }
+      return out;
+    }
+
+    // --- compute relation paths needed by filters/sort ---
+    const relationPathsFromFilters = new Set<string>();
+    const flatFilters = options.filters && Object.keys(options.filters).length ? flatten(options.filters) : {};
+    for (const key of Object.keys(flatFilters)) {
+      if (key.includes('.')) {
+        const parts = key.split('.');
+        if (parts.length > 1) {
+          const relPath = parts.slice(0, -1).join('.'); // e.g., 'stock.branch'
+          relationPathsFromFilters.add(relPath);
+        }
+      }
+    }
+    if (options.sortBy?.includes('.')) {
+      const parts = options.sortBy.split('.');
+      if (parts.length > 1) {
+        relationPathsFromFilters.add(parts.slice(0, -1).join('.'));
+      }
+    }
+
+    // --- join relations FIRST (requested + implied by filters/sort) ---
+    const relationsToJoin = Array.from(new Set([...(options.relations || []), ...relationPathsFromFilters]));
+    const aliasMap = CRUD.joinNestedRelations(qb, repository, entityName, relationsToJoin);
+
+    // qualify field (base or nested via aliasMap)
+    function qualifyField(fieldPath: string): string {
+      if (!fieldPath.includes('.')) {
+        const dbName = resolveOwnColumnName(fieldPath) || fieldPath;
+        return `${entityName}.${dbName}`;
+      }
+      const parts = fieldPath.split('.');
+      const relationPath = parts.slice(0, -1).join('.');
+      const last = parts[parts.length - 1];
+      const alias = aliasMap.get(relationPath);
+      if (!alias) {
+        // not joined? then it’s invalid relation path
+        throw new BadRequestException(`Missing join for relation path '${relationPath}' (from '${fieldPath}')`);
+      }
+      return `${alias}.${last}`;
+    }
+
+    // --- filters (supports ops) ---
+    function applyFilter(key: string, value: any) {
+      let base = key;
+      let op: string | null = null;
+      const knownOps = ['like', 'ilike', 'gt', 'gte', 'lt', 'lte', 'ne', 'isnull'];
+
+      const i = key.lastIndexOf('.');
+      if (i > -1) {
+        const maybeOp = key.slice(i + 1);
+        if (knownOps.includes(maybeOp)) {
+          base = key.slice(0, i);
+          op = maybeOp;
+        }
+      }
+
+      if (value === '__NULL__') {
+        op = 'isnull';
+        value = true;
+      }
+
+      const qualified = qualifyField(base);
+      const param = key.replace(/\./g, '_');
+
+      switch (op) {
+        case 'like':
+          qb.andWhere(`${qualified} LIKE :${param}`, { [param]: `%${value}%` });
+          break;
+        case 'ilike':
+          qb.andWhere(`${qualified} ILIKE :${param}`, { [param]: `%${value}%` });
+          break;
+        case 'gt':
+          qb.andWhere(`${qualified} > :${param}`, { [param]: value });
+          break;
+        case 'gte':
+          qb.andWhere(`${qualified} >= :${param}`, { [param]: value });
+          break;
+        case 'lt':
+          qb.andWhere(`${qualified} < :${param}`, { [param]: value });
+          break;
+        case 'lte':
+          qb.andWhere(`${qualified} <= :${param}`, { [param]: value });
+          break;
+        case 'ne':
+          qb.andWhere(`${qualified} <> :${param}`, { [param]: value });
+          break;
+        case 'isnull':
+          if (value === true || value === 'true' || value === 1 || value === '1') qb.andWhere(`${qualified} IS NULL`);
+          else qb.andWhere(`${qualified} IS NOT NULL`);
+          break;
+        default:
+          if (value !== null && value !== undefined && value !== '') {
+            qb.andWhere(`${qualified} = :${param}`, { [param]: value });
+          }
+      }
+    }
+
+    if (options.filters && Object.keys(options.filters).length) {
+      const flat = flatFilters; // already flattened above
+      // group ops per base field to allow BETWEEN (gte + lte)
+      const grouped: Record<string, Record<string, any>> = {};
+      for (const [k, v] of Object.entries(flat)) {
+        const j = k.lastIndexOf('.');
+        const base = j > -1 ? k.slice(0, j) : k;
+        const op = j > -1 ? k.slice(j + 1) : 'eq';
+        if (!grouped[base]) grouped[base] = {};
+        grouped[base][op] = v;
+      }
+
+      for (const [base, ops] of Object.entries(grouped)) {
+        if (ops.gte !== undefined && ops.lte !== undefined) {
+          const qualified = qualifyField(base);
+          const pFrom = base.replace(/\./g, '_') + '_from';
+          const pTo = base.replace(/\./g, '_') + '_to';
+          qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
+            [pFrom]: ops.gte,
+            [pTo]: ops.lte,
+          });
+          for (const [op, val] of Object.entries(ops)) {
+            if (op === 'gte' || op === 'lte') continue;
+            if (op === 'eq') applyFilter(base, val);
+            else applyFilter(`${base}.${op}`, val);
+          }
+        } else {
+          for (const [op, val] of Object.entries(ops)) {
+            if (op === 'eq') applyFilter(base, val);
+            else applyFilter(`${base}.${op}`, val);
+          }
+        }
+      }
+    }
+
+    // --- search ---
+    if (options.search && options.searchFields?.length) {
+      qb.andWhere(
+        new Brackets(qb2 => {
+          for (const field of options.searchFields) {
+            try {
+              const qualified = qualifyField(field);
+              // We cast to text for robustness; adjust if you want type-aware like earlier logic
+              qb2.orWhere(`LOWER(${qualified}::text) LIKE LOWER(:search)`, { search: `%${options.search}%` });
+            } catch {
+              // ignore fields that aren't valid in this entity (e.g., misconfigured field)
+            }
+          }
+        }),
+      );
+    }
+
+    // --- sorting (supports nested) ---
+    const sortOrder = options.sortOrder || 'DESC';
+    if (options.sortBy?.includes('.')) {
+      const qualified = qualifyField(options.sortBy);
+      qb.orderBy(qualified, sortOrder);
+    } else {
+      const field = options.sortBy || 'created_at';
+      const dbName = resolveOwnColumnName(field);
+      if (dbName) {
+         qb.orderBy(`${entityName}.${dbName}`, sortOrder);
+      }
+    }
+
+    const data = await qb.getMany();
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Report');
+
+    const columns =
+      options.columns ??
+      (data.length > 0
+        ? Object.keys(data[0])
+            .filter(key => key !== 'updated_at' && key !== 'deleted_at')
+            .map(key => ({ header: key, key, width: 20 }))
+        : []);
+
+    worksheet.columns = columns;
+
+    data.forEach(item => {
+      const rowData: any = { ...item };
+      delete rowData.updated_at;
+      delete rowData.deleted_at;
+
+      const row = worksheet.addRow(rowData);
+
+      row.eachCell(cell => {
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      });
+    });
+
+    worksheet.getRow(1).eachCell(cell => {
+      cell.font = { bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFCCCCCC' },
+      };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    worksheet.columns.forEach(column => {
+      let maxLength = 10;
+      column.eachCell({ includeEmpty: true }, cell => {
+        const cellValue = cell.value ? cell.value.toString() : '';
+        if (cellValue.length > maxLength) maxLength = cellValue.length;
+      });
+      column.width = maxLength + 2;
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=${fileName}.xlsx`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  }
 }

@@ -16,8 +16,42 @@ export class SaleController {
   // 🔹 Export sales data to Excel
   @Get('/export')
   @Permissions(EPermission.SALE_EXPORT)
-  async exportData(@Query('limit') limit: number, @Res() res: any) {
-    return CRUD.exportEntityToExcel(this.saleService.saleRepo, 'sale', res, { exportLimit: limit });
+  @Get('/export')
+  @Permissions(EPermission.SALE_EXPORT)
+  async exportData(@Query() query: any, @Req() req: any, @Res() res: any) {
+    const project = this.userService.resolveProjectIdFromUser(req.user.id);
+    const mergedFilters: any = {
+      projectId : project,
+      ...query.filters,
+    };
+
+    if (query.filters?.fromDate) {
+      mergedFilters.sale_date_from = query.filters.fromDate; 
+      delete mergedFilters.fromDate;
+    }
+    if (query.filters?.toDate) {
+      mergedFilters.sale_date_to = query.filters.toDate; 
+      delete mergedFilters.toDate;
+    }
+    
+    if (mergedFilters.fromDate) delete mergedFilters.fromDate;
+    if (mergedFilters.toDate) delete mergedFilters.toDate;
+    if (mergedFilters.date) delete mergedFilters.date;
+
+    return CRUD.exportEntityToExcel2(
+      this.saleService.saleRepo, 
+      'sale', 
+      'sales_report', 
+      res, 
+      { 
+        exportLimit: query.limit,
+        search: query.search,
+        filters: mergedFilters,
+        sortBy: query.sortBy,
+        sortOrder: query.sortOrder,
+        relations: ["user", "product", "branch"],
+      }
+    );
   }
 
   @Get()
@@ -56,7 +90,7 @@ export class SaleController {
     if (mergedFilters.toDate) delete mergedFilters.toDate;
     if (mergedFilters.date) delete mergedFilters.date;
 
-    return CRUD.findAll(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
+    return CRUD.findAll2(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
   }
   @Post()
   @Permissions(EPermission.SALE_CREATE)
