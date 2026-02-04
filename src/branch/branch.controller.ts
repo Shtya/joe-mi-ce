@@ -30,7 +30,7 @@ export class BranchController {
   @Get(':projectId/project')
   @Permissions(EPermission.BRANCH_READ)
   async getBranchesByProject(@Param('projectId') projectId: string, @Query() query: PaginationQueryDto) {
-    return CRUD.findAll(this.branchService.branchRepo, 'branch', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['city', 'chain', 'project', 'supervisor', 'team'], ['name'], { project: { id: projectId } , ...query.filters });
+    return CRUD.findAll(this.branchService.branchRepo, 'branch', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['city', 'chain', 'project', 'supervisor', 'supervisors', 'team'], ['name'], { project: { id: projectId } , ...query.filters });
   }
 
   @Get('/my')
@@ -56,7 +56,7 @@ export class BranchController {
       query.limit,
       query.sortBy,
       query.sortOrder,
-      ['city', 'chain', 'project', 'supervisor', 'team'],
+      ['city', 'chain', 'project', 'supervisor', 'supervisors', 'team'],
       ['name'],
       whereCondition
     );
@@ -87,7 +87,7 @@ export class BranchController {
   @Get(':branchId/teams')
   @Permissions(EPermission.BRANCH_READ)
   async getTeamOnBranch(@Param('branchId') branchId: UUID, @Query() query: PaginationQueryDto, @Req() req: any) {
-    return CRUD.findAll(this.branchService.branchRepo, 'branch', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['supervisor', 'team'], ['name'], { id: branchId , ...query.filters });
+    return CRUD.findAll(this.branchService.branchRepo, 'branch', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['supervisor', 'supervisors', 'team'], ['name'], { id: branchId , ...query.filters });
   }
 
   @Get(':id')
