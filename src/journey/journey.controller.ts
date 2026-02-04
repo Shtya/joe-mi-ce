@@ -514,9 +514,11 @@ async getAllPlansWithPagination(
       ...query.filters,
     };
     
+    // Extract dates from filters if not provided as params
+    const effectiveFromDate = fromDate || filters.fromDate;
+    const effectiveToDate = toDate || filters.toDate;
+    
     // Clean up filters to avoid "column does not exist" error
-    // If fromDate/toDate are passed in query.filters (e.g. from export url), remove them
-    // because we map them manually below to date_from/date_to
     delete filters.fromDate;
     delete filters.toDate;
     delete filters.date;
@@ -528,12 +530,12 @@ async getAllPlansWithPagination(
     if (status) filters.status = status;
 
     // Date filters mapping
-    if (fromDate) filters.date_from = fromDate;
-    if (toDate) filters.date_to = toDate;
+    if (effectiveFromDate) filters.date_from = effectiveFromDate;
+    if (effectiveToDate) filters.date_to = effectiveToDate;
 
     // Default behavior: if NO date filter is provided (date, fromDate, toDate), limit to <= today
     // If ANY date filter is provided, we respect that completely and do NOT enforce <= today
-    const hasDateFilters = !!(_date || fromDate || toDate || filters.date);
+    const hasDateFilters = !!(_date || effectiveFromDate || effectiveToDate || filters.date);
     
     // We pass extraWhere ONLY if we need the default behavior
     const extraWhere = !hasDateFilters
@@ -560,8 +562,8 @@ async getAllPlansWithPagination(
         ...(type ? { type } : {}),
         ...(status ? { status } : {}),
         // Add mapped date filters
-        ...(fromDate ? { date_from: fromDate } : {}),
-        ...(toDate ? { date_to: toDate } : {}),
+        ...(effectiveFromDate ? { date_from: effectiveFromDate } : {}),
+        ...(effectiveToDate ? { date_to: effectiveToDate } : {}),
       },
       extraWhere
     );
