@@ -124,10 +124,10 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
           throw new ConflictException('This branch already has a supervisor assigned');
         }
 
-        // const existingSupervisor = projectBranches.find(b => b.supervisor?.username === dto.username);
-        // if (existingSupervisor) {
-        //   throw new ConflictException('This supervisor is already assigned to another branch');
-        // }
+        const existingSupervisor = projectBranches.find(b => b.supervisor?.username === dto.username);
+        if (existingSupervisor) {
+          throw new ConflictException('This supervisor is already assigned to another branch');
+        }
       }
 
       // Validate promoter is not used elsewhere
