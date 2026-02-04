@@ -365,9 +365,15 @@ if (search && searchFields?.length) {
     for (const key of Object.keys(flatFilters)) {
       if (key.includes('.')) {
         const parts = key.split('.');
-        if (parts.length > 1) {
-          const relPath = parts.slice(0, -1).join('.'); // e.g., 'stock.branch'
-          relationPathsFromFilters.add(relPath);
+        const knownOps = ['like', 'ilike', 'gt', 'gte', 'lt', 'lte', 'ne', 'isnull'];
+        const lastPart = parts[parts.length - 1];
+
+        // If last part is an operator, ignore it for path calculation
+        const effectiveParts = knownOps.includes(lastPart) ? parts.slice(0, -1) : parts;
+        
+        if (effectiveParts.length > 1) {
+             const relPath = effectiveParts.slice(0, -1).join('.');
+             relationPathsFromFilters.add(relPath);
         }
       }
     }
@@ -1220,9 +1226,15 @@ if (value instanceof FindOperator) {
     for (const key of Object.keys(flatFilters)) {
       if (key.includes('.')) {
         const parts = key.split('.');
-        if (parts.length > 1) {
-          const relPath = parts.slice(0, -1).join('.'); // e.g., 'stock.branch'
-          relationPathsFromFilters.add(relPath);
+        const knownOps = ['like', 'ilike', 'gt', 'gte', 'lt', 'lte', 'ne', 'isnull'];
+        const lastPart = parts[parts.length - 1];
+
+        // If last part is an operator, ignore it for path calculation
+        const effectiveParts = knownOps.includes(lastPart) ? parts.slice(0, -1) : parts;
+        
+        if (effectiveParts.length > 1) {
+             const relPath = effectiveParts.slice(0, -1).join('.');
+             relationPathsFromFilters.add(relPath);
         }
       }
     }
