@@ -25,6 +25,11 @@ export class SaleController {
       ...query.filters,
     };
 
+    if (query.filters?.project?.id) {
+      mergedFilters.projectId = query.filters.project.id;
+      delete mergedFilters.project;
+    }
+
     if (query.filters?.fromDate || query.filters?.toDate) {
       mergedFilters.created_at = {};
       if (query.filters.fromDate) mergedFilters.created_at.gte = query.filters.fromDate;
@@ -36,6 +41,7 @@ export class SaleController {
     if (mergedFilters.date) delete mergedFilters.date;
     if (mergedFilters.sale_date_from) delete mergedFilters.sale_date_from;
     if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
+    if (mergedFilters.project) delete mergedFilters.project;
 
     return CRUD.exportEntityToExcel2(
       this.saleService.saleRepo, 
@@ -75,6 +81,11 @@ export class SaleController {
       ...query.filters, // This might spread 'fromDate'/'toDate' if they exist in query.filters
     };
 
+    if (query.filters?.project?.id) {
+      mergedFilters.projectId = query.filters.project.id;
+      delete mergedFilters.project;
+    }
+
     if (query.filters?.fromDate || query.filters?.toDate) {
       mergedFilters.created_at = {};
       if (query.filters.fromDate) mergedFilters.created_at.gte = query.filters.fromDate;
@@ -86,6 +97,7 @@ export class SaleController {
     if (mergedFilters.date) delete mergedFilters.date;
     if (mergedFilters.sale_date_from) delete mergedFilters.sale_date_from;
     if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
+    if (mergedFilters.project) delete mergedFilters.project;
 
     return CRUD.findAll2(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
   }
