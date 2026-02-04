@@ -26,9 +26,9 @@ export class SaleController {
     };
 
     if (query.filters?.fromDate || query.filters?.toDate) {
-      mergedFilters.sale_date = {};
-      if (query.filters.fromDate) mergedFilters.sale_date.gte = query.filters.fromDate;
-      if (query.filters.toDate) mergedFilters.sale_date.lte = query.filters.toDate;
+      mergedFilters.created_at = {};
+      if (query.filters.fromDate) mergedFilters.created_at.gte = query.filters.fromDate;
+      if (query.filters.toDate) mergedFilters.created_at.lte = query.filters.toDate;
     }
     
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
@@ -76,9 +76,9 @@ export class SaleController {
     };
 
     if (query.filters?.fromDate || query.filters?.toDate) {
-      mergedFilters.sale_date = {};
-      if (query.filters.fromDate) mergedFilters.sale_date.gte = query.filters.fromDate;
-      if (query.filters.toDate) mergedFilters.sale_date.lte = query.filters.toDate;
+      mergedFilters.created_at = {};
+      if (query.filters.fromDate) mergedFilters.created_at.gte = query.filters.fromDate;
+      if (query.filters.toDate) mergedFilters.created_at.lte = query.filters.toDate;
     }
 
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
