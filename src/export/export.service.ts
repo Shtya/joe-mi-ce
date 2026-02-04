@@ -964,7 +964,7 @@ export class ExportService {
       [ModuleName.BRANCH]: ['chain', 'city', 'region', 'country'],
       [ModuleName.CHECKIN]: ['branch', 'user'],
       [ModuleName.JOURNEY]: ['branch', 'user'],
-      [ModuleName.JOURNEYPLAN]: ['branch', 'user'],
+      [ModuleName.JOURNEYPLAN]: ['branch', 'user','checkin'],
       [ModuleName.SHIFT]: ['user'],
       [ModuleName.VACATION]: ['user'],
       [ModuleName.CHAIN]: ['branches'],
