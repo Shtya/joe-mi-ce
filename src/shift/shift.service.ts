@@ -35,9 +35,7 @@ export class ShiftService {
       )
       .getOne();
 
-    if (overlappingShift) {
-      throw new ConflictException(`This shift overlaps with an existing shift: [${overlappingShift.startTime} - ${overlappingShift.endTime}]`);
-    }
+
 
     const shift = this.shiftRepo.create({ ...dto, project });
     return this.shiftRepo.save(shift);
