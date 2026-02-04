@@ -331,9 +331,9 @@ export class BranchService {
             b.id !== id && b.team?.some(t => t.id === sup.id)
           );
 
-          if (isTaken || isInTeamElsewhere) {
-            throw new ConflictException(`Supervisor ${sup.name || sup.id} is already assigned to another branch`);
-          }
+          // if (isTaken || isInTeamElsewhere) {
+          //   throw new ConflictException(`Supervisor ${sup.name || sup.id} is already assigned to another branch`);
+          // }
         }
 
         // Update project ID
