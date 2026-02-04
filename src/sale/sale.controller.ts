@@ -25,18 +25,17 @@ export class SaleController {
       ...query.filters,
     };
 
-    if (query.filters?.fromDate) {
-      mergedFilters.sale_date_from = query.filters.fromDate; 
-      delete mergedFilters.fromDate;
-    }
-    if (query.filters?.toDate) {
-      mergedFilters.sale_date_to = query.filters.toDate; 
-      delete mergedFilters.toDate;
+    if (query.filters?.fromDate || query.filters?.toDate) {
+      mergedFilters.sale_date = {};
+      if (query.filters.fromDate) mergedFilters.sale_date.gte = query.filters.fromDate;
+      if (query.filters.toDate) mergedFilters.sale_date.lte = query.filters.toDate;
     }
     
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
     if (mergedFilters.toDate) delete mergedFilters.toDate;
     if (mergedFilters.date) delete mergedFilters.date;
+    if (mergedFilters.sale_date_from) delete mergedFilters.sale_date_from;
+    if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
 
     return CRUD.exportEntityToExcel2(
       this.saleService.saleRepo, 
@@ -76,19 +75,17 @@ export class SaleController {
       ...query.filters, // This might spread 'fromDate'/'toDate' if they exist in query.filters
     };
 
-    if (query.filters?.fromDate) {
-      mergedFilters.sale_date_from = query.filters.fromDate; 
-      delete mergedFilters.fromDate; // Remove from filters to avoid column error
+    if (query.filters?.fromDate || query.filters?.toDate) {
+      mergedFilters.sale_date = {};
+      if (query.filters.fromDate) mergedFilters.sale_date.gte = query.filters.fromDate;
+      if (query.filters.toDate) mergedFilters.sale_date.lte = query.filters.toDate;
     }
-    if (query.filters?.toDate) {
-      mergedFilters.sale_date_to = query.filters.toDate; 
-      delete mergedFilters.toDate; // Remove from filters to avoid column error
-    }
-    
-    // Also remove from date if present
+
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
     if (mergedFilters.toDate) delete mergedFilters.toDate;
     if (mergedFilters.date) delete mergedFilters.date;
+    if (mergedFilters.sale_date_from) delete mergedFilters.sale_date_from;
+    if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
 
     return CRUD.findAll2(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
   }
