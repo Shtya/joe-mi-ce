@@ -48,6 +48,42 @@ export class UpdateJourneyDto {
   @IsOptional()
   @IsDateString()
   date?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsDateString()
+  checkInTime?: string;
+
+  @IsOptional()
+  @IsDateString()
+  checkOutTime?: string;
+
+  @IsOptional()
+  @IsString()
+  geo?: string;
+
+  @IsOptional()
+  @IsString()
+  image?: string;
+
+  @IsOptional()
+  @IsString()
+  checkInDocument?: string;
+
+  @IsOptional()
+  @IsString()
+  checkOutDocument?: string;
+
+  @IsOptional()
+  @IsString()
+  noteIn?: string;
+
+  @IsOptional()
+  @IsString()
+  noteOut?: string;
 }
 
 export class CheckInOutDto {
