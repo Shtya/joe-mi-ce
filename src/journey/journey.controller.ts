@@ -3,7 +3,7 @@
 import { Controller, Get, Post, Body, Param, Delete,Headers, UseGuards, Req, Query, Patch, UploadedFile, UseInterceptors, NotFoundException } from '@nestjs/common';
 import { JourneyService } from './journey.service';
 import { AuthGuard } from '../auth/auth.guard';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto } from 'dto/journey.dto';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto } from 'dto/journey.dto';
 import { EPermission } from 'enums/Permissions.enum';
 import { Permissions } from 'decorators/permissions.decorators';
 import { CRUD } from 'common/crud.service';
@@ -31,7 +31,7 @@ export class JourneyController {
 
   @Patch('plans/:id')
   @Permissions(EPermission.JOURNEY_UPDATE)
-  async updatePlan(@Param('id') id: string, @Body() dto: CreateJourneyPlanDto) {
+  async updatePlan(@Param('id') id: string, @Body() dto:UpdateJourneyPlanDto ) {
     return this.journeyService.updatePlan(id, dto);
   }
   @Post('checkin-out')
