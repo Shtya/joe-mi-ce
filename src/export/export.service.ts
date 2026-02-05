@@ -343,7 +343,14 @@ export class ExportService {
           }
         }
       } else if (value instanceof Date) {
-        result[fullKey] = value.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        // Format as YYYY-MM-DD HH:mm:ss
+        const year = value.getFullYear();
+        const month = String(value.getMonth() + 1).padStart(2, '0');
+        const day = String(value.getDate()).padStart(2, '0');
+        const hours = String(value.getHours()).padStart(2, '0');
+        const minutes = String(value.getMinutes()).padStart(2, '0');
+        const seconds = String(value.getSeconds()).padStart(2, '0');
+        result[fullKey] = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
       } else if (typeof value === 'object') {
         // Recursively flatten nested objects with depth limit
         const nestedPrefix = entityNames.includes(keyLower) ? key : entityPrefix;
@@ -403,9 +410,23 @@ export class ExportService {
           flattened['Late time'] = '-';
         }
         
+        // Format dates as YYYY-MM-DD HH:mm:ss
+        const formatDate = (date: any) => {
+          if (!date) return '-';
+          const d = new Date(date);
+          if (isNaN(d.getTime())) return '-';
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          const hours = String(d.getHours()).padStart(2, '0');
+          const minutes = String(d.getMinutes()).padStart(2, '0');
+          const seconds = String(d.getSeconds()).padStart(2, '0');
+          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+        };
+
         // Add Check in/out times and images
-        flattened['Check in time'] = checkin?.checkInTime ? new Date(checkin.checkInTime).toLocaleTimeString() : '-';
-        flattened['Check out time'] = checkin?.checkOutTime ? new Date(checkin.checkOutTime).toLocaleTimeString() : '-';
+        flattened['Check in time'] = formatDate(checkin?.checkInTime);
+        flattened['Check out time'] = formatDate(checkin?.checkOutTime);
         
         // Image URL formatting
         const formatImageUrl = (path: string) => {
@@ -426,6 +447,23 @@ export class ExportService {
         }
       }
       
+      // Also ensure ANY field that is a date string is formatted correctly
+      Object.keys(flattened).forEach(key => {
+        const val = flattened[key];
+        if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const seconds = String(d.getSeconds()).padStart(2, '0');
+            flattened[key] = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          }
+        }
+      });
+
       return flattened;
     });
   }
@@ -682,50 +720,54 @@ export class ExportService {
     const lowerKey = key.toLowerCase();
     
     if (lowerKey.includes('description') || lowerKey.includes('notes') || lowerKey.includes('comments')) {
-      return 40;
+      return 45;
     }
     
     if (lowerKey.includes('name') || lowerKey.includes('title')) {
-      return 25;
-    }
-    
-    if (lowerKey.includes('address') || lowerKey.includes('location')) {
-      return 35;
-    }
-    
-    if (lowerKey.includes('image_url') || lowerKey.includes('logo_url') || lowerKey.includes('url')) {
-      return 35;
-    }
-    
-    if (lowerKey.includes('email')) {
       return 30;
     }
     
+    if (lowerKey.includes('address') || lowerKey.includes('location')) {
+      return 40;
+    }
+    
+    if (lowerKey.includes('image') || lowerKey.includes('url') || lowerKey.includes('logo')) {
+      return 50;
+    }
+    
+    if (lowerKey.includes('email')) {
+      return 35;
+    }
+    
     if (lowerKey.includes('price') || lowerKey.includes('cost') || lowerKey.includes('amount') || lowerKey.includes('total')) {
-      return 15;
-    }
-    
-    if (lowerKey.includes('quantity') || lowerKey.includes('qty')) {
-      return 12;
-    }
-    
-    if (lowerKey.includes('model') || lowerKey.includes('sku') || lowerKey.includes('code')) {
-      return 20;
-    }
-    
-    if (lowerKey.includes('branch')) {
-      return 20;
-    }
-    
-    if (lowerKey.includes('date')) {
-      return 15;
-    }
-    
-    if (lowerKey.includes('phone')) {
       return 18;
     }
     
-    return 15;
+    if (lowerKey.includes('quantity') || lowerKey.includes('qty')) {
+      return 15;
+    }
+    
+    if (lowerKey.includes('model') || lowerKey.includes('sku') || lowerKey.includes('code')) {
+      return 25;
+    }
+    
+    if (lowerKey.includes('branch') || lowerKey.includes('chain')) {
+      return 25;
+    }
+    
+    if (lowerKey.includes('date') || lowerKey.includes('time')) {
+      return 22; // Wider for HH:mm:ss
+    }
+    
+    if (lowerKey.includes('duration') || lowerKey.includes('late')) {
+      return 20;
+    }
+    
+    if (lowerKey.includes('phone')) {
+      return 20;
+    }
+    
+    return 20;
   }
 
   /**
@@ -884,7 +926,10 @@ export class ExportService {
       { state: 'frozen', xSplit: 0, ySplit: 1 }
     ];
 
-    const fileName = (options.fileName || mainEntity || 'export') + '.xlsx';
+    const isJourney = (mainEntity || '').toLowerCase().includes('journey') || 
+                      rows.some(r => r && (r.journeyPlan || r.journey || (r.type === 'unplanned')));
+    
+    const fileName = (options.fileName || (isJourney ? 'vistinghistory' : mainEntity) || 'export') + '.xlsx';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
 
