@@ -380,19 +380,18 @@ export class ExportService {
         const checkin = item.checkin;
         const shift = item.shift;
         
-        // Calculate Duration
+        // 1. Calculate and Format our Custom Fields
+        let duration = '-';
         if (checkin?.checkInTime && checkin?.checkOutTime) {
           const start = new Date(checkin.checkInTime);
           const end = new Date(checkin.checkOutTime);
           const diffMs = end.getTime() - start.getTime();
           const diffHrs = Math.floor(diffMs / 3600000);
           const diffMins = Math.floor((diffMs % 3600000) / 60000);
-          flattened['Duration'] = `${diffHrs}h ${diffMins}m`;
-        } else {
-          flattened['Duration'] = '-';
+          duration = `${diffHrs}h ${diffMins}m`;
         }
         
-        // Calculate Late time
+        let lateTime = '-';
         if (checkin?.checkInTime && shift?.startTime) {
           const checkInDate = new Date(checkin.checkInTime);
           const [sHrs, sMins] = shift.startTime.split(':').map(Number);
@@ -402,15 +401,12 @@ export class ExportService {
           if (checkInDate > shiftStartDate) {
             const lateMs = checkInDate.getTime() - shiftStartDate.getTime();
             const lateMins = Math.floor(lateMs / 60000);
-            flattened['Late time'] = `${lateMins} mins`;
+            lateTime = `${lateMins} mins`;
           } else {
-            flattened['Late time'] = 'On time';
+            lateTime = 'On time';
           }
-        } else {
-          flattened['Late time'] = '-';
         }
         
-        // Format dates as YYYY-MM-DD HH:mm:ss
         const formatDate = (date: any) => {
           if (!date) return '-';
           const d = new Date(date);
@@ -424,49 +420,64 @@ export class ExportService {
           return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
         };
 
-        // Add Check in/out times and images
-        flattened['Check in time'] = formatDate(checkin?.checkInTime);
-        flattened['Check out time'] = formatDate(checkin?.checkOutTime);
-        
-        // Image URL formatting
         const formatImageUrl = (path: string) => {
           if (!path) return '-';
           if (path.startsWith('http')) return path;
           return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
         };
-        
-        flattened['Check in image'] = formatImageUrl(checkin?.checkInDocument);
-        flattened['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
-        flattened['Check in document'] = formatImageUrl(checkin?.checkInDocument);
-        flattened['Check out document'] = formatImageUrl(checkin?.checkOutDocument);
-        
-        // Add branch and chain explicitly if they are not picked up correctly
-        if (item.branch) {
-          flattened['Branch'] = item.branch.name;
-          if (item.branch.chain) {
-            flattened['Chain'] = item.branch.chain.name;
-          }
-        }
 
-        // --- Aggressive Cleanup for Journeys ---
+        // 2. Build a new object with preferred ordering
+        const orderedFields: any = {};
+        
+        // Preserve basic info
+        orderedFields['Type'] = flattened['type'] || flattened['Type'] || item.type;
+        orderedFields['Status'] = flattened['status'] || flattened['Status'] || item.status;
+        orderedFields['Branch'] = item.branch?.name || item.branch?.title || flattened['branch'];
+        orderedFields['Chain'] = item.branch?.chain?.name || item.branch?.chain?.title || flattened['chain'];
+        orderedFields['Date'] = flattened['date'] || flattened['Date'] || formatDate(item.date || item.createdAt);
+        
+        // Add User Name explicitly
+        orderedFields['User Name'] = item.user?.name || item.createdBy?.name || flattened['User Name'];
+
+        // Add requested timing fields
+        orderedFields['Check in time'] = formatDate(checkin?.checkInTime);
+        orderedFields['Check out time'] = formatDate(checkin?.checkOutTime);
+        orderedFields['Check in image'] = formatImageUrl(checkin?.image || checkin?.checkInDocument);
+        orderedFields['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
+        orderedFields['Duration'] = duration;
+        orderedFields['Late time'] = lateTime;
+
+        // 3. Cleanup redundant fields from the original flattened object
         const keysToRemove = [
-          'user active', 'checkin geo', 'checkin iswithinradius', 'checkin id', 
+          'user active', 'user is active', 'user isactive', 'user username', 'user mobile', 'user email',
+          'checkin geo', 'checkin iswithinradius', 'checkin is_within_radius', 'checkin id', 
           'checkin checkindocument', 'checkin checkoutdocument',
           'checkin checkintime', 'checkin checkouttime',
-          'checkin image', 'checkin notein', 'checkin noteout',
-          'user password', 'user token', 'user secret', 'user id'
+          'checkin image', 'checkin notein', 'checkin noteout', 'checkin note_in', 'checkin note_out',
+          'user password', 'user token', 'user secret', 'user id', 'user createdat', 'user updatedat',
+          'shift id', 'shift starttime', 'shift endtime', 'shift createdat', 'shift updatedat'
         ];
 
-        // Also remove any key that is JUST 'User' or exactly 'User Active'
         Object.keys(flattened).forEach(key => {
           const keyLower = key.toLowerCase();
-          if (keyLower === 'user' || keyLower === 'user active' || keysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '))) {
-            delete flattened[key];
+          const isRedundantUser = keyLower.startsWith('user ') && keyLower !== 'user name';
+          const isRedundantCheckin = keyLower.startsWith('checkin ');
+          const isRedundantShift = keyLower.startsWith('shift ');
+          const isAlreadyInOrdered = Object.keys(orderedFields).some(ok => ok.toLowerCase() === keyLower);
+          
+          if (keyLower === 'user' || keyLower === 'user active' || keyLower === 'shift' || 
+              isRedundantUser || isRedundantCheckin || isRedundantShift ||
+              isAlreadyInOrdered || keysToRemove.some(k => keyLower === k)) {
+            // Skip
+          } else {
+            orderedFields[key] = flattened[key];
           }
         });
+
+        return orderedFields;
       }
       
-      // Also ensure ANY field that is a date string is formatted correctly
+      // Also ensure ANY field that is a date string is formatted correctly for other entities
       Object.keys(flattened).forEach(key => {
         const val = flattened[key];
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
@@ -999,16 +1010,26 @@ export class ExportService {
       const data = this.extractDataFromResponse(rawData);
       
       // Extract main entity from URL
-      const mainEntity = this.extractMainEntityFromUrl(url);
-      console.log(`Processing ${data.length} ${mainEntity} records for export`);
+      let mainEntity = this.extractMainEntityFromUrl(url);
+      
+      // Better journey detection: check URL path or mainEntity or fileName
+      const isJourneyUrl = url.toLowerCase().includes('/journeys/');
+      if (isJourneyUrl && !mainEntity.includes('journey')) {
+        mainEntity = 'journey';
+      }
+      
+      console.log(`Processing ${data.length} ${mainEntity} records for export from URL: ${url}`);
+
+      // Clean the data using our journey-aware logic
+      const cleanedData = this.cleanDataForExport(data, mainEntity);
 
       // Default fileName to 'visting history' for journeys or if it contains 'unplanned'
       let finalFileName = fileName;
-      if (mainEntity.toLowerCase().includes('journey') || (fileName && fileName.toLowerCase().includes('unplanned'))) {
+      if (isJourneyUrl || mainEntity.toLowerCase().includes('journey') || (fileName && fileName.toLowerCase().includes('unplanned'))) {
         finalFileName = 'visting history';
       }
 
-      return this.exportRowsToExcel(res, data, mainEntity, {
+      return this.exportRowsToExcel(res, cleanedData, mainEntity, {
         fileName: finalFileName,
         sheetName: (finalFileName || mainEntity || 'Report').charAt(0).toUpperCase() + (finalFileName || mainEntity || 'Report').slice(1),
       });
