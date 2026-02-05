@@ -271,7 +271,7 @@ export class ExportService {
       'type', 'category', 'brand', 'stock', 'amount', 'total',
       'date', 'time', 'start_date', 'end_date', 'duration', 'notes', 'comments',
       'rating', 'score', 'percentage', 'rate', 'value', 'size', 'weight', 'dimensions',
-      'check in time', 'check out time', 'check in image', 'check out image', 'late time', 'branch', 'chain'
+      'check in time', 'check out time', 'check in image', 'check out image', 'check in document', 'check out document', 'late time', 'branch', 'chain'
     ];
 
     for (const key in obj) {
@@ -437,6 +437,8 @@ export class ExportService {
         
         flattened['Check in image'] = formatImageUrl(checkin?.checkInDocument);
         flattened['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
+        flattened['Check in document'] = formatImageUrl(checkin?.checkInDocument);
+        flattened['Check out document'] = formatImageUrl(checkin?.checkOutDocument);
         
         // Add branch and chain explicitly if they are not picked up correctly
         if (item.branch) {
@@ -445,6 +447,23 @@ export class ExportService {
             flattened['Chain'] = item.branch.chain.name;
           }
         }
+
+        // --- Aggressive Cleanup for Journeys ---
+        const keysToRemove = [
+          'user active', 'checkin geo', 'checkin iswithinradius', 'checkin id', 
+          'checkin checkindocument', 'checkin checkoutdocument',
+          'checkin checkintime', 'checkin checkouttime',
+          'checkin image', 'checkin notein', 'checkin noteout',
+          'user password', 'user token', 'user secret', 'user id'
+        ];
+
+        // Also remove any key that is JUST 'User' or exactly 'User Active'
+        Object.keys(flattened).forEach(key => {
+          const keyLower = key.toLowerCase();
+          if (keyLower === 'user' || keyLower === 'user active' || keysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '))) {
+            delete flattened[key];
+          }
+        });
       }
       
       // Also ensure ANY field that is a date string is formatted correctly
@@ -927,11 +946,17 @@ export class ExportService {
     ];
 
     const isJourney = (mainEntity || '').toLowerCase().includes('journey') || 
+                      (options.fileName || '').toLowerCase().includes('unplanned') ||
                       rows.some(r => r && (r.journeyPlan || r.journey || (r.type === 'unplanned')));
     
-    const fileName = (options.fileName || (isJourney ? 'vistinghistory' : mainEntity) || 'export') + '.xlsx';
+    let fileName = options.fileName;
+    if (isJourney || (fileName && fileName.toLowerCase().includes('unplanned'))) {
+      fileName = 'visting history';
+    }
+
+    const finalFileName = (fileName || mainEntity || 'export') + '.xlsx';
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+    res.setHeader('Content-Disposition', `attachment; filename="${finalFileName}"`);
 
     await workbook.xlsx.write(res);
     res.end();
@@ -977,15 +1002,15 @@ export class ExportService {
       const mainEntity = this.extractMainEntityFromUrl(url);
       console.log(`Processing ${data.length} ${mainEntity} records for export`);
 
-      // Default fileName to vistinghistory for journeys
+      // Default fileName to 'visting history' for journeys or if it contains 'unplanned'
       let finalFileName = fileName;
-      if (!finalFileName && mainEntity.toLowerCase().includes('journey')) {
-        finalFileName = 'vistinghistory';
+      if (mainEntity.toLowerCase().includes('journey') || (fileName && fileName.toLowerCase().includes('unplanned'))) {
+        finalFileName = 'visting history';
       }
 
       return this.exportRowsToExcel(res, data, mainEntity, {
-        fileName: finalFileName || mainEntity || 'exported_data',
-        sheetName: mainEntity.charAt(0).toUpperCase() + mainEntity.slice(1),
+        fileName: finalFileName,
+        sheetName: (finalFileName || mainEntity || 'Report').charAt(0).toUpperCase() + (finalFileName || mainEntity || 'Report').slice(1),
       });
     } catch (error) {
       console.error('Export error:', error);
