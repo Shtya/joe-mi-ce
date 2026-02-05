@@ -442,12 +442,12 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,
         expiresIn:  process.env.JWT_EXPIRE ||
-        '2d',
+        '30d',
       }),
       refresh_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_REFRESH_SECRET,
         expiresIn:  process.env.JWT_EXPIRE ||
-        '2d',
+        '30d',
       }),
     };
   }
