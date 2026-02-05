@@ -552,7 +552,7 @@ async getAllPlansWithPagination(
       limit,
       'date',
       'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift'],
+      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin', 'branch.chain'],
       undefined,
       {
         ...filters,

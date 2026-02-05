@@ -270,7 +270,8 @@ export class ExportService {
       'priority', 'status', 'branch', 'location', 'email', 'phone', 'address',
       'type', 'category', 'brand', 'stock', 'amount', 'total',
       'date', 'time', 'start_date', 'end_date', 'duration', 'notes', 'comments',
-      'rating', 'score', 'percentage', 'rate', 'value', 'size', 'weight', 'dimensions'
+      'rating', 'score', 'percentage', 'rate', 'value', 'size', 'weight', 'dimensions',
+      'check in time', 'check out time', 'check in image', 'check out image', 'late time', 'branch', 'chain'
     ];
 
     for (const key in obj) {
@@ -362,8 +363,70 @@ export class ExportService {
    * Clean and organize data with main entity first
    */
   private cleanDataForExport(data: any[], mainEntity: string): any[] {
+    const baseUrl = process.env.MAIN_API_URL || `http://localhost:${process.env.PORT || 3000}`;
+    
     return data.map(item => {
-      return this.flattenObjectWithEntityPrefixes(item, mainEntity);
+      const flattened = this.flattenObjectWithEntityPrefixes(item, mainEntity);
+      
+      // Special handling for Journey entity
+      if (mainEntity.toLowerCase().includes('journey')) {
+        const checkin = item.checkin;
+        const shift = item.shift;
+        
+        // Calculate Duration
+        if (checkin?.checkInTime && checkin?.checkOutTime) {
+          const start = new Date(checkin.checkInTime);
+          const end = new Date(checkin.checkOutTime);
+          const diffMs = end.getTime() - start.getTime();
+          const diffHrs = Math.floor(diffMs / 3600000);
+          const diffMins = Math.floor((diffMs % 3600000) / 60000);
+          flattened['Duration'] = `${diffHrs}h ${diffMins}m`;
+        } else {
+          flattened['Duration'] = '-';
+        }
+        
+        // Calculate Late time
+        if (checkin?.checkInTime && shift?.startTime) {
+          const checkInDate = new Date(checkin.checkInTime);
+          const [sHrs, sMins] = shift.startTime.split(':').map(Number);
+          const shiftStartDate = new Date(checkInDate);
+          shiftStartDate.setHours(sHrs, sMins, 0, 0);
+          
+          if (checkInDate > shiftStartDate) {
+            const lateMs = checkInDate.getTime() - shiftStartDate.getTime();
+            const lateMins = Math.floor(lateMs / 60000);
+            flattened['Late time'] = `${lateMins} mins`;
+          } else {
+            flattened['Late time'] = 'On time';
+          }
+        } else {
+          flattened['Late time'] = '-';
+        }
+        
+        // Add Check in/out times and images
+        flattened['Check in time'] = checkin?.checkInTime ? new Date(checkin.checkInTime).toLocaleTimeString() : '-';
+        flattened['Check out time'] = checkin?.checkOutTime ? new Date(checkin.checkOutTime).toLocaleTimeString() : '-';
+        
+        // Image URL formatting
+        const formatImageUrl = (path: string) => {
+          if (!path) return '-';
+          if (path.startsWith('http')) return path;
+          return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
+        };
+        
+        flattened['Check in image'] = formatImageUrl(checkin?.checkInDocument);
+        flattened['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
+        
+        // Add branch and chain explicitly if they are not picked up correctly
+        if (item.branch) {
+          flattened['Branch'] = item.branch.name;
+          if (item.branch.chain) {
+            flattened['Chain'] = item.branch.chain.name;
+          }
+        }
+      }
+      
+      return flattened;
     });
   }
 
@@ -869,8 +932,14 @@ export class ExportService {
       const mainEntity = this.extractMainEntityFromUrl(url);
       console.log(`Processing ${data.length} ${mainEntity} records for export`);
 
+      // Default fileName to vistinghistory for journeys
+      let finalFileName = fileName;
+      if (!finalFileName && mainEntity.toLowerCase().includes('journey')) {
+        finalFileName = 'vistinghistory';
+      }
+
       return this.exportRowsToExcel(res, data, mainEntity, {
-        fileName: fileName || mainEntity || 'exported_data',
+        fileName: finalFileName || mainEntity || 'exported_data',
         sheetName: mainEntity.charAt(0).toUpperCase() + mainEntity.slice(1),
       });
     } catch (error) {
