@@ -371,12 +371,37 @@ export class ExportService {
    */
   private cleanDataForExport(data: any[], mainEntity: string): any[] {
     const baseUrl = 'https://ce-api.joe-mi.com/api/v1';
+    const mainEntityLower = mainEntity.toLowerCase();
     
     return data.map(item => {
       const flattened = this.flattenObjectWithEntityPrefixes(item, mainEntity);
       
-      // Special handling for Journey entity
-      if (mainEntity.toLowerCase().includes('journey')) {
+      // Helper to split DateTime into Date and Time columns
+      const splitDateTime = (date: any, dateKey: string, timeKey: string) => {
+        if (!date) {
+          flattened[dateKey] = '-';
+          flattened[timeKey] = '-';
+          return;
+        }
+        const d = new Date(date);
+        if (isNaN(d.getTime())) {
+          flattened[dateKey] = '-';
+          flattened[timeKey] = '-';
+          return;
+        }
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const hours = String(d.getHours()).padStart(2, '0');
+        const minutes = String(d.getMinutes()).padStart(2, '0');
+        const seconds = String(d.getSeconds()).padStart(2, '0');
+        
+        flattened[dateKey] = `${year}-${month}-${day}`;
+        flattened[timeKey] = `${hours}:${minutes}:${seconds}`;
+      };
+
+      // Special handling for Journey and Unplanned visits
+      if (mainEntityLower.includes('journey') || (item.type && item.type.includes('unplanned'))) {
         const checkin = item.checkin;
         const shift = item.shift;
         
@@ -392,7 +417,7 @@ export class ExportService {
           flattened['Duration'] = '-';
         }
         
-        // Calculate Late time
+        // Calculate Late Time
         if (checkin?.checkInTime && shift?.startTime) {
           const checkInDate = new Date(checkin.checkInTime);
           const [sHrs, sMins] = shift.startTime.split(':').map(Number);
@@ -402,31 +427,17 @@ export class ExportService {
           if (checkInDate > shiftStartDate) {
             const lateMs = checkInDate.getTime() - shiftStartDate.getTime();
             const lateMins = Math.floor(lateMs / 60000);
-            flattened['Late time'] = `${lateMins} mins`;
+            flattened['Late Time'] = `${lateMins} mins`;
           } else {
-            flattened['Late time'] = 'On time';
+            flattened['Late Time'] = 'On time';
           }
         } else {
-          flattened['Late time'] = '-';
+          flattened['Late Time'] = '-';
         }
         
-        // Format dates as YYYY-MM-DD HH:mm:ss
-        const formatDate = (date: any) => {
-          if (!date) return '-';
-          const d = new Date(date);
-          if (isNaN(d.getTime())) return '-';
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          const hours = String(d.getHours()).padStart(2, '0');
-          const minutes = String(d.getMinutes()).padStart(2, '0');
-          const seconds = String(d.getSeconds()).padStart(2, '0');
-          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-        };
-
-        // Add Check in/out times and images
-        flattened['Check in time'] = formatDate(checkin?.checkInTime);
-        flattened['Check out time'] = formatDate(checkin?.checkOutTime);
+        // Add Check in/out times and images (Split into Date and Time)
+        splitDateTime(checkin?.checkInTime, 'Check in date', 'Check in time');
+        splitDateTime(checkin?.checkOutTime, 'Check out date', 'Check out time');
         
         // Image URL formatting
         const formatImageUrl = (path: string) => {
@@ -439,30 +450,52 @@ export class ExportService {
         flattened['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
         flattened['Check in document'] = formatImageUrl(checkin?.checkInDocument);
         flattened['Check out document'] = formatImageUrl(checkin?.checkOutDocument);
-        
-        // Add branch and chain explicitly if they are not picked up correctly
-        if (item.branch) {
-          flattened['Branch'] = item.branch.name;
-          if (item.branch.chain) {
-            flattened['Chain'] = item.branch.chain.name;
-          }
-        }
+      }
 
-        // --- Aggressive Cleanup for Journeys ---
+      // Special handling for Sale entity
+      if (mainEntityLower === 'sale' || mainEntityLower === 'sales') {
+        if (!flattened['Late Time']) flattened['Late Time'] = '-';
+        if (!flattened['Duration']) flattened['Duration'] = '-';
+        
+        const saleDate = item.sale_date || item.created_at;
+        splitDateTime(saleDate, 'Date of sale', 'Time of sale');
+      }
+
+      // Add branch and chain explicitly if they are not picked up correctly for any entity
+      if (item.branch) {
+        flattened['Branch'] = item.branch.name || item.branch.title || flattened['branch'];
+        if (item.branch.chain) {
+          flattened['Chain'] = item.branch.chain.name || item.branch.chain.title || flattened['chain'];
+        }
+      }
+
+      // --- Aggressive Cleanup for Journeys, Unplanned, and Sales ---
+      const entitiesToClean = ['journey', 'unplanned', 'sale'];
+      if (entitiesToClean.some(e => mainEntityLower.includes(e))) {
         const keysToRemove = [
-          'user active', 'checkin geo', 'checkin iswithinradius', 'checkin id', 
+          'user active', 'user is active', 'checkin geo', 'checkin iswithinradius', 'checkin id', 
           'checkin checkindocument', 'checkin checkoutdocument',
           'checkin checkintime', 'checkin checkouttime',
           'checkin image', 'checkin notein', 'checkin noteout',
-          'user password', 'user token', 'user secret', 'user id'
+          'user password', 'user token', 'user secret', 'user id',
+          'iswithinradius', 'geo', 'sale_date', 'created_at',
+          'branch id', 'chain id', 'product id'
         ];
 
-        // Also remove any key that is JUST 'User' or exactly 'User Active'
         Object.keys(flattened).forEach(key => {
           const keyLower = key.toLowerCase();
-          if (keyLower === 'user' || keyLower === 'user active' || keysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '))) {
+          
+          // Remove if matches any key in keysToRemove exactly or as a prefix
+          const shouldRemove = keysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '));
+          
+          if (shouldRemove || keyLower.includes('iswithinradius') || keyLower.includes('geo')) {
             delete flattened[key];
           }
+          
+          // Remove lowercase versions if capitalized versions exist
+          if (keyLower === 'branch' && flattened['Branch']) delete flattened[key];
+          if (keyLower === 'chain' && flattened['Chain']) delete flattened[key];
+          if (keyLower === 'user active' || keyLower === 'user is active') delete flattened[key];
         });
       }
       
@@ -1096,14 +1129,14 @@ export class ExportService {
    */
   private getRelationsForEntity(moduleName: ModuleName): string[] {
     const relationMap: Partial<Record<ModuleName, string[]>> = {
-      [ModuleName.SALE]: ['product', 'branch', 'user'],
+      [ModuleName.SALE]: ['product', 'branch', 'branch.chain', 'user'],
       [ModuleName.PRODUCT]: ['brand', 'category', 'stocks'],
-      [ModuleName.STOCK]: ['product', 'branch'],
-      [ModuleName.USER]: ['branch', 'role'],
+      [ModuleName.STOCK]: ['product', 'branch', 'branch.chain'],
+      [ModuleName.USER]: ['branch', 'branch.chain', 'role'],
       [ModuleName.BRANCH]: ['chain', 'city', 'region', 'country'],
-      [ModuleName.CHECKIN]: ['branch', 'user'],
-      [ModuleName.JOURNEY]: ['branch', 'user'],
-      [ModuleName.JOURNEYPLAN]: ['branch', 'user','checkin'],
+      [ModuleName.CHECKIN]: ['branch', 'branch.chain', 'user'],
+      [ModuleName.JOURNEY]: ['branch', 'branch.chain', 'user'],
+      [ModuleName.JOURNEYPLAN]: ['branch', 'branch.chain', 'user','checkin'],
       [ModuleName.SHIFT]: ['user'],
       [ModuleName.VACATION]: ['user'],
       [ModuleName.CHAIN]: ['branches'],

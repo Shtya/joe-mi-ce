@@ -126,6 +126,7 @@ async getOptimizedPlans(
   if (branchId) {
     filters.branch = { id: branchId };
   }
+  filters.user.role.name != ERole.SUPERVISOR;
   const plans = await CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
     'plan',
@@ -515,8 +516,8 @@ async getAllPlansWithPagination(
     };
     
     // Extract dates from filters if not provided as params
-    const effectiveFromDate = fromDate || filters.fromDate;
-    const effectiveToDate = toDate || filters.toDate;
+    const effectiveFromDate = _date || fromDate || filters.fromDate || filters.date;
+    const effectiveToDate = _date || toDate || filters.toDate || filters.date;
     
     // Clean up filters to avoid "column does not exist" error
     delete filters.fromDate;

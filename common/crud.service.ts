@@ -196,10 +196,19 @@ export class CRUD {
           const qualified = qualifyField(base);
           const pFrom = base.replace(/\./g, '_') + '_from';
           const pTo = base.replace(/\./g, '_') + '_to';
-          qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
-            [pFrom]: ops.gte,
-            [pTo]: ops.lte,
-          });
+          // If range is provided as simple dates (YYYY-MM-DD), use DATE() casting for timestamp support
+          if (typeof ops.gte === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ops.gte) && 
+              typeof ops.lte === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ops.lte)) {
+            qb.andWhere(`DATE(${qualified}) BETWEEN :${pFrom} AND :${pTo}`, {
+              [pFrom]: ops.gte,
+              [pTo]: ops.lte,
+            });
+          } else {
+            qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
+              [pFrom]: ops.gte,
+              [pTo]: ops.lte,
+            });
+          }
           for (const [op, val] of Object.entries(ops)) {
             if (op === 'gte' || op === 'lte') continue;
             if (op === 'eq') applyFilter(base, val);
@@ -478,10 +487,19 @@ if (search && searchFields?.length) {
           const qualified = qualifyField(base);
           const pFrom = base.replace(/\./g, '_') + '_from';
           const pTo = base.replace(/\./g, '_') + '_to';
-          qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
-            [pFrom]: ops.gte,
-            [pTo]: ops.lte,
-          });
+          // If range is provided as simple dates (YYYY-MM-DD), use DATE() casting for timestamp support
+          if (typeof ops.gte === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ops.gte) && 
+              typeof ops.lte === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ops.lte)) {
+            qb.andWhere(`DATE(${qualified}) BETWEEN :${pFrom} AND :${pTo}`, {
+              [pFrom]: ops.gte,
+              [pTo]: ops.lte,
+            });
+          } else {
+            qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
+              [pFrom]: ops.gte,
+              [pTo]: ops.lte,
+            });
+          }
           for (const [op, val] of Object.entries(ops)) {
             if (op === 'gte' || op === 'lte') continue;
             if (op === 'eq') applyFilter(base, val);
@@ -1339,10 +1357,19 @@ if (value instanceof FindOperator) {
           const qualified = qualifyField(base);
           const pFrom = base.replace(/\./g, '_') + '_from';
           const pTo = base.replace(/\./g, '_') + '_to';
-          qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
-            [pFrom]: ops.gte,
-            [pTo]: ops.lte,
-          });
+          // If range is provided as simple dates (YYYY-MM-DD), use DATE() casting for timestamp support
+          if (typeof ops.gte === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ops.gte) && 
+              typeof ops.lte === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(ops.lte)) {
+            qb.andWhere(`DATE(${qualified}) BETWEEN :${pFrom} AND :${pTo}`, {
+              [pFrom]: ops.gte,
+              [pTo]: ops.lte,
+            });
+          } else {
+            qb.andWhere(`${qualified} BETWEEN :${pFrom} AND :${pTo}`, {
+              [pFrom]: ops.gte,
+              [pTo]: ops.lte,
+            });
+          }
           for (const [op, val] of Object.entries(ops)) {
             if (op === 'gte' || op === 'lte') continue;
             if (op === 'eq') applyFilter(base, val);

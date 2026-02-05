@@ -54,7 +54,7 @@ export class SaleController {
         filters: mergedFilters,
         sortBy: query.sortBy,
         sortOrder: query.sortOrder,
-        relations: ["user", "product", "branch"],
+        relations: ["user", "product", "branch", "branch.chain"],
       }
     );
   }
@@ -99,7 +99,7 @@ export class SaleController {
     if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
     if (mergedFilters.project) delete mergedFilters.project;
 
-    return CRUD.findAll2(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch"], ['status'], mergedFilters);
+    return CRUD.findAll2(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch", "branch.chain"], ['status'], mergedFilters);
   }
   @Post()
   @Permissions(EPermission.SALE_CREATE)
