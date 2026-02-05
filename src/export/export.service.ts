@@ -454,6 +454,9 @@ export class ExportService {
 
       // Special handling for Sale entity
       if (mainEntityLower === 'sale' || mainEntityLower === 'sales') {
+        if (!flattened['Late Time']) flattened['Late Time'] = '-';
+        if (!flattened['Duration']) flattened['Duration'] = '-';
+        
         const saleDate = item.sale_date || item.created_at;
         splitDateTime(saleDate, 'Date of sale', 'Time of sale');
       }
@@ -473,8 +476,7 @@ export class ExportService {
           'user active', 'user is active', 'checkin geo', 'checkin iswithinradius', 'checkin id', 
           'checkin checkindocument', 'checkin checkoutdocument',
           'checkin checkintime', 'checkin checkouttime',
-          'checkin image', 'checkin notein', 'checkin noteout','check in document','check out document',
-          'user Is Active','user is Active','user active','checkin geo','checkin geo','checkin iswithinradius','checkin iswithinradius',
+          'checkin image', 'checkin notein', 'checkin noteout',
           'user password', 'user token', 'user secret', 'user id',
           'iswithinradius', 'geo', 'sale_date', 'created_at',
           'branch id', 'chain id', 'product id'
