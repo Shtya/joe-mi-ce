@@ -676,11 +676,11 @@ if (value instanceof FindOperator) {
               alias = `${alias}_${seg}`;
             }
 
-            query.andWhere(`${alias}.${column} ${operator} :${rangeParamKey}`, {
+            query.andWhere(`DATE(${alias}.${column}) ${operator} :${rangeParamKey}`, {
               [rangeParamKey]: value,
             });
           } else {
-            query.andWhere(`${entityName}.${baseKey} ${operator} :${rangeParamKey}`, {
+            query.andWhere(`DATE(${entityName}.${baseKey}) ${operator} :${rangeParamKey}`, {
               [rangeParamKey]: value,
             });
           }
