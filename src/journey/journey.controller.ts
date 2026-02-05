@@ -497,8 +497,8 @@ async getAllPlansWithPagination(
   async getJourneys(
     @Param('projectId') projectId: string,
     @Query('') query: any,
-    @Query('page') page: any = 1,
-    @Query('limit') limit: any = 10,
+    @Query('page') page = 1,
+    @Query('limit') limit = 10,
     @Query('userId') userId?: string,
     @Query('branchId') branchId?: string,
     @Query('shiftId') shiftId?: string,
@@ -514,38 +514,33 @@ async getAllPlansWithPagination(
       ...query.filters,
     };
     
-    // Extract parameters from query if provided directly or in filters
-    const effectiveFromDate = query.fromDate || fromDate || query.filters?.fromDate;
-    const effectiveToDate = query.toDate || toDate || query.filters?.toDate;
-    const effectiveType = query.type || type || (query.module === 'unplanned' ? JourneyType.UNPLANNED : undefined);
-    const effectiveStatus = query.status || status;
+    // Extract dates from filters if not provided as params
+    const effectiveFromDate = fromDate || filters.fromDate;
+    const effectiveToDate = toDate || filters.toDate;
     
     // Clean up filters to avoid "column does not exist" error
     delete filters.fromDate;
     delete filters.toDate;
     delete filters.date;
-    delete filters.module;
-    delete filters.type;
-    delete filters.status;
 
     if (userId) filters.user = { id: userId };
     if (branchId) filters.branch = { id: branchId };
     if (shiftId) filters.shift = { id: shiftId };
-    if (effectiveType) filters.type = effectiveType;
-    if (effectiveStatus) filters.status = effectiveStatus;
+    if (type) filters.type = type;
+    if (status) filters.status = status;
 
     // Date filters mapping
     if (effectiveFromDate) filters.date_from = effectiveFromDate;
     if (effectiveToDate) filters.date_to = effectiveToDate;
 
     // Default behavior: if NO date filter is provided (date, fromDate, toDate), limit to <= today
-    // If ANY date filter is provided (either directly or in filters), we respect that completely
-    const hasDateFilters = !!(_date || effectiveFromDate || effectiveToDate || query.filters?.date);
+    // If ANY date filter is provided, we respect that completely and do NOT enforce <= today
+    const hasDateFilters = !!(_date || effectiveFromDate || effectiveToDate || filters.date);
     
-    // We pass extraWhere ONLY if we need the default behavior (past + today)
+    // We pass extraWhere ONLY if we need the default behavior
     const extraWhere = !hasDateFilters
       ? (qb) => {
-          qb.andWhere('DATE(journey.date) <= DATE(NOW())');
+          qb.andWhere('journey.date <= :today', { today: new Date() });
         }
       : undefined;
 
@@ -553,8 +548,8 @@ async getAllPlansWithPagination(
       this.journeyService.journeyRepo,
       'journey',
       search,
-      Number(page) || 1,
-      Number(limit) || 10,
+      page,
+      limit,
       'date',
       'DESC',
       ['user', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin', 'branch.chain'],
