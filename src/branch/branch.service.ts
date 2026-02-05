@@ -73,9 +73,9 @@ export class BranchService {
       );
       const isInTeam = projectBranches.some(b => b.team?.some(user => user.id === supId));
       
-      if (isSupervisorTaken || isInTeam) {
-        throw new ConflictException(`Supervisor with ID ${supId} is already assigned to another branch`);
-      }
+      // if (isSupervisorTaken || isInTeam) {
+      //   throw new ConflictException(`Supervisor with ID ${supId} is already assigned to another branch`);
+      // }
     }
 
     // Team duplication check
@@ -87,9 +87,9 @@ export class BranchService {
           (b.supervisor?.id === teamId) ||
           (b.supervisors?.some(s => s.id === teamId))
         );
-        if (isTeamTaken || isSupervisor) {
-          throw new ConflictException(`User with ID ${teamId} is already assigned to another branch`);
-        }
+        // if (isTeamTaken || isSupervisor) {
+        //   throw new ConflictException(`User with ID ${teamId} is already assigned to another branch`);
+        // }
       }
     }
 
