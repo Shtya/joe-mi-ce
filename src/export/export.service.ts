@@ -377,14 +377,19 @@ export class ExportService {
       
       // Special handling for Journey entity
       if (mainEntity.toLowerCase().includes('journey')) {
-        const checkin = item.checkin;
+        const checkin = item.checkin || item.checkIn;
         const shift = item.shift;
+        const branch = item.branch || item.Branch;
+        const user = item.user || item.User || item.createdBy || item.CreatedBy;
         
         // 1. Calculate and Format our Custom Fields
         let duration = '-';
-        if (checkin?.checkInTime && checkin?.checkOutTime) {
-          const start = new Date(checkin.checkInTime);
-          const end = new Date(checkin.checkOutTime);
+        const checkInTime = checkin?.checkInTime || checkin?.checkintime || flattened['checkin checkintime'] || flattened['checkin checkInTime'];
+        const checkOutTime = checkin?.checkOutTime || checkin?.checkouttime || flattened['checkin checkouttime'] || flattened['checkin checkOutTime'];
+        
+        if (checkInTime && checkOutTime) {
+          const start = new Date(checkInTime);
+          const end = new Date(checkOutTime);
           const diffMs = end.getTime() - start.getTime();
           const diffHrs = Math.floor(diffMs / 3600000);
           const diffMins = Math.floor((diffMs % 3600000) / 60000);
@@ -392,9 +397,10 @@ export class ExportService {
         }
         
         let lateTime = '-';
-        if (checkin?.checkInTime && shift?.startTime) {
-          const checkInDate = new Date(checkin.checkInTime);
-          const [sHrs, sMins] = shift.startTime.split(':').map(Number);
+        const shiftStartTime = shift?.startTime || shift?.starttime;
+        if (checkInTime && shiftStartTime) {
+          const checkInDate = new Date(checkInTime);
+          const [sHrs, sMins] = shiftStartTime.split(':').map(Number);
           const shiftStartDate = new Date(checkInDate);
           shiftStartDate.setHours(sHrs, sMins, 0, 0);
           
@@ -410,7 +416,7 @@ export class ExportService {
         const formatDate = (date: any) => {
           if (!date) return '-';
           const d = new Date(date);
-          if (isNaN(d.getTime())) return '-';
+          if (isNaN(d.getTime())) return String(date);
           const year = d.getFullYear();
           const month = String(d.getMonth() + 1).padStart(2, '0');
           const day = String(d.getDate()).padStart(2, '0');
@@ -430,20 +436,24 @@ export class ExportService {
         const orderedFields: any = {};
         
         // Preserve basic info
-        orderedFields['Type'] = flattened['type'] || flattened['Type'] || item.type;
-        orderedFields['Status'] = flattened['status'] || flattened['Status'] || item.status;
-        orderedFields['Branch'] = item.branch?.name || item.branch?.title || flattened['branch'];
-        orderedFields['Chain'] = item.branch?.chain?.name || item.branch?.chain?.title || flattened['chain'];
         orderedFields['Date'] = flattened['date'] || flattened['Date'] || formatDate(item.date || item.createdAt);
         
         // Add User Name explicitly
-        orderedFields['User Name'] = item.user?.name || item.createdBy?.name || flattened['User Name'];
+        orderedFields['User Name'] = user?.name || flattened['user name'] || flattened['User Name'] || '-';
+        orderedFields['Type'] = flattened['type'] || flattened['Type'] || item.type;
+        orderedFields['Status'] = flattened['status'] || flattened['Status'] || item.status;
+        orderedFields['Branch'] = branch?.name || branch?.title || flattened['branch name'] || flattened['branch title'] || flattened['branch'] || '-';
+        orderedFields['Chain'] = branch?.chain?.name || branch?.chain?.title || flattened['branch chain name'] || flattened['chain name'] || flattened['chain'] || '-';
 
         // Add requested timing fields
-        orderedFields['Check in time'] = formatDate(checkin?.checkInTime);
-        orderedFields['Check out time'] = formatDate(checkin?.checkOutTime);
-        orderedFields['Check in image'] = formatImageUrl(checkin?.image || checkin?.checkInDocument);
-        orderedFields['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
+        orderedFields['Check in time'] = formatDate(checkInTime);
+        orderedFields['Check out time'] = formatDate(checkOutTime);
+        
+        const checkInDoc = checkin?.image || checkin?.checkInDocument || checkin?.checkindocument || flattened['checkin image'] || flattened['checkin checkindocument'];
+        const checkOutDoc = checkin?.checkOutDocument || checkin?.checkoutdocument || flattened['checkin checkoutdocument'];
+        
+        orderedFields['Check in image'] = formatImageUrl(checkInDoc);
+        orderedFields['Check out image'] = formatImageUrl(checkOutDoc);
         orderedFields['Duration'] = duration;
         orderedFields['Late time'] = lateTime;
 
