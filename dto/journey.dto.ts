@@ -16,6 +16,27 @@ export class CreateJourneyPlanDto {
   days: string[];
 
 }
+export class UpdateJourneyPlanDto {
+  @IsOptional()
+  @IsUUID()
+  userId: string;
+
+  @IsOptional()
+  @IsUUID()
+  branchId: string;
+
+  @IsOptional()
+  @IsUUID()
+  shiftId: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  days: string[];
+
+}
+
 
 export class CreateUnplannedJourneyDto {
   @IsUUID()
