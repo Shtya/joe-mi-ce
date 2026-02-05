@@ -28,6 +28,12 @@ export class JourneyController {
   async createPlan(@Body() dto: CreateJourneyPlanDto) {
     return this.journeyService.createPlan(dto);
   }
+
+  @Patch('plans/:id')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async updatePlan(@Param('id') id: string, @Body() dto: CreateJourneyPlanDto) {
+    return this.journeyService.updatePlan(id, dto);
+  }
   @Post('checkin-out')
   @UseInterceptors(FileInterceptor('file', multerOptionsCheckinTmp))
   async checkInOut(

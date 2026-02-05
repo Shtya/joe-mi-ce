@@ -88,6 +88,64 @@ export class JourneyService {
 
     return savedPlan;
   }
+  async updatePlan(id: string, dto: CreateJourneyPlanDto) {
+    const plan = await this.journeyPlanRepo.findOne({
+      where: { id },
+      relations: ['user', 'branch', 'shift', 'branch.project'],
+    });
+
+    if (!plan) throw new NotFoundException('Journey plan not found');
+
+    if (dto.userId) {
+      const user = await this.userRepo.findOne({ where: { id: dto.userId } });
+      if (!user) throw new NotFoundException('User not found');
+      plan.user = user;
+    }
+
+    if (dto.branchId) {
+      const branch = await this.branchRepo.findOne({
+        where: { id: dto.branchId },
+        relations: ['project'],
+      });
+      if (!branch) throw new NotFoundException('Branch not found');
+      if (!branch.project) throw new BadRequestException('Branch has no project');
+      plan.branch = branch;
+      plan.projectId = branch.project.id;
+    }
+
+    if (dto.shiftId) {
+      const shift = await this.shiftRepo.findOne({ where: { id: dto.shiftId } });
+      if (!shift) throw new NotFoundException('Shift not found');
+      plan.shift = shift;
+    }
+
+    if (dto.days) {
+      plan.days = dto.days;
+    }
+
+    // ❗ Check for conflicts with other plans
+    const existing = await this.journeyPlanRepo.find({
+      where: {
+        user: { id: plan.user.id },
+        branch: { id: plan.branch.id },
+        shift: { id: plan.shift.id },
+        id: Not(plan.id), // Exclude self
+      },
+    });
+
+    for (const otherPlan of existing) {
+      const overlap = otherPlan.days.filter(d => plan.days.includes(d));
+      if (overlap.length > 0) {
+        throw new ConflictException({
+          message: "Conflict with existing plan days",
+          overlappingDays: overlap
+        });
+      }
+    }
+
+    return this.journeyPlanRepo.save(plan);
+  }
+
 
 
 
@@ -139,88 +197,62 @@ async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
   return this.journeyRepo.save(newJourney);
 }
 
-  async updateJourney(id: string, dto: UpdateJourneyDto) {
-    const journey = await this.journeyRepo.findOne({
-      where: { id },
-      relations: ['user', 'branch', 'shift', 'branch.project', 'checkin', 'branch.chain'],
-    });
+async updateJourney(id: string, dto: UpdateJourneyDto) {
+  const journey = await this.journeyRepo.findOne({
+    where: { id },
+    relations: ['user', 'branch', 'shift', 'branch.project'],
+  });
 
-    if (!journey) throw new NotFoundException('Journey not found');
+  if (!journey) throw new NotFoundException('Journey not found');
 
-    if (dto.userId) {
-      const user = await this.userRepo.findOne({ where: { id: dto.userId } });
-      if (!user) throw new NotFoundException('User not found');
-      journey.user = user;
-    }
-
-    if (dto.branchId) {
-      const branch = await this.branchRepo.findOne({
-        where: { id: dto.branchId },
-        relations: ['project'],
-      });
-      if (!branch) throw new NotFoundException('Branch not found');
-      if (!branch.project) throw new BadRequestException('Branch has no project');
-      journey.branch = branch;
-      journey.projectId = branch.project.id; // Update project ID as well
-    }
-
-    if (dto.shiftId) {
-      const shift = await this.shiftRepo.findOne({ where: { id: dto.shiftId } });
-      if (!shift) throw new NotFoundException('Shift not found');
-      journey.shift = shift;
-    }
-
-    if (dto.date) {
-      journey.date = dto.date;
-    }
-
-    if (dto.status) {
-      journey.status = dto.status as JourneyStatus;
-    }
-
-    // Handle CheckIn updates
-    const checkInFields = [
-      'checkInTime',
-      'checkOutTime',
-      'geo',
-      'image',
-      'checkInDocument',
-      'checkOutDocument',
-      'noteIn',
-      'noteOut',
-    ];
-    const hasCheckInUpdate = checkInFields.some(field => dto[field] !== undefined);
-
-    if (hasCheckInUpdate) {
-      let checkIn = journey.checkin;
-      if (!checkIn) {
-        checkIn = this.checkInRepo.create({
-          journey,
-          user: journey.user,
-        });
-      }
-
-      if (dto.checkInTime) checkIn.checkInTime = new Date(dto.checkInTime);
-      if (dto.checkOutTime) checkIn.checkOutTime = new Date(dto.checkOutTime);
-      if (dto.geo) {
-        checkIn.geo = dto.geo;
-        const chainName = journey.branch?.chain?.name;
-        // If roaming is enabled (true), we DO NOT check geofence.
-        const isCheckGeo = chainName !== 'Roaming' ? true : false;
-        checkIn.isWithinRadius = isCheckGeo ? this.isWithinGeofence(journey.branch, dto.geo) : true;
-      }
-      if (dto.image) checkIn.image = dto.image;
-      if (dto.checkInDocument) checkIn.checkInDocument = dto.checkInDocument;
-      if (dto.checkOutDocument) checkIn.checkOutDocument = dto.checkOutDocument;
-      if (dto.noteIn) checkIn.noteIn = dto.noteIn;
-      if (dto.noteOut) checkIn.noteOut = dto.noteOut;
-
-      await this.checkInRepo.save(checkIn);
-    }
-
- 
-    return this.journeyRepo.save(journey);
+  if (dto.userId) {
+    const user = await this.userRepo.findOne({ where: { id: dto.userId } });
+    if (!user) throw new NotFoundException('User not found');
+    journey.user = user;
   }
+
+  if (dto.branchId) {
+    const branch = await this.branchRepo.findOne({
+      where: { id: dto.branchId },
+      relations: ['project'],
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+    if (!branch.project) throw new BadRequestException('Branch has no project');
+    journey.branch = branch;
+    journey.projectId = branch.project.id; // Update project ID as well
+  }
+
+  if (dto.shiftId) {
+    const shift = await this.shiftRepo.findOne({ where: { id: dto.shiftId } });
+    if (!shift) throw new NotFoundException('Shift not found');
+    journey.shift = shift;
+  }
+
+  if (dto.date) {
+    journey.date = dto.date;
+  }
+
+  // Check for conflicts after updates
+  const conflict = await this.journeyRepo.findOne({
+    where: {
+      user: { id: journey.user.id },
+      date: journey.date,
+      shift: { id: journey.shift.id },
+      id: Not(journey.id), // Exclude self
+      status: Not(In([
+        JourneyStatus.UNPLANNED_ABSENT,
+        JourneyStatus.UNPLANNED_PRESENT,
+        JourneyStatus.UNPLANNED_CLOSED,
+      ])),
+    },
+  });
+
+  if (conflict) {
+    throw new ConflictException('A journey already exists for this user, date, and shift');
+  }
+
+  return this.journeyRepo.save(journey);
+}
 
 async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
   const today = dayjs().format('YYYY-MM-DD');
