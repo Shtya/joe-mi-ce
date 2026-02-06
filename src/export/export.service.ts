@@ -297,20 +297,6 @@ export class ExportService {
 
       // Determine entity prefix
       let entityPrefix = currentEntity;
-      const isBranchEntity = keyLower === 'branch';
-      
-      // Special handling for branch entity when it's not the main entity
-      if (isBranchEntity && mainEntity !== 'branch' && typeof value === 'object') {
-        // If branch is a nested object and not the main entity, include only the name
-        if (value.name !== undefined) {
-          result['branch'] = value.name;
-        } else if (value.title !== undefined) {
-          result['branch'] = value.title;
-        } else if (value.code !== undefined) {
-          result['branch'] = value.code;
-        }
-        continue;
-      }
 
       // Common entity names
       const entityNames = [
@@ -608,6 +594,7 @@ export class ExportService {
     
     // Location fields (500-599)
     if (fieldLower.includes('branch')) return 510;
+    if (fieldLower.includes('chain')) return 515;
     if (fieldLower.includes('location')) return 520;
     if (fieldLower.includes('city')) return 530;
     if (fieldLower.includes('country')) return 540;
@@ -652,6 +639,7 @@ export class ExportService {
     
     // Common related entities get higher priority
     if (entityLower.includes('branch')) return 100;
+    if (entityLower.includes('chain')) return 150;
     if (entityLower.includes('user')) return 200;
     if (entityLower.includes('product')) return 300;
     if (entityLower.includes('brand')) return 400;

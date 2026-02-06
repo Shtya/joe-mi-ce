@@ -3,7 +3,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not } from 'typeorm';
 import * as dayjs from 'dayjs';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto } from 'dto/journey.dto';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto } from 'dto/journey.dto';
 
 import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
 import { User } from 'entities/user.entity';
@@ -88,7 +88,7 @@ export class JourneyService {
 
     return savedPlan;
   }
-  async updatePlan(id: string, dto: CreateJourneyPlanDto) {
+  async updatePlan(id: string, dto: UpdateJourneyPlanDto) {
     const plan = await this.journeyPlanRepo.findOne({
       where: { id },
       relations: ['user', 'branch', 'shift', 'branch.project'],
