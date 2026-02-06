@@ -18,15 +18,12 @@ export class CreateJourneyPlanDto {
 }
 export class UpdateJourneyPlanDto {
   @IsOptional()
-  @IsUUID()
   userId: string;
 
   @IsOptional()
-  @IsUUID()
   branchId: string;
 
   @IsOptional()
-  @IsUUID()
   shiftId: string;
 
   @IsOptional()
