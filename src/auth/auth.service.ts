@@ -577,9 +577,9 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
 
     const password = row.password?.trim() || row.username;
     const user = this.userRepository.create({
-      username: row.username,
+      username: row.username || row.user,
       name: row.name,
-      mobile: row.mobile,
+      mobile: row.mobile || row.phone,
       password: await argon2.hash(password),
       role: promoterRole,
       project_id: requesterProjectId,

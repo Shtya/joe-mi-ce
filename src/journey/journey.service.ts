@@ -3,6 +3,7 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException }
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not } from 'typeorm';
 import * as dayjs from 'dayjs';
+import * as XLSX from 'xlsx';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto } from 'dto/journey.dto';
 
 import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
@@ -684,5 +685,115 @@ if (typeof value === 'string') {
     return this.branchRepo.find({
       where: { supervisor: { id: supervisorId } },
     });
+  }
+  async getImportTemplate(): Promise<Buffer> {
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.json_to_sheet([
+      {
+        Username: 'johndoe',
+        Branch: 'Main Branch',
+        Shift: 'Morning Shift',
+        Days: 'monday,tuesday',
+      },
+    ]);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template');
+    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+  }
+
+  async importPlans(file: Express.Multer.File, projectId: string) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const [index, row] of data.entries()) {
+      try {
+        const username = row['Username'] || row['username'] as String;
+        const name = row['Name'] || row['name'] as String;
+        const branchName = row['Branch'] || row['branch'] as String;
+        const shiftName = row['Shift'] || row['shift'] as String;
+        const daysString = row['Days'] || row['days'] as String;
+
+        if ((!username && !name) || !branchName || !shiftName || !daysString) {
+          throw new Error('Missing required fields');
+        }
+
+        // Find User
+        const userConditions: any[] = [];
+        if (username) userConditions.push({ username: typeof username === 'string' ? username.toLowerCase() : username });
+        if (name) userConditions.push({ name: typeof name === 'string' ? name.toLowerCase() : name });
+        
+        // If neither is present, error is thrown above.
+        
+        let user: User | null = null;
+        if (userConditions.length > 0) {
+            user = await this.userRepo.findOne({
+                where: userConditions
+            });
+        }
+
+
+        if (!user) {
+          throw new NotFoundException(`User not found: ${username || name}`);
+        }
+
+        // Find Branch
+        // Try to find by name first, maybe scoped by project if possible?
+        // Ideally we should filter branches by project, but for now global search might be okay if names are unique.
+        // Or we can filter in memory or proper query.
+        let branch = await this.branchRepo.findOne({
+          where: { name: branchName, project: { id: projectId } },
+          relations: ['project', 'city', 'city.region']
+        });
+
+        if (!branch) {
+             throw new NotFoundException(`Branch not found: ${branchName}`);
+        }
+
+        // Find Shift
+        const shift = await this.shiftRepo.findOne({
+          where: { name: shiftName },
+        });
+
+        if (!shift) {
+          throw new NotFoundException(`Shift not found: ${shiftName}`);
+        }
+
+        const days = daysString.split(',').map(d => d.trim().toLowerCase());
+        
+        // Create DTO
+        const dto: CreateJourneyPlanDto = {
+            userId: user.id,
+            branchId: branch.id,
+            shiftId: shift.id,
+            days: days
+        };
+
+        // Reuse createPlan logic but handle errors
+        // We can call createPlan directly.
+        await this.createPlan(dto);
+        results.success++;
+
+      } catch (error) {
+        results.failed++;
+        results.errors.push({
+          row: index + 2, // 1-based index, +header
+          error: error.message,
+          data: row
+        });
+      }
+    }
+
+    return results;
   }
 }
