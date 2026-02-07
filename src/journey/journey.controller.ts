@@ -1,6 +1,7 @@
 // src/journey/journey.controller.ts
 // ===== journey.controller.ts =====
-import { Controller, Get, Post, Body, Param, Delete,Headers, UseGuards, Req, Query, Patch, UploadedFile, UseInterceptors, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Delete,Headers, UseGuards, Req, Query, Patch, UploadedFile, UseInterceptors, NotFoundException, Res } from '@nestjs/common';
+import { Response } from 'express';
 import { JourneyService } from './journey.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto } from 'dto/journey.dto';
@@ -27,6 +28,27 @@ export class JourneyController {
   @Permissions(EPermission.JOURNEY_CREATE)
   async createPlan(@Body() dto: CreateJourneyPlanDto) {
     return this.journeyService.createPlan(dto);
+  }
+
+  @Post('plans/import')
+  @Permissions(EPermission.JOURNEY_CREATE)
+  @UseInterceptors(FileInterceptor('file'))
+  async importPlans(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('projectId') projectId: string
+  ) {
+    return this.journeyService.importPlans(file, projectId);
+  }
+
+  @Get('plans/import-template')
+  async getImportTemplate(@Res() res: Response) {
+    const buffer = await this.journeyService.getImportTemplate();
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': 'attachment; filename=journey_plan_template.xlsx',
+      'Content-Length': buffer.length,
+    });
+    res.end(buffer);
   }
 
   @Patch('plans/:id')
