@@ -98,12 +98,29 @@ export class ExportService {
    */
   private extractMainEntityFromUrl(url: string): string {
     try {
+      // First check for module query param
+      const queryMatch = url.match(/[?&]module=([^&]+)/);
+      if (queryMatch && queryMatch[1]) {
+        return queryMatch[1].toLowerCase();
+      }
+
       const urlWithoutQuery = url.split('?')[0];
       const parts = urlWithoutQuery.split('/');
       
       for (let i = parts.length - 1; i >= 0; i--) {
         if (parts[i] && parts[i].trim() !== '') {
           let entity = parts[i].toLowerCase();
+          
+          // Skip if it looks like a UUID
+          if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(entity)) {
+            continue;
+          }
+          
+          // Skip common non-entity parts
+          if (['api', 'v1', 'export', 'by-url'].includes(entity)) {
+            continue;
+          }
+
           entity = entity.replace(/\.(json|xml|csv)$/, '');
           return entity;
         }
@@ -896,11 +913,37 @@ export class ExportService {
     const cleanedData = this.cleanDataForExport(rows, mainEntity);
     const finalData = this.convertRecordsColumnsToRows(cleanedData);
     
-    // Get grouped columns with main entity first
-    const groupedColumns = this.groupColumnsByEntity(finalData, mainEntity);
+    // For Journey/Unplanned, use the exact order from cleanDataForExport
+    // For others, use the intelligent grouping
+    let worksheetColumns: any[] = [];
+    let groupedColumns: { header: string; key: string; width?: number; entity?: string }[] = [];
     
-    // Create worksheet columns
-    const worksheetColumns = groupedColumns.map(col => ({
+    // Check if this is a Journey/Unplanned export based on multiple factors
+    const isJourneyOrUnplanned = 
+      (mainEntity || '').toLowerCase().includes('journey') || 
+      (mainEntity || '').toLowerCase().includes('unplanned') ||
+      (options.fileName || '').toLowerCase().includes('unplanned') ||
+      (cleanedData.length > 0 && (
+        cleanedData[0]['Status Code'] !== undefined && 
+        cleanedData[0]['Duration'] !== undefined
+      ));
+
+    if (isJourneyOrUnplanned && cleanedData.length > 0) {
+      // Use keys from the first row directly as they are already ordered
+      const firstRow = finalData[0];
+      groupedColumns = Object.keys(firstRow).map(key => ({
+        header: key,
+        key: key,
+        width: this.calculateColumnWidth(key),
+        entity: mainEntity // Use main entity for all columns to have uniform color
+      }));
+    } else {
+      // Get grouped columns with main entity first
+      groupedColumns = this.groupColumnsByEntity(finalData, mainEntity);
+    }
+    
+    // Create worksheet columns from groupedColumns
+    worksheetColumns = groupedColumns.map(col => ({
       header: col.header,
       key: col.key,
       width: col.width
@@ -1088,7 +1131,14 @@ export class ExportService {
       
       // Extract main entity from URL
       const mainEntity = this.extractMainEntityFromUrl(url);
-      console.log(`Processing ${data.length} ${mainEntity} records for export`);
+      
+      const debugLog = `
+      [DEBUG] Extracted mainEntity: ${mainEntity} from URL: ${url}
+      [DEBUG] Processing ${data.length} records.
+      [DEBUG] First record sample: ${data[0] ? JSON.stringify(data[0]).substring(0, 500) : 'None'}
+      `;
+      // Write debug info to a file for investigation
+      require('fs').writeFileSync('/home/mostafa/Work/joe13/joe-mi-ce/export_debug.log', debugLog);
 
       // Default fileName to 'visting history' for journeys or if it contains 'unplanned'
       let finalFileName = fileName;
