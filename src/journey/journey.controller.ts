@@ -13,7 +13,7 @@ import { AnyFilesInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/
 import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.config';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
-import { Raw, In } from 'typeorm';
+import { Raw, In, Brackets } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
 @UseGuards(AuthGuard)
@@ -390,7 +390,6 @@ async getAllPlansWithPagination(
     ...query.filters,
     ...(user.role.name !== ERole.SUPERVISOR && user.role.name !== ERole.PROMOTER && user.branch ? { branch: { id: user.branch.id } } : {}),
     ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
-    ...(user.role.name === ERole.SUPERVISOR ? { branch: { id: In(supervisorBranchIds) } } : {})
   };
 
   delete filters.fromDate;
@@ -400,6 +399,20 @@ async getAllPlansWithPagination(
   const extraWhere = (qb: any) => {
     if (user.role.name === ERole.SUPERVISOR) {
       qb.andWhere('plan.userId != :excludedId', { excludedId: user.id });
+      // Only show plans for PROMOTERS
+      qb.andWhere('plan_user_role.name = :promoterRole', { promoterRole: ERole.PROMOTER });
+      
+      if (supervisorBranchIds.length > 0) {
+        qb.andWhere(
+          new Brackets((subQb) => {
+            subQb.where('plan.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds })
+                 .orWhere('plan_user.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds });
+          })
+        );
+      } else {
+         // Should have been handled by early return, but safe fallback
+         qb.andWhere('1=0'); 
+      }
     }
   };
 
@@ -411,7 +424,7 @@ async getAllPlansWithPagination(
     limit,
     '', // Sort by creation date
     'DESC',
-    ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
+    ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
     ['plan_user.name', 'plan_branch.name'],
     filters,
     extraWhere
@@ -486,8 +499,8 @@ async getAllPlansWithPagination(
       checkOutDocument: todayJourney?.checkin?.checkOutDocument,
       checkInTime: checkInTime?.toISOString(),
       checkOutTime: checkOutTime?.toISOString(),
-      shiftStartTime: shiftStart.toISOString(),
-      shiftEndTime: shiftEnd.toISOString(),
+      shiftStartTime: checkInTime?.toISOString(),
+      shiftEndTime: checkOutTime?.toISOString(),
       noteIn: todayJourney?.checkin?.noteIn,
       noteOut: todayJourney?.checkin?.noteOut,
       isWithinRadius: todayJourney?.checkin?.isWithinRadius,
