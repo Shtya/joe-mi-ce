@@ -560,7 +560,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           user: { id: plan.user.id },
           shift: { id: plan.shift.id },
           date: tomorrow,
- 
+          branch: { id: plan.branch.id },
         },
       });
 
@@ -655,6 +655,7 @@ if (typeof value === 'string') {
         user: { id: plan.user.id },
         shift: { id: plan.shift.id },
         date: today,
+        branch: { id: plan.branch.id }, // ✅ Check branch to allow multiple journeys/shift
         status: Not(In([
           JourneyStatus.UNPLANNED_ABSENT,
           JourneyStatus.UNPLANNED_PRESENT,
