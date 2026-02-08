@@ -6,7 +6,7 @@ import * as ExcelJS from 'exceljs';
 async function testExport() {
   try {
     const baseUrl = 'http://localhost:8082';
-    const relativeUrl = '/api/v1/journeys/project/86419039-94f6-42f3-a629-0f83a26a0140?module=journey';
+    const relativeUrl = '/api/v1/journeys/project/86419039-94f6-42f3-a629-0f83a26a0140?module=unplanned';
 
     const token = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3MmM4ODRkZC02ODNlLTQwOWItYWY5ZC05YTk1MzgwMmZhZTAiLCJ1c2VybmFtZSI6InByb2plY3RhZG1pbiIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc3MDUxNDA1OCwiZXhwIjoxNzcwNjg2ODU4fQ.k5DU5LHBNlXvLSbEGv_2JdYvOvEix5FRroWR5IxT4UY';
     

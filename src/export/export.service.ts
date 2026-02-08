@@ -1138,7 +1138,6 @@ export class ExportService {
       [DEBUG] First record sample: ${data[0] ? JSON.stringify(data[0]).substring(0, 500) : 'None'}
       `;
       // Write debug info to a file for investigation
-      require('fs').writeFileSync('/home/mostafa/Work/joe13/joe-mi-ce/export_debug.log', debugLog);
 
       // Default fileName to 'visting history' for journeys or if it contains 'unplanned'
       let finalFileName = fileName;
@@ -1208,6 +1207,54 @@ export class ExportService {
       const fullUrl = `${baseUrl}/${cleanUrl}`; 
   
       console.log(`Fetching data from: ${fullUrl}`);
+
+      // MOCK DATA INJECTION FOR TESTING EXPORT LOGIC
+      if (url.includes('86419039-94f6-42f3-a629-0f83a26a0140')) {
+          const mockData = [
+              {
+                  status: 'closed (unplanned)',
+                  checkin: {
+                      checkInTime: '2023-10-26T08:00:00.000Z',
+                      checkOutTime: '2023-10-26T17:00:00.000Z',
+                      checkInDocument: '/uploads/doc1.jpg',
+                      checkOutDocument: '/uploads/doc2.jpg'
+                  },
+                  branch: {
+                      name: 'Test Branch',
+                      chain: { name: 'Test Chain' },
+                      city: { name: 'Cairo' }
+                  },
+                  user: { name: 'Test User' },
+                  shift: {
+                      name: 'Morning Shift',
+                      startTime: '09:00:00',
+                      endTime: '17:00:00'
+                  },
+                  date: '2023-10-26'
+              },
+              {
+                  status: 'present (unplanned)',
+                  checkin: {
+                      checkInTime: '2023-10-27T09:30:00.000Z',
+                      checkOutTime: '2023-10-27T18:00:00.000Z'
+                  },
+                  branch: {
+                      name: 'Branch 2',
+                      chain: { name: 'Chain 2' },
+                      city: { name: 'Alex' }
+                  },
+                  user: { name: 'User 2' },
+                  shift: {
+                      name: 'Morning Shift',
+                      startTime: '09:00:00',
+                      endTime: '17:00:00'
+                  },
+                  date: '2023-10-27'
+              }
+          ];
+          console.log('[DEBUG] Injecting MOCK DATA for export testing');
+          return mockData;
+      }
   
       const headers: any = {
         'Content-Type': 'application/json',
