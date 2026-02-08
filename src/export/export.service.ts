@@ -387,7 +387,24 @@ export class ExportService {
       };
 
       // Special handling for Journey and Unplanned visits
-      if (mainEntityLower.includes('journey')) {
+      if (mainEntityLower.includes('journey') || mainEntityLower.includes('unplanned')) {
+        // Calculate Status Code: 0=Absent/Unplanned Absent, 1=Present/Unplanned Present, 2=Closed/Unplanned Closed
+        let statusCode = 0;
+        const statusVal = item.status || item.journeyStatus || (item.attendanceStatusText ? (item.attendanceStatusText.en || item.attendanceStatusText) : undefined);
+        
+        if (statusVal) {
+          const lowerStatus = String(statusVal).toLowerCase();
+          if (lowerStatus.includes('closed')) {
+            statusCode = 2; 
+          } else if (lowerStatus.includes('present')) {
+            statusCode = 1;
+          }
+          else{
+            statusCode = 0;
+          }
+        }
+        flattened['Status Code'] = statusCode;
+        
         const checkin = item.checkin;
         const shift = item.shift;
         

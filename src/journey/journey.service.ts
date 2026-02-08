@@ -337,7 +337,10 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     const { supervisorId, date, fromDate, toDate, page = 1, limit = 20 } = params;
 
     const branches = await this.branchRepo.find({
-      where: { supervisor: { id: supervisorId } },
+      where: [
+        { supervisor: { id: supervisorId } },
+        { supervisors: { id: supervisorId } }
+      ],
     });
 
     if (!branches.length) {
@@ -683,7 +686,10 @@ if (typeof value === 'string') {
 
   async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
     return this.branchRepo.find({
-      where: { supervisor: { id: supervisorId } },
+      where: [
+        { supervisor: { id: supervisorId } },
+        { supervisors: { id: supervisorId } }
+      ],
     });
   }
   async getImportTemplate(): Promise<Buffer> {
