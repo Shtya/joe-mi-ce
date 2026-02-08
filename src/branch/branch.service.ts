@@ -312,9 +312,9 @@ export class BranchService {
         let targetSupervisors: User[] = [];
         if (newSupervisorIds.size > 0) {
            targetSupervisors = await this.userRepo.find({ where: { id: In(Array.from(newSupervisorIds)) } });
-           if (targetSupervisors.length !== newSupervisorIds.size) {
-             throw new NotFoundException('Some supervisors not found');
-           }
+           // if (targetSupervisors.length !== newSupervisorIds.size) {
+           //   throw new NotFoundException('Some supervisors not found');
+           // }
         }
 
         // Check if new supervisors are assigned elsewhere

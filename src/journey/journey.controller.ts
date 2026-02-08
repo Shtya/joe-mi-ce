@@ -499,7 +499,7 @@ async getAllPlansWithPagination(
       checkOutDocument: todayJourney?.checkin?.checkOutDocument,
       checkInTime: checkInTime?.toISOString(),
       checkOutTime: checkOutTime?.toISOString(),
-      shiftStartTime: checkInTime?.toISOString(),
+      shiftStartTime: checkInTime?.toISOString() ||null,
       shiftEndTime: checkOutTime?.toISOString(),
       noteIn: todayJourney?.checkin?.noteIn,
       noteOut: todayJourney?.checkin?.noteOut,
