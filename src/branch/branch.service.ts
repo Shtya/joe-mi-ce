@@ -292,14 +292,14 @@ export class BranchService {
     }
 
     // Check for supervisor or team changes
-    if (dto.supervisorId || dto.supervisorIds || dto.teamIds) {
+    if (dto.supervisorId !== undefined || dto.supervisorIds !== undefined || dto.teamIds !== undefined) {
       const projectBranches = await this.branchRepo.find({
         where: { project: { id: branch.project.id } },
         relations: ['supervisor', 'team', 'supervisors'],
       });
 
       // Handle supervisor update
-      if (dto.supervisorId || dto.supervisorIds) {
+      if (dto.supervisorId !== undefined || dto.supervisorIds !== undefined) {
         // Collect desired supervisor IDs
         const newSupervisorIds = new Set<string>();
         if (dto.supervisorIds) dto.supervisorIds.forEach(id => newSupervisorIds.add(id));
