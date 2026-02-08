@@ -485,6 +485,7 @@ export class ExportService {
           'chain name',
           'date',
           'user name',
+          'name',
           'Check in date',
           'Check in time',
           'Check out date',
@@ -524,9 +525,6 @@ export class ExportService {
 
       // Special handling for Sale entity
       if (mainEntityLower === 'sale' || mainEntityLower === 'sales') {
-        if (!flattened['Late Time']) flattened['Late Time'] = '-';
-        if (!flattened['Duration']) flattened['Duration'] = '-';
-        
         const saleDate = item.sale_date || item.created_at;
         splitDateTime(saleDate, 'Date of sale', 'Time of sale');
       }
@@ -1132,12 +1130,9 @@ export class ExportService {
       // Extract main entity from URL
       const mainEntity = this.extractMainEntityFromUrl(url);
       
-      const debugLog = `
-      [DEBUG] Extracted mainEntity: ${mainEntity} from URL: ${url}
-      [DEBUG] Processing ${data.length} records.
-      [DEBUG] First record sample: ${data[0] ? JSON.stringify(data[0]).substring(0, 500) : 'None'}
-      `;
-      // Write debug info to a file for investigation
+      console.log(`[DEBUG] Extracted mainEntity: ${mainEntity} from URL: ${url}`);
+      console.log(`[DEBUG] Processing ${data.length} ${mainEntity} records for export`);
+      console.log(`[DEBUG] First record sample:`, data[0] ? JSON.stringify(data[0]).substring(0, 200) : 'None');
 
       // Default fileName to 'visting history' for journeys or if it contains 'unplanned'
       let finalFileName = fileName;
@@ -1207,54 +1202,6 @@ export class ExportService {
       const fullUrl = `${baseUrl}/${cleanUrl}`; 
   
       console.log(`Fetching data from: ${fullUrl}`);
-
-      // MOCK DATA INJECTION FOR TESTING EXPORT LOGIC
-      if (url.includes('86419039-94f6-42f3-a629-0f83a26a0140')) {
-          const mockData = [
-              {
-                  status: 'closed (unplanned)',
-                  checkin: {
-                      checkInTime: '2023-10-26T08:00:00.000Z',
-                      checkOutTime: '2023-10-26T17:00:00.000Z',
-                      checkInDocument: '/uploads/doc1.jpg',
-                      checkOutDocument: '/uploads/doc2.jpg'
-                  },
-                  branch: {
-                      name: 'Test Branch',
-                      chain: { name: 'Test Chain' },
-                      city: { name: 'Cairo' }
-                  },
-                  user: { name: 'Test User' },
-                  shift: {
-                      name: 'Morning Shift',
-                      startTime: '09:00:00',
-                      endTime: '17:00:00'
-                  },
-                  date: '2023-10-26'
-              },
-              {
-                  status: 'present (unplanned)',
-                  checkin: {
-                      checkInTime: '2023-10-27T09:30:00.000Z',
-                      checkOutTime: '2023-10-27T18:00:00.000Z'
-                  },
-                  branch: {
-                      name: 'Branch 2',
-                      chain: { name: 'Chain 2' },
-                      city: { name: 'Alex' }
-                  },
-                  user: { name: 'User 2' },
-                  shift: {
-                      name: 'Morning Shift',
-                      startTime: '09:00:00',
-                      endTime: '17:00:00'
-                  },
-                  date: '2023-10-27'
-              }
-          ];
-          console.log('[DEBUG] Injecting MOCK DATA for export testing');
-          return mockData;
-      }
   
       const headers: any = {
         'Content-Type': 'application/json',
