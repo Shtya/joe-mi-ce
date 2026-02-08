@@ -291,15 +291,19 @@ export class BranchService {
       branch.geo = this.parseGeo(dto.geo);
     }
 
-    // Check for supervisor or team changes
-    if (dto.supervisorId !== undefined || dto.supervisorIds !== undefined || dto.teamIds !== undefined) {
+    // Check for supervisor or team changes, OR if it's a general update (name/geo/city) which implies a form save
+    // If it's a form save and supervisorId is missing, we should process it (to wipe supervisors if needed)
+    const isFormUpdate = dto.name !== undefined || dto.geo !== undefined || dto.cityId !== undefined || dto.chainId !== undefined;
+
+    if (dto.supervisorId !== undefined || dto.supervisorIds !== undefined || dto.teamIds !== undefined || isFormUpdate) {
       const projectBranches = await this.branchRepo.find({
         where: { project: { id: branch.project.id } },
         relations: ['supervisor', 'team', 'supervisors'],
       });
 
       // Handle supervisor update
-      if (dto.supervisorId !== undefined || dto.supervisorIds !== undefined) {
+      // We process if explicitly requested OR if it's a form update (user expects full sync)
+      if (dto.supervisorId !== undefined || dto.supervisorIds !== undefined || isFormUpdate) {
         // Collect desired supervisor IDs
         const newSupervisorIds = new Set<string>();
         if (dto.supervisorIds) dto.supervisorIds.forEach(id => newSupervisorIds.add(id));
