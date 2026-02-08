@@ -386,7 +386,7 @@ export class ExportService {
         flattened[timeKey] = `${hours}:${minutes}:${seconds}`;
       };
 
-      // Special handling for Journey and Unplanned visits
+        // Special handling for Journey and Unplanned visits
       if (mainEntityLower.includes('journey') || mainEntityLower.includes('unplanned')) {
         // Calculate Status Code: 0=Absent/Unplanned Absent, 1=Present/Unplanned Present, 2=Closed/Unplanned Closed
         let statusCode = 0;
@@ -403,6 +403,8 @@ export class ExportService {
             statusCode = 0;
           }
         }
+        
+        // Ensure Status Code is added to the flattened object with a prominent key
         flattened['Status Code'] = statusCode;
         
         const checkin = item.checkin;
@@ -441,6 +443,10 @@ export class ExportService {
         // Add Check in/out times and images (Split into Date and Time)
         splitDateTime(checkin?.checkInTime, 'Check in date', 'Check in time');
         splitDateTime(checkin?.checkOutTime, 'Check out date', 'Check out time');
+
+        // Remove the original combined datetime columns if they exist to avoid duplication
+        delete flattened['checkin checkInTime'];
+        delete flattened['checkin checkOutTime'];
         
         // Image URL formatting
         const formatImageUrl = (path: string) => {
@@ -453,6 +459,50 @@ export class ExportService {
         flattened['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
         flattened['Check in document'] = formatImageUrl(checkin?.checkInDocument);
         flattened['Check out document'] = formatImageUrl(checkin?.checkOutDocument);
+
+        // Define preferred column order based on user request
+        const preferredOrder = [
+          'Status Code',
+          'status',
+          'branch name', // Assuming flattened key logic produces this or similar
+          'chain name',
+          'date',
+          'user name',
+          'Check in date',
+          'Check in time',
+          'Check out date',
+          'Check out time',
+          'city name',
+          'shift name',
+          'shift starttime',
+          'shift endtime',
+          'Duration',
+          'Late Time',
+          'Check in image',
+          'Check out image'
+        ];
+
+        // Reconstruct the object with ordered keys first, then any remaining keys
+        const orderedFlattened: any = {};
+        
+        // Add preferred columns if they exist
+        preferredOrder.forEach(key => {
+            // Case-insensitive match for keys in flattened object
+            const existingKey = Object.keys(flattened).find(k => k.toLowerCase() === key.toLowerCase());
+            if (existingKey) {
+                orderedFlattened[existingKey] = flattened[existingKey];
+                delete flattened[existingKey]; // Remove from source so we don't duplicate
+            }
+        });
+
+        // Add remaining keys that were not in the preferred list
+        Object.keys(flattened).forEach(key => {
+            orderedFlattened[key] = flattened[key];
+        });
+
+        // Replace flattened object with the ordered one
+        Object.keys(orderedFlattened).forEach(key => delete flattened[key]); // Clear original
+        Object.assign(flattened, orderedFlattened); // Fills with new order (JavaScript object property order is generally preserved for non-integer keys)
       }
 
       // Special handling for Sale entity
