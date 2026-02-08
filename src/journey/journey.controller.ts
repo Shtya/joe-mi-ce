@@ -13,7 +13,7 @@ import { AnyFilesInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/
 import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.config';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
-import { Raw, In, Not } from 'typeorm';
+import { Raw, In } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
 @UseGuards(AuthGuard)
@@ -388,19 +388,20 @@ async getAllPlansWithPagination(
   const filters: any = {
     projectId,
     ...query.filters,
-    ...(user.role.name !== ERole.PROMOTER && user.branch ? { branch: { id: user.branch.id } } : {}),
+    ...(user.role.name !== ERole.SUPERVISOR && user.role.name !== ERole.PROMOTER && user.branch ? { branch: { id: user.branch.id } } : {}),
     ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
-    ...(user.role.name === ERole.SUPERVISOR ? { 
-      branch: { id: In(supervisorBranchIds) },
-      user: { id: Not(user.id) }
-    } : {})
+    ...(user.role.name === ERole.SUPERVISOR ? { branch: { id: In(supervisorBranchIds) } } : {})
   };
 
   delete filters.fromDate;
   delete filters.toDate;
   delete filters.date;
 
-
+  const extraWhere = (qb: any) => {
+    if (user.role.name === ERole.SUPERVISOR) {
+      qb.andWhere('plan.userId != :excludedId', { excludedId: user.id });
+    }
+  };
 
   const plans = await CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
@@ -413,6 +414,7 @@ async getAllPlansWithPagination(
     ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
     ['plan_user.name', 'plan_branch.name'],
     filters,
+    extraWhere
   );
 
   // Transform without filtering by specific date
