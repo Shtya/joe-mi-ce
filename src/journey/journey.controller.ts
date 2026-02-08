@@ -13,7 +13,7 @@ import { AnyFilesInterceptor, FileInterceptor, FilesInterceptor } from '@nestjs/
 import { checkinDocumentUploadOptions, imageUploadOptions } from './upload.config';
 import { LoggingInterceptor } from 'common/http-logging.interceptor';
 import {  multerOptionsCheckinTmp } from 'common/multer.config';
-import { Raw, In } from 'typeorm';
+import { Raw, In, Not } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
 @UseGuards(AuthGuard)
@@ -373,17 +373,27 @@ async getAllPlansWithPagination(
   let supervisorBranchIds: string[] = [];
   if (user.role.name === ERole.SUPERVISOR) {
     const branches = await this.journeyService.getSupervisorBranches(user.id);
+    if (!branches || branches.length === 0) {
+      return {
+        data: [],
+        total: 0,
+        page: page,
+        limit: limit,
+        totalPages: 0,
+      };
+    }
     supervisorBranchIds = branches.map(b => b.id);
   }
 
   const filters: any = {
     projectId,
     ...query.filters,
-    ...(user.branch ? { branch: { id: user.branch.id } } : {}),
+    ...(user.role.name !== ERole.PROMOTER && user.branch ? { branch: { id: user.branch.id } } : {}),
     ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
-    ...(user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0 
-      ? { branch: { id: In(supervisorBranchIds) } } 
-      : {})
+    ...(user.role.name === ERole.SUPERVISOR ? { 
+      branch: { id: In(supervisorBranchIds) },
+      user: { id: Not(user.id) }
+    } : {})
   };
 
   delete filters.fromDate;
