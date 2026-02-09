@@ -611,15 +611,17 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 // sale.service.ts
 // sale.service.ts
 // sale.service.ts
-async findSalesByUserOptimized(
-  userId: string,
-  search?: string,
-  page: any = 1,
-  limit: any = 10,
-  sortBy?: string,
-  sortOrder: 'ASC' | 'DESC' = 'DESC',
-  filters?: any
-) {
+  async findSalesByUserOptimized(
+    userId: string,
+    search?: string,
+    page: any = 1,
+    limit: any = 10,
+    sortBy?: string,
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    filters?: any,
+    startDate?: Date,
+    endDate?: Date
+  ) {
   const pageNumber = Number(page) || 1;
   const limitNumber = Number(limit) || 10;
   const skip = (pageNumber - 1) * limitNumber;
@@ -640,7 +642,7 @@ async findSalesByUserOptimized(
       'product.id',
       'product.name',
       'product.sku',
-      'product.price', // Add product price to calculate amounts
+      'sale.price', // Add product price to calculate amounts
       'product.discount', // Added discount field if available
       'brand.id',
       'brand.name',
@@ -666,6 +668,18 @@ async findSalesByUserOptimized(
     );
   }
 
+  // Apply date range if provided
+  if (startDate && endDate) {
+    qb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', {
+      startDate,
+      endDate
+    });
+  } else if (startDate) {
+    qb.andWhere('sale.created_at >= :startDate', { startDate });
+  } else if (endDate) {
+    qb.andWhere('sale.created_at <= :endDate', { endDate });
+  }
+
   // Apply additional filters
   if (filters) {
     Object.entries(filters).forEach(([key, value]) => {
@@ -685,7 +699,8 @@ async findSalesByUserOptimized(
 
   // Apply sorting
   const sortField = sortBy || 'sale.created_at';
-  qb.orderBy(sortField, sortOrder);
+  const order = sortOrder && sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+  qb.orderBy(sortField, order);
 
   const [records, total_records] = await qb.getManyAndCount();
 
@@ -703,9 +718,13 @@ async findSalesByUserOptimized(
 
   // Transform the data - branch and user only appear once at the top level
   const optimizedRecords = records.map(sale => {
-    const unitPrice = sale.product?.price || 0;
+    // Use sale.price/discount if available (as user requested in select), fallback to product
+    const unitPrice = sale.price !== undefined ? sale.price : (sale.product?.price || 0);
     const quantity = sale.quantity || 0;
-    const discount = sale.product.discount || 0;
+    // sale.discount might be stored as numeric value or undefined. 
+    // IF sale.discount is in the entity. If not, maybe user meant product.discount?
+    // User added 'sale.discount' to select in Step 202. Assuming Sale entity has 'discount'.
+    const discount = sale.product?.discount || 0;
 
     return {
       id: sale.id,

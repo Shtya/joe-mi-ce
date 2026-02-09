@@ -1,5 +1,5 @@
 // sale.controller.ts
-import { Controller, Get, Post, Body, Param, Patch, Delete, Query, Res, UseGuards, Req, Put, Header } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, Query, Res, UseGuards, Req, Put, Header, ParseUUIDPipe } from '@nestjs/common';
 import { SaleService } from './sale.service';
 import { CreateSaleDto, UpdateSaleDto } from 'dto/sale.dto';
 import { CRUD } from 'common/crud.service';
@@ -107,6 +107,70 @@ export class SaleController {
     return this.saleService.create(dto);
   }
 
+  @Get('promoter/:id/today')
+  @Permissions(EPermission.SALE_READ)
+  async getPromoterSalesForToday(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Query() query: any
+  ) {
+    const today = new Date();
+    const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+
+    const filters = { ...query.filters };
+    if (query.filters?.fromDate) delete filters.fromDate;
+    if (query.filters?.toDate) delete filters.toDate;
+    if (query.filters?.date) delete filters.date;
+
+    return this.saleService.findSalesByUserOptimized(
+      id,
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      filters,
+      startDate,
+      endDate
+    );
+  }
+
+  @Get('my-sales')
+  @Permissions(EPermission.SALE_READ)
+  async getMySales(
+    @Req() req: any,
+    @Query() query: any
+  ) {
+    const filters = { ...query.filters };
+    let startDate: Date | undefined;
+    let endDate: Date | undefined;
+
+    if (query.startDate) startDate = new Date(query.startDate);
+    if (query.endDate) endDate = new Date(query.endDate);
+    
+    // Also support filters.fromDate / toDate standard we use elsewhere
+    if (query.filters?.fromDate) {
+        startDate = new Date(query.filters.fromDate);
+        delete filters.fromDate;
+    }
+    if (query.filters?.toDate) {
+        endDate = new Date(query.filters.toDate);
+        delete filters.toDate;
+    }
+
+    return this.saleService.findSalesByUserOptimized(
+      req.user.id,
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      filters,
+      startDate,
+      endDate
+    );
+  }
+
   @Put(':id')
   @Permissions(EPermission.SALE_UPDATE)
   update(@Param('id') id: string, @Body() dto: UpdateSaleDto) {
@@ -134,6 +198,8 @@ export class SaleController {
   cancelSale(@Param('id') id: string) {
     return this.saleService.cancelSale(id);
   }
+
+
 
   @Post(':id/return')
   @Permissions(EPermission.SALE_RETURN)
@@ -205,7 +271,9 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
     { ...filters }
   );
 }
-  @Get('branch/:branchId/progress')
+
+
+@Get('branch/:branchId/progress')
   @Permissions(EPermission.SALE_READ)
   getSalesWithTargetProgress(
     @Param('branchId') branchId: string,

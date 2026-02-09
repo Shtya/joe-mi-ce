@@ -715,9 +715,12 @@ private mapRowFields(row: any): any {
  */
 private cleanRowValues(row: any): void {
   // Clean boolean values
-  if (row.all_branches !== undefined) {
+  if (row.all_branches !== undefined && row.all_branches !== null && row.all_branches !== '') {
     const allBranchesStr = String(row.all_branches).toLowerCase().trim();
     row.all_branches = ['true', '1', 'yes', 'oui', 'vrai'].includes(allBranchesStr);
+  } else {
+    // Default to true
+    row.all_branches = true;
   }
 
   if (row.product_priority !== undefined) {
@@ -732,7 +735,12 @@ private cleanRowValues(row: any): void {
 
   if (row.quantity !== undefined) {
     row.quantity = this.parseNumericValue(row.quantity);
+  } else {
+    row.quantity = 1; // Default quantity
   }
+  
+  // Ensure quantity is at least 1 if it ended up being 0 (unless explicitly 0 meant out of stock? User said "1 quantity")
+  if (row.quantity === 0) row.quantity = 1;
 
   if (row.discount !== undefined) {
     row.discount = this.parseNumericValue(row.discount);

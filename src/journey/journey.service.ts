@@ -402,9 +402,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
     const isWithinGeofence = isCheckGeo ? this.isWithinGeofence(journey.branch, dto.geo) : true;
 
-    if(!isWithinGeofence){
-      throw new BadRequestException('You are not within geofence');
-    }
+    // if(!isWithinGeofence){
+    //   throw new BadRequestException('You are not within geofence');
+    // }
     if (checkIn) {
       if (dto.checkInTime) {
         checkIn.checkInTime = dto.checkInTime as any;

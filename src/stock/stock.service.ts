@@ -659,7 +659,7 @@ if (!branch) {
       'product.id',
       'product.name',
       'product.sku',
-      'product.price',
+      'sale.price',
       'product.discount',
       'brand.id',
       'brand.name',
