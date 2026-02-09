@@ -19,10 +19,13 @@ import { ProjectService } from 'src/project/project.service';
 const PROMOTER_HEADER_MAP: Record<string, string> = {
   'promoter username': 'username',
   'username': 'username',
+  "user":"username",
+  "Name":"name",
   'promoter name': 'name',
   'name': 'name',
   'mobile': 'mobile',
   'phone': 'mobile',
+  "Phone":"mobile",
   'national id': 'national_id',
   'promoter picture': 'avatar_url',
   'picture': 'avatar_url',
