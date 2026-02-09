@@ -637,10 +637,10 @@ private mapRowFields(row: any): any {
   // Comprehensive field mapping
   const fieldMappings = {
     // Product name mappings
-    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج"],
+    name: ['name', 'product_name', 'product', 'device', 'product_name2', 'nom' ,'Product Name2','Product Name',"product_name_2","Product Name 2", "الوصف", "اسم_الصنف", "اسم_المنتج", "model", "Model"],
 
     // SKU mappings
-    sku: ['sku', 'product_code', 'reference', 'product_reference', 'item_code', 'extra_sku', "الكود", "رمز_الصنف"],
+    sku: ['sku', 'product_code', 'reference', 'product_reference', 'item_code', 'extra_sku', "الكود", "رمز_الصنف","model"],
 
     // Model mappings
     model: ['model', 'device_model', 'device_name', 'model_number', 'modele', "رقم_الصنف", "الموديل"],
