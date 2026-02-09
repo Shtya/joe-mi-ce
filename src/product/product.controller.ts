@@ -269,7 +269,7 @@ async findAll(@Query() q: any, @Req() req: any) {
         
         // If we find 'name' or 'product_name' specifically, give it a huge boost
         if (normalizedHeaders.some(h => 
-            ['name', 'product_name', 'product', 'device', 'اسم_المنتج', 'اسم_الصنف'].includes(h)
+            ['name', 'product_name', 'model',"Model",'product', 'device', 'اسم_المنتج', 'اسم_الصنف'].includes(h)
         )) {
             matchCount += 5;
         }
