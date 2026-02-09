@@ -128,12 +128,12 @@ export class ProductController {
           };
 
           return {
-            name: mapColumn(['name', 'product_name', 'product']),
+            name: mapColumn(['name', 'product_name', 'product',"Model"]),
             description: mapColumn(['description', 'desc']),
             price: parseFloat(mapColumn(['price', 'price_amount']) || '0'),
             discount: parseFloat(mapColumn(['discount', 'discount_percent', 'discount_%']) || '0'),
             model: mapColumn(['model', 'model_number']),
-            sku: mapColumn(['sku', 'product_code']),
+            sku: mapColumn(['sku', 'product_code','Model']),
             image_url: mapColumn(['image_url', 'image', 'image_link']),
             is_high_priority: ['true', '1', 'yes'].includes((mapColumn(['is_high_priority', 'high_priority', 'priority']) || '').toLowerCase()),
             category_name: mapColumn(['category_name', 'category', 'product_category']),

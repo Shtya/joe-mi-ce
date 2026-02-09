@@ -398,12 +398,13 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     // Check roaming settings
     const chainName = journey.branch?.chain?.name;
     
-    // If roaming is enabled (true), we DO NOT check geofence.
-    // If roaming is disabled (false/undefined), we DO check geofence.
-    const isCheckGeo = chainName !== 'Roaming' ? true : false; // default to true if roaming is false
+    const isCheckGeo = !chainName?.toLowerCase().includes('roaming');
 
     const isWithinGeofence = isCheckGeo ? this.isWithinGeofence(journey.branch, dto.geo) : true;
 
+    if(!isWithinGeofence){
+      throw new BadRequestException('You are not within geofence');
+    }
     if (checkIn) {
       if (dto.checkInTime) {
         checkIn.checkInTime = dto.checkInTime as any;
