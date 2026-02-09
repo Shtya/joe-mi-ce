@@ -685,6 +685,55 @@ if (typeof value === 'string') {
   return { createdCount, date: today };
 }
 
+  // ===== Auto-close journeys at 3 AM =====
+  async autoCloseJourneys() {
+    const now = new Date();
+    
+    // Find all journeys with PRESENT or UNPLANNED_PRESENT status
+    const openJourneys = await this.journeyRepo.find({
+      where: [
+        { status: JourneyStatus.PRESENT },
+        { status: JourneyStatus.UNPLANNED_PRESENT },
+      ],
+      relations: ['user', 'branch', 'shift'],
+    });
+
+    let closedCount = 0;
+
+    for (const journey of openJourneys) {
+      try {
+        // Find or create check-in record
+        let checkIn = await this.checkInRepo.findOne({
+          where: { journey: { id: journey.id } },
+        });
+
+        if (checkIn) {
+          // Only update if there's no checkout time already
+          if (!checkIn.checkOutTime) {
+            checkIn.checkOutTime = now;
+            await this.checkInRepo.save(checkIn);
+          }
+        } else {
+          // This shouldn't happen (PRESENT status should have check-in), but handle it
+          console.warn(`Journey ${journey.id} has PRESENT status but no check-in record`);
+          continue;
+        }
+
+        // Update journey status
+        journey.status = journey.type === JourneyType.PLANNED 
+          ? JourneyStatus.CLOSED 
+          : JourneyStatus.UNPLANNED_CLOSED;
+        
+        await this.journeyRepo.save(journey);
+        closedCount++;
+      } catch (error) {
+        console.error(`Error auto-closing journey ${journey.id}:`, error);
+      }
+    }
+
+    return { closedCount, totalFound: openJourneys.length, timestamp: now };
+  }
+
 
   async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
     return this.branchRepo.find({

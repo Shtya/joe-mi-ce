@@ -20,4 +20,16 @@ export class JourneyCron {
       this.logger.error('❌ Error creating journeys for tomorrow:', error);
     }
   }
+
+  @Cron('0 0 * * *', { timeZone: 'Asia/Riyadh' }) // 3 AM Saudi time
+  async handleAutoCloseJourneys() {
+    this.logger.log('🔒 Starting auto-close of open journeys at 3 AM Saudi time...');
+
+    try {
+      const result = await this.journeyService.autoCloseJourneys();
+      this.logger.log(`✅ Auto-closed ${result.closedCount} out of ${result.totalFound} open journeys at ${result.timestamp}`);
+    } catch (error) {
+      this.logger.error('❌ Error auto-closing journeys:', error);
+    }
+  }
 }
