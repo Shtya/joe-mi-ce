@@ -125,8 +125,6 @@ export class SaleController {
       query.sortBy,
       query.sortOrder,
       filters,
-      startDate,
-      endDate
     );
   }
 
@@ -161,8 +159,7 @@ export class SaleController {
       query.sortBy,
       query.sortOrder,
       filters,
-      startDate,
-      endDate
+  
     );
   }
 

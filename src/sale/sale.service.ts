@@ -618,17 +618,14 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   async findSalesByUserOptimized(
     userId: string,
     search?: string,
-    page: any = 1,
-    limit: any = 10,
+
     sortBy?: string,
     sortOrder: 'ASC' | 'DESC' = 'DESC',
     filters?: any,
     startDate?: Date,
     endDate?: Date
   ) {
-  const pageNumber = Number(page) || 1;
-  const limitNumber = Number(limit) || 10;
-  const skip = (pageNumber - 1) * limitNumber;
+
 
   // Auto-detect period from project configuration if no dates provided
   let effectiveStartDate = startDate;
@@ -700,8 +697,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       'user.name'
     ])
     .where('user.id = :userId', { userId })
-    .skip(skip)
-    .take(limitNumber);
+ 
 
   // Apply search if provided
   if (search) {
@@ -900,8 +896,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
   return {
     total_records,
-    current_page: pageNumber,
-    per_page: limitNumber,
+
     branch: branchInfo,
     user: userInfo,
     records: optimizedRecords,
