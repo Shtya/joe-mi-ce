@@ -817,20 +817,27 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   if (effectiveStartDate && effectiveEndDate) {
     const startDateObj = effectiveStartDate instanceof Date ? effectiveStartDate : new Date(effectiveStartDate);
     const endDateObj = effectiveEndDate instanceof Date ? effectiveEndDate : new Date(effectiveEndDate);
-    const startDateStr = startDateObj.toISOString().split('T')[0];
-    const endDateStr = endDateObj.toISOString().split('T')[0];
-    totalQuery.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
-      startDate: startDateStr,
-      endDate: endDateStr
-    });
+    
+    if (!isNaN(startDateObj.getTime()) && !isNaN(endDateObj.getTime())) {
+      const startDateStr = startDateObj.toISOString().split('T')[0];
+      const endDateStr = endDateObj.toISOString().split('T')[0];
+      totalQuery.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
+        startDate: startDateStr,
+        endDate: endDateStr
+      });
+    }
   } else if (effectiveStartDate) {
     const startDateObj = effectiveStartDate instanceof Date ? effectiveStartDate : new Date(effectiveStartDate);
-    const startDateStr = startDateObj.toISOString().split('T')[0];
-    totalQuery.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
+    if (!isNaN(startDateObj.getTime())) {
+      const startDateStr = startDateObj.toISOString().split('T')[0];
+      totalQuery.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
+    }
   } else if (effectiveEndDate) {
     const endDateObj = effectiveEndDate instanceof Date ? effectiveEndDate : new Date(effectiveEndDate);
-    const endDateStr = endDateObj.toISOString().split('T')[0];
-    totalQuery.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
+    if (!isNaN(endDateObj.getTime())) {
+      const endDateStr = endDateObj.toISOString().split('T')[0];
+      totalQuery.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
+    }
   }
 
   // Apply same additional filters
