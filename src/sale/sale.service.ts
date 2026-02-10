@@ -630,7 +630,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   const limitNumber = Number(limit) || 10;
   const skip = (pageNumber - 1) * limitNumber;
 
-  // Auto-detect period from active target if no dates provided
+  // Auto-detect period from project configuration if no dates provided
   let effectiveStartDate = startDate;
   let effectiveEndDate = endDate;
   
@@ -643,45 +643,30 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       });
 
       if (user?.project_id) {
-        // Try to find any active target for branches in this project
-        const projectTarget = await this.salesTargetRepo.findOne({
-          where: {
-            project: { id: user.project_id },
-            status: SalesTargetStatus.ACTIVE,
-          },
-          relations: ['branch', 'project'],
-          order: { created_at: 'DESC' }
+        // Fetch project to get salesTargetType
+        const project = await this.projectRepo.findOne({
+          where: { id: user.project_id },
+          select: ['id', 'salesTargetType']
         });
 
-        if (projectTarget) {
-          // Use the active target's period
-          effectiveStartDate = new Date(projectTarget.startDate);
-          effectiveEndDate = new Date(projectTarget.endDate);
-        } else {
-          // No active target found, calculate period based on project's salesTargetType
-          const project = await this.projectRepo.findOne({
-            where: { id: user.project_id }
-          });
+        if (project) {
+          const now = new Date();
+          // End date is always today
+          effectiveEndDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+          
+          const targetType = project.salesTargetType || 'quarterly';
 
-          if (project) {
-            const now = new Date();
-            const targetType = project.salesTargetType || SalesTargetType.QUARTERLY;
-
-            if (targetType === SalesTargetType.MONTHLY) {
-              // Current month period
-              effectiveStartDate = new Date(now.getFullYear(), now.getMonth(), 1);
-              effectiveEndDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-            } else {
-              // Current quarter period
-              const quarter = Math.floor(now.getMonth() / 3);
-              effectiveStartDate = new Date(now.getFullYear(), quarter * 3, 1);
-              effectiveEndDate = new Date(now.getFullYear(), (quarter + 1) * 3, 0);
-            }
+          if (targetType === 'monthly') {
+            // Start date is 1 month before today
+            effectiveStartDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          } else {
+            // Start date is 3 months before today (quarterly)
+            effectiveStartDate = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
           }
         }
       }
     } catch (error) {
-      console.error('Failed to auto-detect period from active target:', error);
+      console.error('Failed to auto-detect period from project configuration:', error);
       // Continue without date filter if auto-detection fails
     }
   }
@@ -886,23 +871,31 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     }
   }
 
-  // Determine period type based on targets and date range
-  let periodType: 'monthly' | 'quarterly' | 'custom' = 'custom';
+  // Determine period type based on project's salesTargetType
+  let periodType: 'monthly' | 'quarterly' = 'quarterly';
   let periodStart = effectiveStartDate;
   let periodEnd = effectiveEndDate;
 
-  // If we have targets and effective dates match a target period, use that type
-  if (targets.length > 0 && effectiveStartDate && effectiveEndDate) {
-    const mainTarget = targets[0];
-    const targetStart = new Date(mainTarget.start_date);
-    const targetEnd = new Date(mainTarget.end_date);
-    
-    const startMatch = effectiveStartDate.toISOString().split('T')[0] === targetStart.toISOString().split('T')[0];
-    const endMatch = effectiveEndDate.toISOString().split('T')[0] === targetEnd.toISOString().split('T')[0];
-    
-    if (startMatch && endMatch) {
-      periodType = mainTarget.target_type;
+  // Fetch project to get the salesTargetType
+  try {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      select: ['id', 'project_id']
+    });
+
+    if (user?.project_id) {
+      const project = await this.projectRepo.findOne({
+        where: { id: user.project_id },
+        select: ['id', 'salesTargetType']
+      });
+
+      if (project) {
+        periodType = project.salesTargetType || 'quarterly';
+      }
     }
+  } catch (error) {
+    console.error('Failed to fetch project salesTargetType:', error);
+    // Default to quarterly if fetch fails
   }
 
   return {

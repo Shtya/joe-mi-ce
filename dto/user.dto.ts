@@ -49,6 +49,10 @@ export class RegisterDto {
 
   @IsString()
   @IsOptional()
+  salesTargetType?: 'monthly' | 'quarterly';
+
+  @IsString()
+  @IsOptional()
   avatar?: string;
 }
 
