@@ -21,9 +21,9 @@ export class JourneyCron {
     }
   }
 
-  @Cron('0 0 * * *', { timeZone: 'Asia/Riyadh' }) // 3 AM Saudi time
+  @Cron('0 5 * * *', { timeZone: 'Asia/Riyadh' }) // 5 AM Saudi time
   async handleAutoCloseJourneys() {
-    this.logger.log('🔒 Starting auto-close of open journeys at 3 AM Saudi time...');
+    this.logger.log('🔒 Starting auto-close of open journeys at 5 AM Saudi time...');
 
     try {
       const result = await this.journeyService.autoCloseJourneys();

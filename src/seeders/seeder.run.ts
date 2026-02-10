@@ -20,6 +20,7 @@ import { Stock } from 'entities/products/stock.entity';
 import { EPermission } from 'enums/Permissions.enum';
 import { seedSurveys, seedSurveyFeedbacks } from './survey.seeder';
 import { seedRoaming } from './roaming.seeder';
+import { seedComprehensiveSurveys } from './comprehensive-survey.seeder';
 
 export const seedPermissions = async (dataSource: DataSource) => {
   const permissionRepository = dataSource.getRepository(Permission);
@@ -696,8 +697,11 @@ async function runSeeder() {
     // await seedSurveys(dataSource);
     // await seedSurveyFeedbacks(dataSource);
     
-    // Only running Roaming Seeder as requested
-    await seedRoaming(dataSource);
+    // Comprehensive Surveys for specific project and user
+    await seedComprehensiveSurveys(dataSource);
+    
+    // // Only running Roaming Seeder as requested
+    // await seedRoaming(dataSource);
 
     console.log('✅ Seeding completed successfully!');
   } catch (error) {

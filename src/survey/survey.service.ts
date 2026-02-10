@@ -21,7 +21,7 @@ export class SurveyService {
   ) {}
 
   async create(dto: CreateSurveyDto, user: any) {
-    const projectId = this.userService.resolveProjectIdFromUser(user.id)
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id)
 
     dto.questions?.forEach(q => {
       if (q.type === SurveyQuestionType.DROPDOWN && (!q.options || q.options.length === 0)) {

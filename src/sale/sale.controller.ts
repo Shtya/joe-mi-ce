@@ -16,10 +16,8 @@ export class SaleController {
   // 🔹 Export sales data to Excel
   @Get('/export')
   @Permissions(EPermission.SALE_EXPORT)
-  @Get('/export')
-  @Permissions(EPermission.SALE_EXPORT)
   async exportData(@Query() query: any, @Req() req: any, @Res() res: any) {
-    const project = this.userService.resolveProjectIdFromUser(req.user.id);
+    const project = await this.userService.resolveProjectIdFromUser(req.user.id);
     const mergedFilters: any = {
       projectId : project,
       ...query.filters,
@@ -60,11 +58,8 @@ export class SaleController {
   }
 
   @Get()
-  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
-@Header('Pragma', 'no-cache')
-@Header('Expires', '0')
   @Permissions(EPermission.SALE_READ)
-  findAll(@Query() query: any , @Req() req:any) {
+  async findAll(@Query() query: any , @Req() req:any) {
 		// const mergedFilters: any = {
     //   ...parsedFilters,
     // };6b140f73-7d36-44ad-89b2-492d482e8997
@@ -75,7 +70,7 @@ export class SaleController {
     // if (query.filters.toDate) {
     //   mergedFilters.audit_date_to = query.filters.toDate; // will map to audit.audit_date <= toDate
     // }
-    const project = this.userService.resolveProjectIdFromUser(req.user.id);
+    const project = await this.userService.resolveProjectIdFromUser(req.user.id);
     const mergedFilters: any = {
       projectId : project,
       ...query.filters, // This might spread 'fromDate'/'toDate' if they exist in query.filters
