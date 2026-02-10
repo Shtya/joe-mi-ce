@@ -531,14 +531,8 @@ async getOutOfStockAggregated(
       },
     });
 
-    if (salesCount > 0) {
-      throw new ForbiddenException(
-        `Cannot delete stock. There are ${salesCount} sales associated with this product and branch.`
-      );
-    }
 
-    // Soft delete the stock
-    await this.stockRepo.softDelete(id);
+    await this.stockRepo.delete(id);
 
     return { message: 'Stock deleted successfully' };
   }
