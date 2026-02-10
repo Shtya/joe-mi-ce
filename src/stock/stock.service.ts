@@ -1037,7 +1037,7 @@ async deleteStockMobile(
   };
 
   // Soft delete the stock
-  await this.stockRepo.softDelete(stockId);
+  await this.stockRepo.delete(stockId);
 
   return {
     message: 'Stock deleted successfully',
