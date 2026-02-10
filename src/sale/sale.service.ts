@@ -8,8 +8,10 @@ import { Branch } from 'entities/branch.entity';
 import { Sale } from 'entities/products/sale.entity';
 import { Product } from 'entities/products/product.entity';
 import { Stock } from 'entities/products/stock.entity';
-import { SalesTarget, SalesTargetStatus } from 'entities/sales-target.entity';
+import { SalesTarget, SalesTargetStatus, SalesTargetType } from 'entities/sales-target.entity';
 import { CRUD } from 'common/crud.service';
+import { SalesTargetService } from 'src/sales-target/sales-target.service';
+import { Project } from 'entities/project.entity';
 
 @Injectable()
 export class SaleService {
@@ -20,6 +22,8 @@ export class SaleService {
     @InjectRepository(User) public userRepo: Repository<User>,
     @InjectRepository(Branch) public branchRepo: Repository<Branch>,
     @InjectRepository(SalesTarget) public salesTargetRepo: Repository<SalesTarget>,
+    @InjectRepository(Project) private readonly projectRepo: Repository<Project>,
+    private readonly salesTargetService: SalesTargetService,
   ) {}
 
   async create(dto: CreateSaleDto) {
@@ -626,6 +630,62 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   const limitNumber = Number(limit) || 10;
   const skip = (pageNumber - 1) * limitNumber;
 
+  // Auto-detect period from active target if no dates provided
+  let effectiveStartDate = startDate;
+  let effectiveEndDate = endDate;
+  
+  if (!startDate && !endDate) {
+    try {
+      // Get user with project to determine the period type
+      const user = await this.userRepo.findOne({
+        where: { id: userId },
+        relations: ['project']
+      });
+
+      if (user?.project_id) {
+        // Try to find any active target for branches in this project
+        const projectTarget = await this.salesTargetRepo.findOne({
+          where: {
+            project: { id: user.project_id },
+            status: SalesTargetStatus.ACTIVE,
+          },
+          relations: ['branch', 'project'],
+          order: { created_at: 'DESC' }
+        });
+
+        if (projectTarget) {
+          // Use the active target's period
+          effectiveStartDate = new Date(projectTarget.startDate);
+          effectiveEndDate = new Date(projectTarget.endDate);
+        } else {
+          // No active target found, calculate period based on project's salesTargetType
+          const project = await this.projectRepo.findOne({
+            where: { id: user.project_id }
+          });
+
+          if (project) {
+            const now = new Date();
+            const targetType = project.salesTargetType || SalesTargetType.QUARTERLY;
+
+            if (targetType === SalesTargetType.MONTHLY) {
+              // Current month period
+              effectiveStartDate = new Date(now.getFullYear(), now.getMonth(), 1);
+              effectiveEndDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            } else {
+              // Current quarter period
+              const quarter = Math.floor(now.getMonth() / 3);
+              effectiveStartDate = new Date(now.getFullYear(), quarter * 3, 1);
+              effectiveEndDate = new Date(now.getFullYear(), (quarter + 1) * 3, 0);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to auto-detect period from active target:', error);
+      // Continue without date filter if auto-detection fails
+    }
+  }
+
   // Create query builder with all needed relations including category
   const qb = this.saleRepo.createQueryBuilder('sale')
     .leftJoinAndSelect('sale.product', 'product')
@@ -668,16 +728,21 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     );
   }
 
-  // Apply date range if provided
-  if (startDate && endDate) {
-    qb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', {
-      startDate,
-      endDate
+  // Apply date range if provided (use effective dates which include auto-detected periods)
+  // Use DATE() casting to filter by calendar day, avoiding timezone issues
+  if (effectiveStartDate && effectiveEndDate) {
+    const startDateStr = effectiveStartDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const endDateStr = effectiveEndDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    qb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
+      startDate: startDateStr,
+      endDate: endDateStr
     });
-  } else if (startDate) {
-    qb.andWhere('sale.created_at >= :startDate', { startDate });
-  } else if (endDate) {
-    qb.andWhere('sale.created_at <= :endDate', { endDate });
+  } else if (effectiveStartDate) {
+    const startDateStr = effectiveStartDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    qb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
+  } else if (effectiveEndDate) {
+    const endDateStr = effectiveEndDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    qb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
   }
 
   // Apply additional filters
@@ -749,13 +814,113 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     };
   });
 
+  // Calculate total sales amount across ALL matching records (not just paginated)
+  const totalQuery = this.saleRepo.createQueryBuilder('sale')
+    .leftJoin('sale.user', 'user')
+    .leftJoin('sale.branch', 'branch')
+    .where('user.id = :userId', { userId })
+    .andWhere('sale.status != :cancelled', { cancelled: 'cancelled' });
+
+  // Apply same date filters as main query (using effective dates)
+  if (effectiveStartDate && effectiveEndDate) {
+    const startDateStr = effectiveStartDate.toISOString().split('T')[0];
+    const endDateStr = effectiveEndDate.toISOString().split('T')[0];
+    totalQuery.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
+      startDate: startDateStr,
+      endDate: endDateStr
+    });
+  } else if (effectiveStartDate) {
+    const startDateStr = effectiveStartDate.toISOString().split('T')[0];
+    totalQuery.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
+  } else if (effectiveEndDate) {
+    const endDateStr = effectiveEndDate.toISOString().split('T')[0];
+    totalQuery.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
+  }
+
+  // Apply same additional filters
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        if (key.includes('.')) {
+          const [relation, field] = key.split('.');
+          totalQuery.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, {
+            [key.replace('.', '_')]: value
+          });
+        } else {
+          totalQuery.andWhere(`sale.${key} = :${key}`, { [key]: value });
+        }
+      }
+    });
+  }
+
+  const totalResult = await totalQuery
+    .select('SUM(sale.total_amount)', 'total')
+    .getRawOne();
+
+  const totalSalesAmount = Number(totalResult?.total) || 0;
+
+  // Get unique branch IDs from the sales records
+  const branchIds = [...new Set(records.map(r => r.branch?.id).filter(Boolean))];
+
+  // Fetch active targets for these branches
+  const targets = [];
+  for (const branchId of branchIds) {
+    try {
+      const target = await this.salesTargetService.getCurrentTarget(branchId);
+      if (target) {
+        targets.push({
+          branch_id: target.branch.id,
+          branch_name: target.branch.name,
+          target_type: target.type,
+          target_amount: Number(target.targetAmount),
+          current_amount: Number(target.currentAmount),
+          progress_percentage: target.progressPercentage,
+          remaining_amount: target.remainingAmount,
+          start_date: target.startDate,
+          end_date: target.endDate,
+          status: target.status
+        });
+      }
+    } catch (error) {
+      console.error(`Failed to fetch target for branch ${branchId}:`, error);
+    }
+  }
+
+  // Determine period type based on targets and date range
+  let periodType: 'monthly' | 'quarterly' | 'custom' = 'custom';
+  let periodStart = effectiveStartDate;
+  let periodEnd = effectiveEndDate;
+
+  // If we have targets and effective dates match a target period, use that type
+  if (targets.length > 0 && effectiveStartDate && effectiveEndDate) {
+    const mainTarget = targets[0];
+    const targetStart = new Date(mainTarget.start_date);
+    const targetEnd = new Date(mainTarget.end_date);
+    
+    const startMatch = effectiveStartDate.toISOString().split('T')[0] === targetStart.toISOString().split('T')[0];
+    const endMatch = effectiveEndDate.toISOString().split('T')[0] === targetEnd.toISOString().split('T')[0];
+    
+    if (startMatch && endMatch) {
+      periodType = mainTarget.target_type;
+    }
+  }
+
   return {
     total_records,
     current_page: pageNumber,
     per_page: limitNumber,
-    branch: branchInfo, // Branch appears only once here
-    user: userInfo,     // User appears only once here
-    records: optimizedRecords
+    branch: branchInfo,
+    user: userInfo,
+    records: optimizedRecords,
+    summary: {
+      total_sales_amount: totalSalesAmount,
+      period: periodStart && periodEnd ? {
+        start_date: periodStart,
+        end_date: periodEnd,
+        type: periodType
+      } : null
+    },
+    targets: targets.length > 0 ? targets : null
   };
 }
 }

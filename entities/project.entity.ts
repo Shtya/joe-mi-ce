@@ -10,6 +10,7 @@ import { Feedback } from './feedback.entity';
 import { Brand } from './products/brand.entity';
 import { Category } from './products/category.entity';
 import { Chain } from './locations/chain.entity';
+import { SalesTarget, SalesTargetType } from './sales-target.entity';
 
 @Entity()
 export class Project extends CoreEntity {
@@ -22,12 +23,23 @@ export class Project extends CoreEntity {
   @Column({ default: true })
   is_active: boolean;
 
+  // Sales Target Configuration for Project
+  @Column({
+    type: 'enum',
+    enum: SalesTargetType,
+    default: SalesTargetType.QUARTERLY
+  })
+  salesTargetType: SalesTargetType;
+  // Relationships
   @OneToMany(() => Product, product => product.project)
   products: Product[];
+
   @OneToMany(() => Brand, bra => bra.project)
   brands: Brand[];
+
   @OneToMany(() => Category, cat => cat.products)
   categories: Brand[];
+
   @OneToMany(() => Branch, branch => branch.project)
   branches: Branch[];
 
@@ -46,4 +58,6 @@ export class Project extends CoreEntity {
 
   @OneToMany(() => Chain, chain => chain.project)
   chains: Chain[];
+
+
 }

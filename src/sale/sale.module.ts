@@ -12,8 +12,13 @@ import { SalesTarget } from 'entities/sales-target.entity';
 import { UsersService } from 'src/users/users.service';
 import { Project } from 'entities/project.entity';
 
+import { SalesTargetModule } from 'src/sales-target/sales-target.module';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([Sale, Product, Stock, User, Branch,SalesTarget,Project])],
+  imports: [
+    TypeOrmModule.forFeature([Sale, Product, Stock, User, Branch, SalesTarget, Project]),
+    SalesTargetModule,
+  ],
   controllers: [SaleController],
   providers: [SaleService,UsersService],
 })
