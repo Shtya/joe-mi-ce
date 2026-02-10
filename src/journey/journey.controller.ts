@@ -142,10 +142,20 @@ async getOptimizedPlans(
     ...query.filters,
   };
 
+  // Handle status filter from query body if not present in query params
+  if (!status) {
+    if (filters.status?.id) {
+      status = filters.status.id;
+    } else if (typeof filters.status === 'string') {
+      status = filters.status;
+    }
+  }
+
   // Clean filters
   delete filters.fromDate;
   delete filters.toDate;
   delete filters.date;
+  delete filters.status;
 
   if (userId) {
     filters.user = { id: userId };
@@ -154,7 +164,7 @@ async getOptimizedPlans(
   if (branchId) {
     filters.branch = { id: branchId };
   }
-  filters.user.role.name != ERole.SUPERVISOR;
+
   const plans = await CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
     'plan',
@@ -567,6 +577,11 @@ async getAllPlansWithPagination(
       projectId,
       ...query.filters,
     };
+
+    // Handle nested status filter (e.g. filters[status][id])
+    if (filters.status && typeof filters.status === 'object' && filters.status.id) {
+        filters.status = filters.status.id;
+    }
     
     // Extract dates from filters if not provided as params
     const effectiveFromDate = _date || fromDate || filters.fromDate || filters.date;
@@ -647,6 +662,12 @@ async getAllPlansWithPagination(
   @Permissions(EPermission.JOURNEY_UPDATE)
   async updateJourney(@Param('id') id: string, @Body() dto: UpdateJourneyDto) {
     return this.journeyService.updateJourney(id, dto);
+  }
+
+  @Delete(':id')
+  @Permissions(EPermission.JOURNEY_DELETE)
+  async deleteJourney(@Param('id') id: string) {
+    return CRUD.softDelete(this.journeyService.journeyRepo, 'journey', id);
   }
 
   // ✅ Mobile: get today's journeys for logged-in user

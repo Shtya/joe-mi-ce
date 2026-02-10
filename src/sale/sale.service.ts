@@ -712,17 +712,21 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   // Apply date range if provided (use effective dates which include auto-detected periods)
   // Use DATE() casting to filter by calendar day, avoiding timezone issues
   if (effectiveStartDate && effectiveEndDate) {
-    const startDateStr = effectiveStartDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    const endDateStr = effectiveEndDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const startDateObj = effectiveStartDate instanceof Date ? effectiveStartDate : new Date(effectiveStartDate);
+    const endDateObj = effectiveEndDate instanceof Date ? effectiveEndDate : new Date(effectiveEndDate);
+    const startDateStr = startDateObj.toISOString().split('T')[0]; // YYYY-MM-DD
+    const endDateStr = endDateObj.toISOString().split('T')[0]; // YYYY-MM-DD
     qb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
       startDate: startDateStr,
       endDate: endDateStr
     });
   } else if (effectiveStartDate) {
-    const startDateStr = effectiveStartDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const startDateObj = effectiveStartDate instanceof Date ? effectiveStartDate : new Date(effectiveStartDate);
+    const startDateStr = startDateObj.toISOString().split('T')[0]; // YYYY-MM-DD
     qb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
   } else if (effectiveEndDate) {
-    const endDateStr = effectiveEndDate.toISOString().split('T')[0]; // YYYY-MM-DD
+    const endDateObj = effectiveEndDate instanceof Date ? effectiveEndDate : new Date(effectiveEndDate);
+    const endDateStr = endDateObj.toISOString().split('T')[0]; // YYYY-MM-DD
     qb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
   }
 
@@ -804,17 +808,21 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
   // Apply same date filters as main query (using effective dates)
   if (effectiveStartDate && effectiveEndDate) {
-    const startDateStr = effectiveStartDate.toISOString().split('T')[0];
-    const endDateStr = effectiveEndDate.toISOString().split('T')[0];
+    const startDateObj = effectiveStartDate instanceof Date ? effectiveStartDate : new Date(effectiveStartDate);
+    const endDateObj = effectiveEndDate instanceof Date ? effectiveEndDate : new Date(effectiveEndDate);
+    const startDateStr = startDateObj.toISOString().split('T')[0];
+    const endDateStr = endDateObj.toISOString().split('T')[0];
     totalQuery.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
       startDate: startDateStr,
       endDate: endDateStr
     });
   } else if (effectiveStartDate) {
-    const startDateStr = effectiveStartDate.toISOString().split('T')[0];
+    const startDateObj = effectiveStartDate instanceof Date ? effectiveStartDate : new Date(effectiveStartDate);
+    const startDateStr = startDateObj.toISOString().split('T')[0];
     totalQuery.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
   } else if (effectiveEndDate) {
-    const endDateStr = effectiveEndDate.toISOString().split('T')[0];
+    const endDateObj = effectiveEndDate instanceof Date ? effectiveEndDate : new Date(effectiveEndDate);
+    const endDateStr = endDateObj.toISOString().split('T')[0];
     totalQuery.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
   }
 
