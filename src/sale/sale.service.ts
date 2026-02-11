@@ -760,9 +760,23 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     relations: ['branch', 'branch.project']
   });
 
+  console.log('User Context:', userContext);
+
+  let branchToUse = userContext?.branch;
+
+  // Fallback: If user has no branch assigned, try to get it from the sales records
+  if (!branchToUse && records.length > 0 && records[0].branch) {
+     console.log('User has no branch, using branch from sales records:', records[0].branch.id);
+     // We need to fetch the full branch entity to get the project
+     branchToUse = await this.branchRepo.findOne({
+         where: { id: records[0].branch.id },
+         relations: ['project']
+     });
+  }
+
   // Use branch.project as the source of truth for the project context
-  if (userContext && userContext.branch && userContext.branch.project) {
-     const project = userContext.branch.project;
+  if (branchToUse && branchToUse.project) {
+     const project = branchToUse.project;
      const targetType = project.salesTargetType || 'quarterly'; // Default if null, though entity default is quarterly
 
      const now = new Date();
@@ -782,7 +796,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
      // 1. Fetch Active Target for the Branch
      const activeTarget = await this.salesTargetRepo.findOne({
        where: {
-         branch: { id: userContext.branch.id },
+         branch: { id: branchToUse.id },
          status: SalesTargetStatus.ACTIVE,
          // Ideally ensure target dates overlap with current period, but status ACTIVE is a good proxy
        }
@@ -794,7 +808,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
        .createQueryBuilder('sale')
        .select('SUM(sale.total_amount)', 'userTotal')
        .where('sale.user.id = :userId', { userId })
-       .andWhere('sale.branch.id = :branchId', { branchId: userContext.branch.id })
+       .andWhere('sale.branch.id = :branchId', { branchId: branchToUse.id })
        .andWhere('sale.created_at BETWEEN :start AND :end', { 
          start: periodStart.toISOString(), 
          end: periodEnd.toISOString() 
@@ -818,6 +832,8 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
             : 0
         } : null
       };
+  } else {
+      console.log('No branch or project found for user or sales records. Target performance skip.');
   }
   } // End if (userId)
 
