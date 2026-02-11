@@ -412,7 +412,7 @@ export class ExportService {
         if (statusVal) {
           const lowerStatus = String(statusVal).toLowerCase();
           if (lowerStatus.includes('closed')) {
-            statusCode = 2; 
+            statusCode = 1; 
           } else if (lowerStatus.includes('present')) {
             statusCode = 1;
           }

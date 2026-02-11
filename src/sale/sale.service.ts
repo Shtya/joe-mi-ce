@@ -607,10 +607,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
     return sale;
   }
-  // sale.service.ts
-// sale.service.ts
-// sale.service.ts
-// sale.service.ts
+
   async findSalesByUserOptimized(
     userId: string,
     search?: string,
@@ -721,6 +718,74 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     name: records[0].user?.name || null
   } : null;
 
+  // Target Calculation Logic
+  let targetPerformance = null;
+
+  // Fetch full user context to determine branch/project regardless of sales records
+  const userContext = await this.userRepo.findOne({
+    where: { id: userId },
+    relations: ['branch', 'branch.project']
+  });
+
+  if (userContext && userContext.branch && userContext.branch.project) {
+     const project = userContext.branch.project;
+     const targetType = project.salesTargetType || 'quarterly'; // Default if null, though entity default is quarterly
+
+     const now = new Date();
+     let periodStart: Date;
+     let periodEnd: Date;
+
+     if (targetType === 'monthly') {
+       periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+       periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+     } else {
+       // Quarterly
+       const quarter = Math.floor(now.getMonth() / 3);
+       periodStart = new Date(now.getFullYear(), quarter * 3, 1);
+       periodEnd = new Date(now.getFullYear(), quarter * 3 + 3, 0);
+     }
+
+     // 1. Fetch Active Target for the Branch
+     const activeTarget = await this.salesTargetRepo.findOne({
+       where: {
+         branch: { id: userContext.branch.id },
+         status: SalesTargetStatus.ACTIVE,
+         // Ideally ensure target dates overlap with current period, but status ACTIVE is a good proxy
+       }
+     });
+
+     // 2. Calculate User's Total Sales in this Period for this Branch
+     // Using query builder on saleRepo
+     const { userTotal } = await this.saleRepo
+       .createQueryBuilder('sale')
+       .select('SUM(sale.total_amount)', 'userTotal')
+       .where('sale.user.id = :userId', { userId })
+       .andWhere('sale.branch.id = :branchId', { branchId: userContext.branch.id })
+       .andWhere('sale.created_at BETWEEN :start AND :end', { 
+         start: periodStart.toISOString(), 
+         end: periodEnd.toISOString() 
+       })
+       .andWhere('sale.status != :cancelled', { cancelled: 'cancelled' })
+       .getRawOne();
+
+      targetPerformance = {
+        periodType: targetType,
+        periodStart: periodStart,
+        periodEnd: periodEnd,
+        userTotalSales: parseFloat(userTotal) || 0,
+        branchTarget: activeTarget ? {
+          id: activeTarget.id,
+          name: activeTarget.name,
+          targetAmount: Number(activeTarget.targetAmount),
+          currentAmount: Number(activeTarget.currentAmount), // Branch Total Achievement
+          status: activeTarget.status,
+          userContributionPercentage: activeTarget.currentAmount > 0 
+            ? ((parseFloat(userTotal) || 0) / Number(activeTarget.currentAmount) * 100).toFixed(2)
+            : 0
+        } : null
+      };
+  }
+
   // Transform the data - branch and user only appear once at the top level
   const optimizedRecords = records.map(sale => {
     // Use sale.price/discount if available (as user requested in select), fallback to product
@@ -760,6 +825,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     per_page: limitNumber,
     branch: branchInfo, // Branch appears only once here
     user: userInfo,     // User appears only once here
+    target_performance: targetPerformance, // New Field
     records: optimizedRecords
   };
 }

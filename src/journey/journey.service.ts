@@ -518,52 +518,40 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       where: { journey: { id: dto.journeyId } },
     });
 
-    const isCheckOut = !!dto.checkOutTime;
+    const now = new Date(); // Represents current time (Jeddah time when deployed/configured correctly)
 
     if (checkIn) {
+      // Update logic
       if (dto.checkInTime) {
         checkIn.checkInTime = dto.checkInTime as any;
-
         journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
       }
 
       if (dto.checkOutTime) {
-         // for admin, we might allow checkout without checkin time existing if they provide both? 
-         // But logic usually requires checkin first. 
-         // If admin provides checkOutTime, we update it.
         checkIn.checkOutTime = dto.checkOutTime as any;
-    
         journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
+      } else if (!dto.checkInTime && !checkIn.checkOutTime) {
+         // Fallback: If no specific times given and journey is open, assume Check Out Now
+         checkIn.checkOutTime = now;
+         journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
       }
-      
-
-      
-      // Admin bypasses geofence, so we can set it to true or keep existing
-
-       // If admin overrides, maybe we should just set isWithinRadius to true or leave it?
-       // Let's assume admin action implies valid override or we just track what happened.
-       // For now, let's not force isWithinRadius to true unless we have a reason, strictly speaking checks are for user app.
-  
 
     } else {
-      if (!dto.checkInTime) {
-        throw new ConflictException('Check in time is required for first time');
-      }
-
+   
+      const checkInTime = dto.checkInTime ? (dto.checkInTime as any) : now;
+      
       checkIn = this.checkInRepo.create({
         journey,
         user: journey.user,
-        checkInTime: dto.checkInTime as any,
-        checkOutTime: dto.checkOutTime as any,
+        checkInTime: checkInTime,
+        checkOutTime: dto.checkOutTime as any, // Only set if provided
         checkInDocument: "",
         checkOutDocument: "",
         geo:  '', 
         image:"",
         noteIn:"",
         noteOut: "",
-        isWithinRadius: true, // Admin check-in assumed valid? Or should we calculate if geo is there? 
-                              // If geo is missing, we can't calculate. Default to true for admin override?
-                              // "admin to any journey" implies force. So true.
+        isWithinRadius: true, 
       });
 
       journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
@@ -573,10 +561,12 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     const savedCheckIn = await this.checkInRepo.save(checkIn);
 
     // 🔔 Notify supervisor/promoter?
-    // Maybe yes, to keep consistency.
      const supervisor = journey.branch?.supervisor;
-     const type = isCheckOut ? 'checkout' : 'checkin'; // simplified update type
-     const time = type === 'checkout' ? savedCheckIn.checkOutTime : savedCheckIn.checkInTime || new Date();
+     // Determine type based on what actually happened
+     const isCheckOut = savedCheckIn.checkOutTime && (!checkIn || !checkIn.checkOutTime); // Roughly estimates if we just checked out?
+     // Actually, let's keep it simple: if we have a checkout time, we treat the state as closed.
+     
+     const time = savedCheckIn.checkOutTime || savedCheckIn.checkInTime;
 
 
     const notifications = [];
@@ -591,13 +581,13 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           promoterId: journey.user.id,
           promoterName: journey.user.name,
           journeyId: journey.id,
-          type: 'update', // Admin action is likely an update/override
+          type: 'update', 
           time,
         }, lang)
       );
     }
 
-    // 2. Notify Promoter (User) - maybe let them know admin updated it?
+    // 2. Notify Promoter (User)
      notifications.push(
       this.notificationService.notifyPromoterOnCheckin({
         promoterId: journey.user.id,
