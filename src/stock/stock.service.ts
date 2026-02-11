@@ -1190,7 +1190,7 @@ async getOutOfStockByUserBranchMobile(
 // Mobile - Create stock for user's branch
   async createStockAllBranches(
     userId: string,
-    dto: CreateStockForAllBranch
+ 
   ) {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');

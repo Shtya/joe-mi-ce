@@ -54,10 +54,9 @@ async createStockMobile(
 @UseGuards(AuthGuard)
 async createStockAllBranches(
   @Req() req: any,
-  @Body() createStockDto: CreateStockForAllBranch
 ) {
   const userId = req.user.id;
-  return this.stockService.createStockAllBranches(userId, createStockDto);
+  return this.stockService.createStockAllBranches(userId);
 }
 
 @Patch('mobile/stocks/:id')
