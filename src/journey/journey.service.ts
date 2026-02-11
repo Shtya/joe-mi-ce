@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not } from 'typeorm';
 import * as dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto } from 'dto/journey.dto';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto, AdminCheckInOutDto } from 'dto/journey.dto';
 
 import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
 import { User } from 'entities/user.entity';
@@ -503,6 +503,117 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     
     return savedCheckIn;
   }
+
+  async adminCheckInOut(dto: AdminCheckInOutDto, adminUser: User, lang: string = 'en') {
+    const journey = await this.journeyRepo.findOne({
+      where: { id: dto.journeyId },
+      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain'],
+    });
+
+    if (!journey) {
+      throw new NotFoundException('Journey not found');
+    }
+
+    let checkIn = await this.checkInRepo.findOne({
+      where: { journey: { id: dto.journeyId } },
+    });
+
+    const isCheckOut = !!dto.checkOutTime;
+
+    if (checkIn) {
+      if (dto.checkInTime) {
+        checkIn.checkInTime = dto.checkInTime as any;
+
+        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+      }
+
+      if (dto.checkOutTime) {
+         // for admin, we might allow checkout without checkin time existing if they provide both? 
+         // But logic usually requires checkin first. 
+         // If admin provides checkOutTime, we update it.
+        checkIn.checkOutTime = dto.checkOutTime as any;
+    
+        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
+      }
+      
+
+      
+      // Admin bypasses geofence, so we can set it to true or keep existing
+
+       // If admin overrides, maybe we should just set isWithinRadius to true or leave it?
+       // Let's assume admin action implies valid override or we just track what happened.
+       // For now, let's not force isWithinRadius to true unless we have a reason, strictly speaking checks are for user app.
+  
+
+    } else {
+      if (!dto.checkInTime) {
+        throw new ConflictException('Check in time is required for first time');
+      }
+
+      checkIn = this.checkInRepo.create({
+        journey,
+        user: journey.user,
+        checkInTime: dto.checkInTime as any,
+        checkOutTime: dto.checkOutTime as any,
+        checkInDocument: "",
+        checkOutDocument: "",
+        geo:  '', 
+        image:"",
+        noteIn:"",
+        noteOut: "",
+        isWithinRadius: true, // Admin check-in assumed valid? Or should we calculate if geo is there? 
+                              // If geo is missing, we can't calculate. Default to true for admin override?
+                              // "admin to any journey" implies force. So true.
+      });
+
+      journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+    }
+
+    await this.journeyRepo.save(journey);
+    const savedCheckIn = await this.checkInRepo.save(checkIn);
+
+    // 🔔 Notify supervisor/promoter?
+    // Maybe yes, to keep consistency.
+     const supervisor = journey.branch?.supervisor;
+     const type = isCheckOut ? 'checkout' : 'checkin'; // simplified update type
+     const time = type === 'checkout' ? savedCheckIn.checkOutTime : savedCheckIn.checkInTime || new Date();
+
+
+    const notifications = [];
+
+    // 1. Notify Supervisor
+    if (supervisor) {
+      notifications.push(
+        this.notificationService.notifySupervisorOnCheckin({
+          supervisorId: supervisor.id,
+          branchId: journey.branch.id,
+          branchName: journey.branch.name,
+          promoterId: journey.user.id,
+          promoterName: journey.user.name,
+          journeyId: journey.id,
+          type: 'update', // Admin action is likely an update/override
+          time,
+        }, lang)
+      );
+    }
+
+    // 2. Notify Promoter (User) - maybe let them know admin updated it?
+     notifications.push(
+      this.notificationService.notifyPromoterOnCheckin({
+        promoterId: journey.user.id,
+        branchId: journey.branch.id,
+        branchName: journey.branch.name,
+        journeyId: journey.id,
+        type: 'update',
+        time,
+      }, lang)
+    );
+
+    await Promise.all(notifications);
+    
+    return savedCheckIn;
+  }
+
 
   // ===== سجل الحضور =====
   async getAttendanceHistory(projectId?: string, userId?: string, date?: string, fromDate?: string, toDate?: string) {

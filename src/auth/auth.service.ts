@@ -342,7 +342,7 @@ async deleteUser(userId: any, requester: User) {
 }
 
 
-async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
+async updateUser(userId: any, dto: UpdateUserDto, requester: User, file?: Express.Multer.File) {
   const user = await this.userRepository.findOne({
     where: { id: userId },
     withDeleted: true,
@@ -397,6 +397,18 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User) {
     else{
       user.username = dto.username;
     }
+  }
+  if (file) {
+    this.ensureUploadDirectory();
+    const fileExtension = path.extname(file.originalname);
+    const fileName = `${uuidv4()}${fileExtension}`;
+    const filePath = path.join(this.uploadPath, fileName);
+    
+    // Move file from temp to final destination
+    await fs.promises.rename(file.path, filePath);
+    user.avatar_url = `/uploads/avatars/${fileName}`;
+  } else if (dto.avatar) {
+    user.avatar_url = dto.avatar;
   }
   const { password, ...updateData } = dto;
   Object.assign(user, updateData);

@@ -79,6 +79,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   password?: string;
+
+
+  @IsString()
+  @IsOptional()
+  avatar?: string;
 }
 
 export class UpdateUserRoleDto {

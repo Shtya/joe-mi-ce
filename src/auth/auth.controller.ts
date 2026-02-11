@@ -73,8 +73,11 @@ export class AuthController {
 
   @UseGuards(AuthGuard)
   @Put('users/:id')
-  async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto, @Req() req: any) {
-    return this.authService.updateUser(id, dto, req.user);
+    @UseInterceptors(FileInterceptor('avatar', multerOptions))
+
+  async updateUser(@Param('id') id: string, @Body() dto: UpdateUserDto, @Req() req: any,    @UploadedFile() file?: Express.Multer.File
+) {
+    return this.authService.updateUser(id, dto, req.user,file);
   }
 
   @UseGuards(AuthGuard)

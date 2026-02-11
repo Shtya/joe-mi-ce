@@ -107,3 +107,16 @@ export class CheckInOutDto {
   @IsString()
   noteOut?: string;
 }
+
+export class AdminCheckInOutDto {
+  @IsString()
+  journeyId: string;
+
+  @IsOptional()
+  @IsDateString()
+  checkInTime?: string;
+
+  @IsOptional()
+  @IsDateString()
+  checkOutTime?: string;
+}
