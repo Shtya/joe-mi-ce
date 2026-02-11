@@ -1005,11 +1005,11 @@ async deleteStockMobile(
     },
   });
 
-  if (salesCount > 0) {
-    throw new ForbiddenException(
-      `Cannot delete stock. There are ${salesCount} sales associated with this product and branch.`
-    );
-  }
+  // if (salesCount > 0) {
+  //   throw new ForbiddenException(
+  //     `Cannot delete stock. There are ${salesCount} sales associated with this product and branch.`
+  //   );
+  // }
 
   // Store stock data for response before deletion
   const stockData = {
