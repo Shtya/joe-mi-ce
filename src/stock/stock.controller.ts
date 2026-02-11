@@ -1,7 +1,7 @@
 // stock.controller.ts
 import { Controller, Post, Body, Get, Param, Patch, Delete, UseGuards, Query, BadRequestException, Res, Req, Put } from '@nestjs/common';
 import { StockService } from './stock.service';
-import { CreateStockDto, UpdateStockDto } from 'dto/stock.dto';
+import { CreateStockDto, CreateStockForAllBranch, UpdateStockDto } from 'dto/stock.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { CRUD } from 'common/crud.service';
 import { Permissions } from 'decorators/permissions.decorators';
@@ -48,6 +48,16 @@ async createStockMobile(
 ) {
   const userId = req.user.id;
   return this.stockService.createStockMobile(userId, createStockDto);
+}
+
+@Post('all-branches')
+@UseGuards(AuthGuard)
+async createStockAllBranches(
+  @Req() req: any,
+  @Body() createStockDto: CreateStockForAllBranch
+) {
+  const userId = req.user.id;
+  return this.stockService.createStockAllBranches(userId, createStockDto);
 }
 
 @Patch('mobile/stocks/:id')

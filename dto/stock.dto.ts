@@ -15,6 +15,10 @@ export class CreateStockDto {
   quantity: number;
 
 }
-
+export class CreateStockForAllBranch{
+    @IsUUID()
+  @IsNotEmpty()
+  project_id: string;
+}
 
 export class UpdateStockDto extends PartialType(CreateStockDto) {}

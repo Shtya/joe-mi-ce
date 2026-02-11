@@ -2,7 +2,7 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { CRUD, CustomPaginatedResponse } from 'common/crud.service';
-import { CreateStockDto, UpdateStockDto } from 'dto/stock.dto';
+import { CreateStockDto, CreateStockForAllBranch, UpdateStockDto } from 'dto/stock.dto';
 import { Branch } from 'entities/branch.entity';
 import { Product } from 'entities/products/product.entity';
 import { Stock } from 'entities/products/stock.entity';
@@ -608,9 +608,7 @@ async getLowStockAlerts(threshold: number = 10, projectId?: string) {
       salesHistory: sales,
     };
   }
-// Add these methods to your StockService class
 
-// Mobile - Get stocks by user's branch
 async getStocksByUserBranchMobile(
   userId: string,
   branchId:string,
@@ -1030,8 +1028,9 @@ async deleteStockMobile(
     }
   };
 
-  // Soft delete the stock
-  await this.stockRepo.delete(stockId);
+  // Set quantity to 0 instead of depleting
+  stock.quantity = 0;
+  await this.stockRepo.save(stock);
 
   return {
     message: 'Stock deleted successfully',
@@ -1188,4 +1187,103 @@ async getOutOfStockByUserBranchMobile(
     records: optimizedRecords
   };
 }
+// Mobile - Create stock for user's branch
+  async createStockAllBranches(
+    userId: string,
+    dto: CreateStockForAllBranch
+  ) {
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const projectId = await this.userService.resolveProjectIdFromUser(userId);
+
+    // Fetch all products in the project
+    const products = await this.productRepo.find({
+      where: { project: { id: projectId } }
+    });
+
+    if (products.length === 0) {
+      return {
+        message: 'No products found in this project',
+        totalProducts: 0,
+        totalBranches: 0,
+        created: 0,
+        skipped: 0
+      };
+    }
+
+    // Fetch all branches in the project
+    const branches = await this.branchRepo.find({
+      where: { project: { id: projectId } }
+    });
+
+    if (branches.length === 0) {
+       return {
+        message: 'No branches found in this project',
+        totalProducts: products.length,
+        totalBranches: 0,
+        created: 0,
+        skipped: 0
+      };
+    }
+
+    let createdCount = 0;
+    let skippedCount = 0;
+
+    // Use a single query to find all existing stocks for this project to minimize DB calls
+    // We can fetch just the IDs or product/branch pairs
+    const existingStocks = await this.stockRepo.find({
+      where: {
+         product: { project: { id: projectId } } 
+      },
+      relations: ['product', 'branch'],
+      select: ['id', 'product', 'branch']
+    });
+    
+    // Create a set for quick lookup: "productId-branchId"
+    const existingSet = new Set(
+        existingStocks
+            .filter(s => s.product && s.branch)
+            .map(s => `${s.product.id}-${s.branch.id}`)
+    );
+
+    const stocksToCreate = [];
+
+    for (const branch of branches) {
+      for (const product of products) {
+        const key = `${product.id}-${branch.id}`;
+        
+        if (existingSet.has(key)) {
+            skippedCount++;
+            continue;
+        }
+
+        stocksToCreate.push(
+            this.stockRepo.create({
+                quantity: 1, // Default to 0 as per requirement
+                product,
+                branch,
+                product_id: product.id,
+                branch_id: branch.id,
+            })
+        );
+        createdCount++;
+      }
+    }
+
+    // Batch save if there are any to create
+    if (stocksToCreate.length > 0) {
+        // Save in chunks to avoid memory issues if too large, though likely fine for now.
+        // TypeORM save can handle arrays.
+        await this.stockRepo.save(stocksToCreate, { chunk: 100 });
+    }
+
+    return {
+      message: 'Batch stock synchronization completed',
+      totalProducts: products.length,
+      totalBranches: branches.length,
+      created: createdCount,
+      skipped: skippedCount
+    };
+  }
 }
