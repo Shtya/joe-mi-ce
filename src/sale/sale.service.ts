@@ -627,6 +627,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   // Create query builder with all needed relations including category
   const qb = this.saleRepo.createQueryBuilder('sale')
     .leftJoinAndSelect('sale.product', 'product')
+    .leftJoinAndSelect('product.category', 'category')
     .leftJoinAndSelect('product.brand', 'brand')
     .leftJoinAndSelect('sale.branch', 'branch')
     .leftJoinAndSelect('sale.user', 'user')
