@@ -724,11 +724,11 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   // Fetch full user context to determine branch/project regardless of sales records
   const userContext = await this.userRepo.findOne({
     where: { id: userId },
-    relations: ['branch', 'branch.project']
+    relations: ['branch', 'project']
   });
 
-  if (userContext && userContext.branch && userContext.branch.project) {
-     const project = userContext.branch.project;
+  if (userContext && userContext.branch && userContext.project) {
+     const project = userContext.project;
      const targetType = project.salesTargetType || 'quarterly'; // Default if null, though entity default is quarterly
 
      const now = new Date();
