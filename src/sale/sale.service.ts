@@ -9,6 +9,7 @@ import { Sale } from 'entities/products/sale.entity';
 import { Product } from 'entities/products/product.entity';
 import { Stock } from 'entities/products/stock.entity';
 import { SalesTarget, SalesTargetStatus } from 'entities/sales-target.entity';
+import { Journey } from 'entities/all_plans.entity';
 import { CRUD } from 'common/crud.service';
 
 @Injectable()
@@ -609,7 +610,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   }
 
   async findSalesByUserOptimized(
-    userId: string,
+    userId: string | null = null,
     search?: string,
     page: any = 1,
     limit: any = 10,
@@ -627,9 +628,9 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   const qb = this.saleRepo.createQueryBuilder('sale')
     .leftJoinAndSelect('sale.product', 'product')
     .leftJoinAndSelect('product.brand', 'brand')
-    .leftJoinAndSelect('product.category', 'category')
     .leftJoinAndSelect('sale.branch', 'branch')
     .leftJoinAndSelect('sale.user', 'user')
+    .leftJoinAndSelect('user.role', 'role')
     .select([
       'sale.id',
       'sale.quantity',
@@ -649,11 +650,15 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       'branch.name',
       'branch.city',
       'user.id',
-      'user.name'
+      'user.name',
+      'role.name'
     ])
-    .where('user.id = :userId', { userId })
     .skip(skip)
     .take(limitNumber);
+
+  if (userId) {
+     qb.andWhere('user.id = :userId', { userId });
+  }
 
   // Apply search if provided
   if (search) {
@@ -718,17 +723,45 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     name: records[0].user?.name || null
   } : null;
 
-  // Target Calculation Logic
-  let targetPerformance = null;
+  // --- Fetch Check-In Data Logic ---
+  const checkInMap = new Map<string, any>();
+  if (records.length > 0) {
+    const userIds = [...new Set(records.map(r => r.user?.id).filter(Boolean))];
+    const dates = [...new Set(records.map(r => r.created_at instanceof Date ? r.created_at.toISOString().split('T')[0] : new Date(r.created_at).toISOString().split('T')[0]))];
 
+    if (userIds.length > 0 && dates.length > 0) {
+        // We need to use QueryBuilder to filter distinct dates correctly as string comparison
+        const journeyQb = this.salesTargetRepo.manager.createQueryBuilder(Journey, 'journey') // Use manager from any repo
+            .leftJoinAndSelect('journey.checkin', 'checkin')
+            .innerJoin('journey.user', 'user')
+            // .innerJoin('journey.branch', 'branch') // Optional: enforce branch match?
+            .where('user.id IN (:...userIds)', { userIds })
+            .andWhere('journey.date IN (:...dates)', { dates });
+
+        const journeys = await journeyQb.getMany();
+
+        journeys.forEach(j => {
+            if (j.user && j.date && j.checkin) {
+                const key = `${j.user.id}_${j.date}`;
+                checkInMap.set(key, j.checkin);
+            }
+        });
+    }
+  }
+
+  // Target Calculation Logic (Only if specific userId is provided)
+  let targetPerformance = null;
+  if (userId) {
   // Fetch full user context to determine branch/project regardless of sales records
+  // We need branch.project because user.project is typically for the owner
   const userContext = await this.userRepo.findOne({
     where: { id: userId },
-    relations: ['branch', 'project']
+    relations: ['branch', 'branch.project']
   });
 
-  if (userContext && userContext.branch && userContext.project) {
-     const project = userContext.project;
+  // Use branch.project as the source of truth for the project context
+  if (userContext && userContext.branch && userContext.branch.project) {
+     const project = userContext.branch.project;
      const targetType = project.salesTargetType || 'quarterly'; // Default if null, though entity default is quarterly
 
      const now = new Date();
@@ -785,6 +818,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
         } : null
       };
   }
+  } // End if (userId)
 
   // Transform the data - branch and user only appear once at the top level
   const optimizedRecords = records.map(sale => {
@@ -796,6 +830,11 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     // User added 'sale.discount' to select in Step 202. Assuming Sale entity has 'discount'.
     const discount = sale.product?.discount || 0;
 
+    // Attach CheckIn Info
+    const dateStr = sale.created_at instanceof Date ? sale.created_at.toISOString().split('T')[0] : new Date(sale.created_at).toISOString().split('T')[0];
+    const checkInKey = `${sale.user?.id}_${dateStr}`;
+    const checkIn = checkInMap.get(checkInKey);
+
     return {
       id: sale.id,
       quantity: quantity,
@@ -803,6 +842,15 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       created_at: sale.created_at,
       status: sale.status,
       discount: discount,
+      user_type: sale.user?.role?.name || null, // Added User Type
+      check_in: checkIn ? {
+          checkInTime: checkIn.checkInTime,
+          checkOutTime: checkIn.checkOutTime,
+          checkInImage: checkIn.checkInDocument, // User requested "picture of check in"
+          checkInDocument: checkIn.checkInDocument,
+          checkOutDocument: checkIn.checkOutDocument,
+          image: checkIn.image
+      } : null,
       product: {
         id: sale.product?.id || null,
         name: sale.product?.name || null,
