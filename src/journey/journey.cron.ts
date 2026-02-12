@@ -32,4 +32,20 @@ export class JourneyCron {
       this.logger.error('❌ Error auto-closing journeys:', error);
     }
   }
+
+  // Run every 2 hours to fix any gaps
+  @Cron('0 */2 * * *') 
+  async handleJourneyRecovery() {
+    this.logger.log('🛠️ Starting journey recovery check...');
+    try {
+      const result = await this.journeyService.recoverJourneys();
+      if (result.restoredCount > 0 || result.createdCount > 0) {
+        this.logger.warn(`⚠️ Recovered journeys: ${result.restoredCount} restored, ${result.createdCount} created.`);
+      } else {
+        this.logger.log('✅ No missing journeys found.');
+      }
+    } catch (error) {
+      this.logger.error('❌ Error during journey recovery:', error);
+    }
+  }
 }

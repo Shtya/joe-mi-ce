@@ -65,7 +65,7 @@ export class JourneyController {
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) {
-      const filePath = `/tmp/checkins/${file.filename}`;
+      const filePath = `tmp/checkins/${file.filename}`;
       if (dto.checkOutTime && !dto.checkInTime) {
         dto.checkOutDocument = filePath;
       } else {
@@ -567,7 +567,7 @@ async getAllPlansWithPagination(
   @Delete('plans/:id')
   @Permissions(EPermission.JOURNEY_DELETE)
   async deletePlan(@Param('id') id: string) {
-    return CRUD.softDelete(this.journeyService.journeyPlanRepo, 'plans', id);
+    return this.journeyService.journeyPlanRepo.delete(id);
   }
 
   // ===== Unplanned Journeys =====
@@ -692,7 +692,7 @@ async getAllPlansWithPagination(
   @Delete(':id')
   @Permissions(EPermission.JOURNEY_DELETE)
   async deleteJourney(@Param('id') id: string) {
-    return CRUD.softDelete(this.journeyService.journeyRepo, 'journey', id);
+    return this.journeyService.journeyRepo.delete(id);
   }
 
   // ✅ Mobile: get today's journeys for logged-in user
@@ -727,5 +727,11 @@ async getTodayJourneysForMe(
   @Permissions(EPermission.JOURNEY_UPDATE)
   async testCronCreateToday(@Body('userId') userId?: string) {
     return this.journeyService.createJourneysForToday(userId);
+  }
+
+  @Patch('cron/recover')
+  @Permissions(EPermission.JOURNEY_UPDATE) 
+  async manualRecoverJourneys(@Body('date') date?: string) {
+    return this.journeyService.recoverJourneys(date);
   }
 }

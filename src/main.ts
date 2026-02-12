@@ -27,6 +27,9 @@ async function configureApp(app: NestExpressApplication) {
   app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), {
     prefix: '/uploads/',
   });
+  app.useStaticAssets(join(__dirname, '..', '..', '/tmp'), {
+    prefix: '/tmp/',
+  });
   app.useGlobalInterceptors(new LoggingInterceptor());
   app.use(helmet());
 

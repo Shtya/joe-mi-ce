@@ -449,8 +449,11 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
     }
 
-    await this.journeyRepo.save(journey);
-    const savedCheckIn = await this.checkInRepo.save(checkIn);
+    let savedCheckIn: CheckIn;
+    await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
+      await transactionalEntityManager.save(Journey, journey);
+      savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
+    });
 
     // 🔔 Notify supervisor if exists
     const supervisor = journey.branch?.supervisor;
@@ -557,8 +560,11 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
     }
 
-    await this.journeyRepo.save(journey);
-    const savedCheckIn = await this.checkInRepo.save(checkIn);
+    let savedCheckIn: CheckIn;
+    await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
+      await transactionalEntityManager.save(Journey, journey);
+      savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
+    });
 
     // 🔔 Notify supervisor/promoter?
      const supervisor = journey.branch?.supervisor;
@@ -641,7 +647,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       .leftJoinAndSelect("plan.branch", "branch")
       .leftJoinAndSelect("branch.project", "project")
       .leftJoinAndSelect("plan.shift", "shift")
-      .where(":dayName = ANY(plan.days)", { dayName });
+      .where(":dayName = ANY(plan.days)", { dayName })
+      .andWhere("user.deleted_at IS NULL")
+      .andWhere("branch.deleted_at IS NULL");
 
     if (userId) {
       qb.andWhere("user.id = :userId", { userId });
@@ -652,9 +660,10 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     let createdCount = 0;
     console.log(plans)
     for (const plan of plans) {
-      // Skip plans with missing relations
+      // Skip and Cleanup plans with missing relations
       if (!plan.user || !plan.branch || !plan.shift) {
-        console.warn(`Skipping plan ${plan.id}: missing user, branch, or shift relation`);
+        console.warn(`Cleaning up plan ${plan.id}: missing user, branch, or shift relation`);
+        await this.journeyPlanRepo.delete(plan.id);
         continue;
       }
 
@@ -735,7 +744,9 @@ if (typeof value === 'string') {
     .leftJoinAndSelect("plan.branch", "branch")
     .leftJoinAndSelect("branch.project", "project")
     .leftJoinAndSelect("plan.shift", "shift")
-    .where(":dayName = ANY(plan.days)", { dayName });
+    .where(":dayName = ANY(plan.days)", { dayName })
+    .andWhere("user.deleted_at IS NULL")
+    .andWhere("branch.deleted_at IS NULL");
 
   if (userId) {
     qb.andWhere("user.id = :userId", { userId });
@@ -747,9 +758,10 @@ if (typeof value === 'string') {
   console.log(plans);
 
   for (const plan of plans) {
-    // Skip plans with missing relations
+    // Skip and Cleanup plans with missing relations
     if (!plan.user || !plan.branch || !plan.shift) {
-      console.warn(`Skipping plan ${plan.id}: missing user, branch, or shift relation`);
+      console.warn(`Cleaning up plan ${plan.id}: missing user, branch, or shift relation`);
+      await this.journeyPlanRepo.delete(plan.id);
       continue;
     }
 
@@ -787,6 +799,84 @@ if (typeof value === 'string') {
   return { createdCount, date: today };
 }
 
+  // ===== Recovery Cron Job =====
+  async recoverJourneys(date?: string) {
+    const targetDate = date || dayjs().format('YYYY-MM-DD');
+    const dayName = dayjs(targetDate).format('dddd').toLowerCase();
+
+    // 1. Get all active plans for this day
+    const qb = this.journeyPlanRepo
+      .createQueryBuilder("plan")
+      .leftJoinAndSelect("plan.user", "user")
+      .leftJoinAndSelect("plan.branch", "branch")
+      .leftJoinAndSelect("branch.project", "project")
+      .leftJoinAndSelect("plan.shift", "shift")
+      .where(":dayName = ANY(plan.days)", { dayName })
+      .andWhere("user.deleted_at IS NULL")
+      .andWhere("branch.deleted_at IS NULL");
+
+    const plans = await qb.getMany();
+    
+    let restoredCount = 0;
+    let createdCount = 0;
+    const errors = [];
+
+    for (const plan of plans) {
+       if (!plan.user || !plan.branch || !plan.shift) continue;
+
+       try {
+         // 2. Check if journey exists (ACTIVE only)
+         const journey = await this.journeyRepo.findOne({
+           where: {
+             user: { id: plan.user.id },
+             shift: { id: plan.shift.id },
+             date: targetDate,
+             branch: { id: plan.branch.id },
+             status: Not(In([
+              JourneyStatus.UNPLANNED_ABSENT,
+              JourneyStatus.UNPLANNED_PRESENT,
+              JourneyStatus.UNPLANNED_CLOSED,
+            ])),
+           },
+           // createJourneysForTomorrow checks for Unplanned status exclusion, let's match that to be safe
+           // But here we are looking for PLANNED journeys mainly.
+           // Actually, let's keep it simple: if ANY journey exists for this plan/date/shift, we are good.
+           // If it's soft-deleted, findOne won't find it (default behavior), so we go to 'else' and create new.
+         });
+
+         if (journey) {
+           // Journey exists and is active. Do nothing.
+         } else {
+           // 3. If doesn't exist (or was soft-deleted), create it
+           console.log(`🆕 Creating missing journey for user ${plan.user.name} on ${targetDate}`);
+           const newJourney = this.journeyRepo.create({
+              user: plan.user,
+              branch: plan.branch,
+              shift: plan.shift,
+              projectId: plan.projectId || plan.branch.project?.id,
+              date: targetDate,
+              type: JourneyType.PLANNED,
+              status: JourneyStatus.ABSENT,
+              journeyPlan: plan,
+           });
+           await this.journeyRepo.save(newJourney);
+           createdCount++;
+         }
+       } catch (err) {
+         console.error(`❌ Error recovering journey for plan ${plan.id}:`, err);
+         errors.push({ planId: plan.id, error: err.message });
+       }
+    }
+
+    return {
+      date: targetDate,
+      totalPlans: plans.length,
+      restoredCount,
+      createdCount,
+      errors
+    };
+  }
+
   // ===== Auto-close journeys at 3 AM =====
   async autoCloseJourneys() {
     const now = new Date();
@@ -816,8 +906,13 @@ if (typeof value === 'string') {
             await this.checkInRepo.save(checkIn);
           }
         } else {
-          // This shouldn't happen (PRESENT status should have check-in), but handle it
-          console.warn(`Journey ${journey.id} has PRESENT status but no check-in record`);
+          // This happens if status is PRESENT but no check-in record was found.
+          // Revert status to ABSENT/UNPLANNED_ABSENT to resolve inconsistency.
+          console.warn(`Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`);
+          journey.status = journey.type === JourneyType.PLANNED 
+            ? JourneyStatus.ABSENT 
+            : JourneyStatus.UNPLANNED_ABSENT;
+          await this.journeyRepo.save(journey);
           continue;
         }
 

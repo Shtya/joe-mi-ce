@@ -21,13 +21,13 @@ export enum JourneyStatus {
 
 @Entity('journey_plans')
 export class JourneyPlan extends CoreEntity {
-  @ManyToOne(() => User, { eager: true })
+  @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
   user: Relation<User>;
 
-  @ManyToOne(() => Branch, { eager: true })
+  @ManyToOne(() => Branch, { eager: true, onDelete: 'CASCADE' })
   branch: Relation<Branch>;
 
-  @ManyToOne(() => Shift, { eager: true })
+  @ManyToOne(() => Shift, { eager: true, onDelete: 'CASCADE' })
   shift: Relation<Shift>;
 
   @ManyToOne(() => User, { eager: true })
@@ -46,13 +46,13 @@ export class JourneyPlan extends CoreEntity {
 
 @Entity('journeys')
 export class Journey extends CoreEntity {
-  @ManyToOne(() => User, { eager: true, nullable: true })
+  @ManyToOne(() => User, { eager: true, nullable: true, onDelete: 'CASCADE' })
   user: Relation<User>;
 
-  @ManyToOne(() => Branch, { eager: true, nullable: true })
+  @ManyToOne(() => Branch, { eager: true, nullable: true, onDelete: 'CASCADE' })
   branch: Relation<Branch>;
 
-  @ManyToOne(() => Shift, { eager: true, nullable: true })
+  @ManyToOne(() => Shift, { eager: true, nullable: true, onDelete: 'CASCADE' })
   shift: Relation<Shift>;
 
   @Column({ type: 'enum', enum: JourneyType, nullable: true })

@@ -92,7 +92,7 @@ export const multerOptionsPdf = {
 export const multerOptionsCheckinTmp = {
   storage: diskStorage({
     destination: (req, file, cb) => {
-      const uploadDir = `${tmpdir()}/checkins`; // /tmp/checkins
+      const uploadDir = './tmp/checkins'; // ./tmp/checkins
       if (!existsSync(uploadDir)) {
         mkdirSync(uploadDir, { recursive: true }); // Create folder if missing
       }
@@ -114,7 +114,7 @@ export const multerOptionsCheckinTmp = {
 export const multerOptionsFeedbackTmp = {
   storage: diskStorage({
     destination: (req, file, cb) => {
-      const uploadDir = `${tmpdir()}/feedback`; // /tmp/checkins
+      const uploadDir = './tmp/feedback'; // ./tmp/feedback
       if (!existsSync(uploadDir)) {
         mkdirSync(uploadDir, { recursive: true }); // Create folder if missing
       }
