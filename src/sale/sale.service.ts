@@ -39,16 +39,21 @@ export class SaleService {
     });
     if (!stock) throw new NotFoundException('Stock not found for this branch');
 
-    if (stock.quantity < dto.quantity) {
-      throw new BadRequestException('Not enough stock available');
+    if(!dto.isFromOrigin){
+      if (stock.quantity < dto.quantity) {
+        throw new BadRequestException('Not enough stock available');
+      }
+      else{
+       stock.quantity -= dto.quantity;
+       await this.stockRepo.save(stock);
+      }
     }
+    
 
 const discount = product.discount ?? 0;
 const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
 
-    // Update stock
-    stock.quantity -= dto.quantity;
-    await this.stockRepo.save(stock);
+
 
     // Create sale
     const sale = this.saleRepo.create({
@@ -97,7 +102,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     let stockAdjustment = 0;
     let amountAdjustment = 0;
 
-    // Handle quantity changes
+   if(!sale.isFromOrigin){
     if (dto.quantity !== undefined && dto.quantity !== sale.quantity) {
       const quantityDiff = dto.quantity - sale.quantity;
 
@@ -107,7 +112,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
 
       stockAdjustment = -quantityDiff; // Negative because we subtract from stock
     }
-
+  }
     // Handle price changes
     const oldTotalAmount = sale.total_amount;
     const newTotalAmount = dto.price !== undefined ? dto.price * (dto.quantity || sale.quantity) : oldTotalAmount;
@@ -116,10 +121,11 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       amountAdjustment = newTotalAmount - oldTotalAmount;
     }
 
-    // Update stock if quantity changed
+    if(!sale.isFromOrigin){
     if (stockAdjustment !== 0) {
       stock.quantity += stockAdjustment;
       await this.stockRepo.save(stock);
+    }
     }
 
     // Update sale
@@ -203,9 +209,10 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       throw new NotFoundException('Stock not found for this branch');
     }
 
-    // Return quantity to stock
+    if(!sale.isFromOrigin){
     stock.quantity += sale.quantity;
     await this.stockRepo.save(stock);
+    }
 
     // Update sales target progress
     await this.updateSalesTargetProgress(sale.branch.id, -sale.total_amount);
@@ -271,9 +278,10 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       throw new NotFoundException('Stock not found for this branch to return quantity');
     }
 
-    // Return quantity to stock
+    if(!sale.isFromOrigin){
     stock.quantity += sale.quantity;
     await this.stockRepo.save(stock);
+    }
 
     // Update sale status
     sale.status = 'returned';
@@ -305,9 +313,10 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       throw new NotFoundException('Stock not found for this branch');
     }
 
-    // Return quantity to stock
+    if(!sale.isFromOrigin){
     stock.quantity += sale.quantity;
     await this.stockRepo.save(stock);
+    }
 
     // Update sale status
     sale.status = 'cancelled';

@@ -138,7 +138,7 @@ export class ProductService {
           stockToInsert.push({
             branch,
             product,
-            quantity: stockItem.quantity,
+            quantity: 1,
           });
         }
       } else {
@@ -162,7 +162,7 @@ export class ProductService {
         stockToInsert.push({
           branch,
           product,
-          quantity: stockItem.quantity,
+          quantity: 1,
         });
       }
     }

@@ -10,7 +10,8 @@ export class StockDto {
   @IsNumber()
   @Min(0)
   @IsPositive()
-  quantity: number;
+  @IsOptional()
+  quantity?: number;
 
   @IsOptional()
   all_branches?: boolean;

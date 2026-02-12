@@ -50,4 +50,7 @@ export class Sale extends CoreEntity {
 
   @Column({ nullable: true })
   branchId: string;
+
+  @Column({ nullable: true, default: false })
+  isFromOrigin: boolean;
 }
