@@ -23,6 +23,8 @@ const isDev = process.env.NODE_ENV === 'development';
 // SHARED CONFIG
 // --------------------------------------------
 async function configureApp(app: NestExpressApplication) {
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
   app.useGlobalFilters(app.get(QueryFailedErrorFilter));
   app.useStaticAssets(join(__dirname, '..', '..', '/uploads'), {
     prefix: '/uploads/',

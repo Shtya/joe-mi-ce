@@ -10,6 +10,7 @@ import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entit
 import { User } from 'entities/user.entity';
 import { Branch } from 'entities/branch.entity';
 import { Shift } from 'entities/employee/shift.entity';
+import { VacationDate } from 'entities/employee/vacation-date.entity';
 import { getDistance } from 'geolib';
 import { CRUD } from 'common/crud.service';
 import { NotificationService } from 'src/notification/notification.service';
@@ -34,6 +35,9 @@ export class JourneyService {
 
     @InjectRepository(Shift)
     public shiftRepo: Repository<Shift>,
+
+    @InjectRepository(VacationDate)
+    public vacationDateRepo: Repository<VacationDate>,
 
     private readonly notificationService: NotificationService,
   ) {}
@@ -279,6 +283,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     [JourneyStatus.ABSENT]: 'absent',
     [JourneyStatus.PRESENT]: 'present',
     [JourneyStatus.CLOSED]: 'closed',
+    [JourneyStatus.VACATION]: 'vacation',
     [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned-absent',
     [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned-present',
     [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned-closed',
@@ -289,6 +294,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     [JourneyStatus.ABSENT]: { en: 'Absent', ar: 'غائب' },
     [JourneyStatus.PRESENT]: { en: 'Present', ar: 'حاضر' },
     [JourneyStatus.CLOSED]: { en: 'Closed', ar: 'مغلق' },
+    [JourneyStatus.VACATION]: { en: 'Vacation', ar: 'إجازة' },
     [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
     [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
     [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
@@ -678,6 +684,16 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
       if (exists) continue;
 
+      const onVacation = await this.vacationDateRepo.findOne({
+        where: {
+          date: tomorrow,
+          vacation: {
+            user: { id: plan.user.id },
+            overall_status: 'approved'
+          }
+        }
+      });
+
       const journey = this.journeyRepo.create({
         user: plan.user,
         branch: plan.branch,
@@ -685,7 +701,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         projectId: plan.projectId || plan.branch.project?.id,
         date: tomorrow,
         type: JourneyType.PLANNED,
-        status: JourneyStatus.ABSENT,
+        status: onVacation ? JourneyStatus.VACATION : JourneyStatus.ABSENT,
         journeyPlan: plan,
       });
 
@@ -781,6 +797,16 @@ if (typeof value === 'string') {
 
     if (exists) continue;
 
+    const onVacation = await this.vacationDateRepo.findOne({
+      where: {
+        date: today,
+        vacation: {
+          user: { id: plan.user.id },
+          overall_status: 'approved'
+        }
+      }
+    });
+
     const journey = this.journeyRepo.create({
       user: plan.user,
       branch: plan.branch,
@@ -788,7 +814,7 @@ if (typeof value === 'string') {
       projectId: plan.projectId || plan.branch.project?.id,
       date: today,
       type: JourneyType.PLANNED,
-      status: JourneyStatus.ABSENT,
+      status: onVacation ? JourneyStatus.VACATION : JourneyStatus.ABSENT,
       journeyPlan: plan,
     });
 

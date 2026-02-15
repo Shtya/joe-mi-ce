@@ -42,9 +42,9 @@ export const multerOptionsVaction = {
     },
   }),
   fileFilter: (req, file, callback) => {
-    if (!file.mimetype.match(/\/(jpg|jpeg|png|gif|webp)$/)) {
-      return callback(new BadRequestException('Only image files are allowed'), false);
-    }
+    // if (!file.mimetype.match(/\/(jpg|jpeg|png|gif|webp)$/)) {
+    //   return callback(new BadRequestException('Only image files are allowed'), false);
+    // }
     callback(null, true);
   },
   limits: {
@@ -114,9 +114,9 @@ export const multerOptionsCheckinTmp = {
 export const multerOptionsFeedbackTmp = {
   storage: diskStorage({
     destination: (req, file, cb) => {
-      const uploadDir = './tmp/feedback'; // ./tmp/feedback
+      const uploadDir = './uploads/feedback'; // Match controller expectation
       if (!existsSync(uploadDir)) {
-        mkdirSync(uploadDir, { recursive: true }); // Create folder if missing
+        mkdirSync(uploadDir, { recursive: true });
       }
       cb(null, uploadDir);
     },
@@ -131,5 +131,5 @@ export const multerOptionsFeedbackTmp = {
     },
   }),
   fileFilter: (req, file, cb) => cb(null, true),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
 };

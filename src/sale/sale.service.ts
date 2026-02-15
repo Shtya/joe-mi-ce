@@ -740,11 +740,10 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     const dates = [...new Set(records.map(r => r.created_at instanceof Date ? r.created_at.toISOString().split('T')[0] : new Date(r.created_at).toISOString().split('T')[0]))];
 
     if (userIds.length > 0 && dates.length > 0) {
-        // We need to use QueryBuilder to filter distinct dates correctly as string comparison
-        const journeyQb = this.salesTargetRepo.manager.createQueryBuilder(Journey, 'journey') // Use manager from any repo
+        const journeyQb = this.salesTargetRepo.manager.createQueryBuilder(Journey, 'journey')
             .leftJoinAndSelect('journey.checkin', 'checkin')
+            .leftJoinAndSelect('journey.branch', 'branch')
             .innerJoin('journey.user', 'user')
-            // .innerJoin('journey.branch', 'branch') // Optional: enforce branch match?
             .where('user.id IN (:...userIds)', { userIds })
             .andWhere('journey.date IN (:...dates)', { dates });
 
@@ -753,7 +752,10 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
         journeys.forEach(j => {
             if (j.user && j.date && j.checkin) {
                 const key = `${j.user.id}_${j.date}`;
-                checkInMap.set(key, j.checkin);
+                checkInMap.set(key, {
+                    ...j.checkin,
+                    branch: j.branch
+                });
             }
         });
     }
@@ -872,10 +874,12 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       check_in: checkIn ? {
           checkInTime: checkIn.checkInTime,
           checkOutTime: checkIn.checkOutTime,
-          checkInImage: checkIn.checkInDocument, // User requested "picture of check in"
+          checkInImage: checkIn.checkInDocument, 
           checkInDocument: checkIn.checkInDocument,
           checkOutDocument: checkIn.checkOutDocument,
-          image: checkIn.image
+          image: checkIn.image,
+          branch_id: checkIn.branch?.id || null,
+          branch_name: checkIn.branch?.name || null
       } : null,
       product: {
         id: sale.product?.id || null,

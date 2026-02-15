@@ -15,6 +15,8 @@ import { City } from 'entities/locations/city.entity';
 import { NotificationModule } from 'src/notification/notification.module';
 import { UsersService } from 'src/users/users.service';
 import { Project } from 'entities/project.entity';
+import { Vacation } from 'entities/employee/vacation.entity';
+import { VacationDate } from 'entities/employee/vacation-date.entity';
 
 @Module({
   imports: [
@@ -28,7 +30,9 @@ import { Project } from 'entities/project.entity';
       Region,
       City,
       User,
-      Project
+      Project,
+      Vacation,
+      VacationDate
     ]),
     ScheduleModule.forRoot(),
 		NotificationModule,

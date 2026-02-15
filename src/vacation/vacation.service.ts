@@ -7,7 +7,7 @@ import {
   InternalServerErrorException
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import {
   CreateVacationDto,
   UpdateDateStatusDto,
@@ -21,6 +21,7 @@ import { User } from 'entities/user.entity';
 import { Branch } from 'entities/branch.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
+import { Journey, JourneyStatus } from 'entities/all_plans.entity';
 
 @Injectable()
 export class VacationService {
@@ -36,6 +37,9 @@ export class VacationService {
 
     @InjectRepository(Branch)
     public readonly branchRepo: Repository<Branch>,
+
+    @InjectRepository(Journey)
+    public readonly journeyRepo: Repository<Journey>,
   ) {}
 
   // Create a new vacation request
@@ -105,7 +109,7 @@ export class VacationService {
     try {
       const vacation = await this.vacationRepo.findOne({
         where: { id: vacationId, },
-        relations: ['vacationDates']
+        relations: ['vacationDates', 'user']
       });
 
       if (!vacation) {
@@ -126,7 +130,23 @@ export class VacationService {
       vacation.processedBy = processedBy;
 
       vacation.rejection_reason = dto.rejectionReason;
-      vacation.save()
+      await this.vacationRepo.save(vacation);
+
+      if (dto.overall_status === 'approved') {
+        const userId = vacation.user?.id;
+        const dates = vacation.vacationDates.map(vd => vd.date);
+        
+        if (userId && dates.length > 0) {
+          await this.journeyRepo.update(
+            {
+              user: { id: userId },
+              date: In(dates),
+              status: JourneyStatus.ABSENT
+            },
+            { status: JourneyStatus.VACATION }
+          );
+        }
+      }
 
 
       return this.getVacationById(vacationId);

@@ -14,6 +14,7 @@ export enum JourneyStatus {
   ABSENT = 'absent',
   PRESENT = 'present',
   CLOSED = 'closed',
+  VACATION = 'vacation',
   UNPLANNED_ABSENT = 'unplanned_absent',
   UNPLANNED_PRESENT = 'unplanned_present',
   UNPLANNED_CLOSED = 'unplanned_closed',
