@@ -133,26 +133,6 @@ export class ExportService {
     }
   }
 
-  /**
-   * Fetch image from URL
-   */
-  private async fetchImage(url: string): Promise<{ buffer: any; extension: string } | null> {
-    try {
-      if (!url || url === '-' || !(url.startsWith('http') && url.startsWith('https'))) return null;
-      
-      const response = await firstValueFrom(
-        this.httpService.get(url, { responseType: 'arraybuffer' })
-      );
-      
-      const buffer = Buffer.from(response.data);
-      const extension = url.split('.').pop()?.toLowerCase() || 'png';
-      
-      return { buffer, extension: ['png', 'jpg', 'jpeg', 'gif'].includes(extension) ? extension : 'png' };
-    } catch (error) {
-      console.error(`Failed to fetch image from ${url}:`, error.message);
-      return null;
-    }
-  }
 
   /**
    * Extract data from response
@@ -971,19 +951,13 @@ export class ExportService {
     worksheet.columns = worksheetColumns;
 
     // Add data rows
-    for (let rowIndex = 0; rowIndex < finalData.length; rowIndex++) {
-      const rowData = finalData[rowIndex];
+    finalData.forEach(rowData => {
       const rowValues: any = {};
-      const imageCells: { colIndex: number; url: string }[] = [];
       
-      worksheetColumns.forEach((col, colIndex) => {
+      worksheetColumns.forEach(col => {
         const value = rowData[col.key];
-        const isImageColumn = col.key.toLowerCase().includes('image');
-        
-        if (isImageColumn && value && typeof value === 'string' && value.startsWith('http')) {
-          imageCells.push({ colIndex: colIndex + 1, url: value });
-          rowValues[col.key] = ''; // Clear text value to make room for image
-        } else if (value !== null && value !== undefined && value !== '') {
+        if (value !== null && value !== undefined && value !== '') {
+          // Format dates and numbers if needed
           if (col.key.toLowerCase().includes('date') && typeof value === 'string') {
             rowValues[col.key] = value;
           } else if (typeof value === 'number') {
@@ -994,33 +968,14 @@ export class ExportService {
         }
       });
       
-      if (Object.keys(rowValues).length > 0 || imageCells.length > 0) {
+      if (Object.keys(rowValues).length > 0) {
         const row = worksheet.addRow(rowValues);
         row.eachCell(cell => {
+          // Simple center alignment for all cells
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
         });
-
-        // Handle images
-        if (imageCells.length > 0) {
-          row.height = 60; // Increase row height for images
-          
-          for (const imgInfo of imageCells) {
-            const imageData = await this.fetchImage(imgInfo.url);
-            if (imageData) {
-              const imageId = workbook.addImage({
-                buffer: imageData.buffer,
-                extension: imageData.extension as any,
-              });
-              
-              worksheet.addImage(imageId, {
-                tl: { col: imgInfo.colIndex - 0.9, row: row.number - 0.9 },
-                ext: { width: 70, height: 75 }
-              });
-            }
-          }
-        }
       }
-    }
+    });
 
     // Format header row with color grouping
     if (worksheet.rowCount > 0) {
