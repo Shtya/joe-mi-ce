@@ -947,10 +947,9 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   let last_journey_totals = { total_quantity: 0, total_sales: 0 };
   if (userId) {
     const lastJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
-      .leftJoinAndSelect('journey.checkin', 'checkin')
-      .leftJoinAndSelect('journey.branch', 'branch')
+      .innerJoinAndSelect('journey.checkin', 'checkin')
+      .innerJoinAndSelect('journey.branch', 'branch')
       .where('journey.user.id = :userId', { userId })
-      .andWhere('journey.checkin IS NOT NULL')
       .orderBy('journey.date', 'DESC')
       .getOne();
 
