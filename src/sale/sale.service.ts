@@ -897,8 +897,25 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     };
   });
 
+  // --- Aggregation for Totals ---
+  // Create a separate query for totals using the same filters but without pagination
+  const totalsQb = this.saleRepo.createQueryBuilder('sale')
+    .leftJoin('sale.product', 'product')
+    .leftJoin('sale.branch', 'branch')
+    .leftJoin('sale.user', 'user')
+    .select('SUM(sale.quantity)', 'totalQuantity')
+    .addSelect('SUM(sale.total_amount)', 'totalSales')
+    .where('user.id = :userId', { userId })
+    
+
+  const totalsRaw = await totalsQb.getRawOne();
+  const total_quantity = parseFloat(totalsRaw.totalQuantity) || 0;
+  const total_sales = parseFloat(totalsRaw.totalSales) || 0;
+
   return {
     total_records,
+    total_quantity,
+    total_sales,
     current_page: pageNumber,
     per_page: limitNumber,
     branch: branchInfo, // Branch appears only once here
