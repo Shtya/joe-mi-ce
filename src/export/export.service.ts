@@ -394,7 +394,7 @@ export class ExportService {
    * Clean and organize data with main entity first
    */
   private cleanDataForExport(data: any[], mainEntity: string): any[] {
-    const baseUrl = 'https://ce-api.joe-mi.com/api/v1';
+    const baseUrl = 'https://ce-api.joe-mi.com';
     const mainEntityLower = mainEntity.toLowerCase();
     
     return data.map(item => {
