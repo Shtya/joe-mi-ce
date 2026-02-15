@@ -16,6 +16,7 @@ import {  multerOptionsCheckinTmp } from 'common/multer.config';
 import { Raw, In, Brackets } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
+@UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
   constructor(private readonly journeyService: JourneyService,
