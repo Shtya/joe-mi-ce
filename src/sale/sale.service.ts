@@ -904,18 +904,77 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     .leftJoin('sale.branch', 'branch')
     .leftJoin('sale.user', 'user')
     .select('SUM(sale.quantity)', 'totalQuantity')
-    .addSelect('SUM(sale.total_amount)', 'totalSales')
-    .where('user.id = :userId', { userId })
-    
+    .addSelect('SUM(sale.total_amount)', 'totalSales');
+
+  if (userId) {
+     totalsQb.andWhere('user.id = :userId', { userId });
+  }
+
+  if (search) {
+    totalsQb.andWhere(new Brackets(subQb => {
+      subQb.where('product.name ILIKE :search', { search: `%${search}%` });
+    }));
+  }
+
+  if (startDate && endDate) {
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    totalsQb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', { startDate: startDateStr, endDate: endDateStr });
+  } else if (startDate) {
+    totalsQb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDate.toISOString().split('T')[0] });
+  } else if (endDate) {
+    totalsQb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDate.toISOString().split('T')[0] });
+  }
+
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        if (key.includes('.')) {
+          const [relation, field] = key.split('.');
+          totalsQb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { [key.replace('.', '_')]: value });
+        } else {
+          totalsQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
+        }
+      }
+    });
+  }
 
   const totalsRaw = await totalsQb.getRawOne();
   const total_quantity = parseFloat(totalsRaw.totalQuantity) || 0;
   const total_sales = parseFloat(totalsRaw.totalSales) || 0;
 
+  // --- Last Journey Totals ---
+  let last_journey_totals = { total_quantity: 0, total_sales: 0 };
+  if (userId) {
+    const lastJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
+      .leftJoinAndSelect('journey.checkin', 'checkin')
+      .leftJoinAndSelect('journey.branch', 'branch')
+      .where('journey.user.id = :userId', { userId })
+      .andWhere('journey.checkin IS NOT NULL')
+      .orderBy('journey.date', 'DESC')
+      .getOne();
+
+    if (lastJourney) {
+      const lastJourneyTotals = await this.saleRepo.createQueryBuilder('sale')
+        .select('SUM(sale.quantity)', 'totalQuantity')
+        .addSelect('SUM(sale.total_amount)', 'totalSales')
+        .where('sale.user.id = :userId', { userId })
+        .andWhere('sale.branch.id = :branchId', { branchId: lastJourney.branch?.id })
+        .andWhere('DATE(sale.created_at) = :date', { date: lastJourney.date })
+        .getRawOne();
+      
+      last_journey_totals = {
+        total_quantity: parseFloat(lastJourneyTotals.totalQuantity) || 0,
+        total_sales: parseFloat(lastJourneyTotals.totalSales) || 0
+      };
+    }
+  }
+
   return {
     total_records,
     total_quantity,
     total_sales,
+    last_journey_totals,
     current_page: pageNumber,
     per_page: limitNumber,
     branch: branchInfo, // Branch appears only once here
