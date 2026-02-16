@@ -670,7 +670,7 @@ if (value instanceof FindOperator) {
   
   // SUPPORT FOR 'IN' OPERATOR
   if (value.type === 'in') {
-    query.andWhere(`${qualifiedName} IN (:...${paramKey})`, {
+    query.andWhere(`${qualifiedName}::text IN (:...${paramKey})`, {
        [paramKey]: value.value,
     });
     return;
@@ -715,12 +715,12 @@ if (value instanceof FindOperator) {
             alias = `${alias}_${seg}`; // "audit_branch_city"
           }
 
-          query.andWhere(`${alias}.${column} = :${paramKey}`, {
+          query.andWhere(`${alias}.${column}::text = :${paramKey}`, {
             [paramKey]: value,
           });
         } else {
           // simple field on root entity
-          query.andWhere(`${entityName}.${flatKey} = :${paramKey}`, {
+          query.andWhere(`${entityName}.${flatKey}::text = :${paramKey}`, {
             [paramKey]: value,
           });
         }
