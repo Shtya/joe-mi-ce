@@ -48,6 +48,12 @@ export class AuthController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('auth/me')
+  async getMe(@Req() req: { user: User }) {
+    return this.authService.getCurrentUser(req.user);
+  }
+
+  @UseGuards(AuthGuard)
   @Get('users/me')
   async getCurrentUser(@Req() req: { user: User }) {
     return this.authService.getCurrentUser(req.user);

@@ -260,6 +260,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
     return {
       id: userWithRelations.id,
       username: userWithRelations.username,
+      name: userWithRelations.name,
       role: userWithRelations.role.name,
       project: userWithRelations.project,
       branch: userWithRelations.branch,

@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
-import { BulkCreatePermissionDto, PermissionResponseDto, UpdatePermissionDto } from 'dto/permissions.dto';
+import { BulkCreatePermissionDto, CreatePermissionDto, PermissionResponseDto, UpdatePermissionDto } from 'dto/permissions.dto';
 import { I18nService } from 'nestjs-i18n';
 import { Permission } from 'entities/permissions.entity';
 import { BaseService } from 'common/base.service';
@@ -14,6 +14,19 @@ export class PermissionsService extends BaseService<Permission>  {
       readonly i18n: I18nService
   ) {
     super(permissionRepository)
+  }
+
+  async create(dto: CreatePermissionDto) {
+    const existing = await this.permissionRepository.findOne({ where: { name: dto.name } });
+    if (existing) {
+      throw new BadRequestException(this.i18n.t('events.permisstions.errors.permission_name_exists'));
+    }
+    const permission = this.permissionRepository.create(dto);
+    const saved = await this.permissionRepository.save(permission);
+    return {
+      message: this.i18n.t('events.permisstions.success.permission_created'),
+      data: this.mapToDto(saved),
+    };
   }
 
   async bulkCreate(dto: BulkCreatePermissionDto): Promise<{
