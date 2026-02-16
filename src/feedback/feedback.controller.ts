@@ -11,10 +11,15 @@ import { CRUD } from 'common/crud.service';
 import { Feedback } from 'entities/feedback.entity';
 import { multerOptionsFeedbackTmp } from 'common/multer.config';
 
+import { UsersService } from 'src/users/users.service';
+
 @UseGuards(AuthGuard)
 @Controller('feedback')
 export class FeedbackController {
-  constructor(private readonly feedbackService: FeedbackService) {}
+  constructor(
+    private readonly feedbackService: FeedbackService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Post()
   @UseInterceptors(FilesInterceptor('files', 10, multerOptionsFeedbackTmp))
@@ -25,10 +30,13 @@ export class FeedbackController {
 
   // List feedback with filters + pagination
   @Get()
-  async getFeedbackList(@Query() query: any, @Query('page') page: number = 1, @Query('limit') limit: number = 10, @Query('search') search?: string, @Query('projectId') projectId?: string, @Query('userId') userId?: string, @Query('type') type?: string, @Query('is_resolved') is_resolved?: string) {
+  async getFeedbackList(@Query() query: any, @Query('page') page: number = 1, @Query('limit') limit: number = 10, @Query('search') search?: string, @Query('projectId') projectId?: string, @Query('userId') userId?: string, @Query('type') type?: string, @Query('is_resolved') is_resolved?: string, @Req() req?: any) {
     const filters: any = { ...query.filters };
 
-    if (projectId) filters.project = { id: projectId };
+    // Resolve project ID from user
+    const resolvedProjectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
+    filters.project = { id: resolvedProjectId };
+
     if (userId) filters.user = { id: userId };
     if (type) filters.type = type;
     if (is_resolved !== undefined && is_resolved !== '') {
@@ -63,8 +71,8 @@ export class FeedbackController {
   }
 
   // Delete feedback
-  // @Delete(':id')
-  // async deleteFeedback(@Param('id') id: string) {
-  //   return this.feedbackService.remove(id);
-  // }
+  @Delete(':id')
+  async deleteFeedback(@Param('id') id: string) {
+    return this.feedbackService.remove(id);
+  }
 }

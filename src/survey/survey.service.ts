@@ -100,9 +100,12 @@ export class SurveyService {
     return await this.feedbackRepo.save(feedback);
   }
 
-  async getFeedbackByPromoter(promoterId: string) {
+  async getFeedbackByPromoter(promoterId: string, projectId: string) {
     return await this.feedbackRepo.find({
-      where: { user: { id: promoterId } },
+      where: { 
+        user: { id: promoterId },
+        survey: { projectId } // Strict project filtering
+      },
       relations: ['survey', 'answers', 'answers.question'],
     });
   }
@@ -125,8 +128,9 @@ export class SurveyService {
     return this.surveyRepo.save(survey);
   }
 
-  async remove(id: string): Promise<void> {
-    const survey = await this.findOne(id);
-    await this.surveyRepo.remove(survey);
+  async remove(id: string, projectId: string): Promise<void> {
+    const survey = await this.surveyRepo.findOne({ where: { id, projectId } });
+    if (!survey) throw new NotFoundException('Survey not found in this project');
+    await this.surveyRepo.softRemove(survey);
   }
 }

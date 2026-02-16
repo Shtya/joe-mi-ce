@@ -6,9 +6,10 @@ import { User } from 'entities/user.entity';
 import { Project } from 'entities/project.entity';
 import { FeedbackService } from './feedback.service';
 import { FeedbackController } from './feedback.controller';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Feedback, User, Project])],
+  imports: [TypeOrmModule.forFeature([Feedback, User, Project]), UsersModule],
   controllers: [FeedbackController],
   providers: [FeedbackService],
   exports: [FeedbackService],

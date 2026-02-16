@@ -6,12 +6,12 @@ import { Survey, SurveyQuestion } from 'entities/survey.entity';
 import { SurveyFeedback, SurveyFeedbackAnswer } from 'entities/survey-feedback.entity';
 import { User } from 'entities/user.entity';
 import { Project } from 'entities/project.entity';
-import { UsersService } from 'src/users/users.service';
 import { Branch } from 'entities/branch.entity';
+import { UsersModule } from 'src/users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SurveyFeedback, SurveyFeedbackAnswer, Survey, SurveyQuestion, User,Project,Branch])],
+  imports: [TypeOrmModule.forFeature([SurveyFeedback, SurveyFeedbackAnswer, Survey, SurveyQuestion, User,Project,Branch]), UsersModule],
   controllers: [SurveyController],
-  providers: [SurveyService,UsersService],
+  providers: [SurveyService],
 })
 export class SurveyModule {}

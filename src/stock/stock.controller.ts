@@ -118,6 +118,104 @@ async getOutOfStockByUserBranchMobile(
       query,
     });
   }
+//   async getStocksByProjectPaginated({
+//   projectId,
+//   search,
+//   page = 1,
+//   limit = 10,
+//   sortBy = 'createdAt',
+//   sortOrder = 'DESC',
+//   filters = {},
+// }: {
+//   projectId: string;
+//   search?: string;
+//   page?: number;
+//   limit?: number;
+//   sortBy?: string;
+//   sortOrder?: 'ASC' | 'DESC';
+//   filters?: any;
+// }) {
+//   const qb = this.stockService.stockRepo
+//     .createQueryBuilder('stock')
+//     .innerJoinAndSelect('stock.product', 'product')
+//     .innerJoinAndSelect('product.category', 'category')
+//     .leftJoinAndSelect('product.brand', 'brand')
+//     .innerJoinAndSelect('stock.branch', 'branch')
+//     .innerJoin('branch.project', 'project', 'project.id = :projectId', {
+//       projectId,
+//     });
+
+//   /* ===================== SEARCH ===================== */
+//   if (search) {
+//     qb.andWhere(
+//       '(product.name ILIKE :search OR product.sku ILIKE :search)',
+//       { search: `%${search}%` },
+//     );
+//   }
+
+//   /* ===================== FILTERS ===================== */
+
+//   // filters[product][id]
+//   if (filters?.product?.id) {
+//     qb.andWhere('product.id = :productId', {
+//       productId: filters.product.id,
+//     });
+//   }
+
+//   // filters[branch][id]
+//   if (filters?.branch?.id) {
+//     qb.andWhere('branch.id = :branchId', {
+//       branchId: filters.branch.id,
+//     });
+//   }
+
+//   // ✅ filters[category][id]
+//   if (filters?.category?.id) {
+//     qb.andWhere('category.id = :categoryId', {
+//       categoryId: filters.category.id,
+//     });
+//   }
+
+//   // ✅ filters[brand][id]
+//   if (filters?.brand?.id) {
+//     qb.andWhere('brand.id = :brandId', {
+//       brandId: filters.brand.id,
+//     });
+//   }
+
+//   // filters[createdAt]=YYYY-MM-DD
+// if (filters?.createdAt) {
+//   const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
+//   const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
+
+//   qb.andWhere(
+//     'stock.created_at BETWEEN :start AND :end',
+//     { start, end }
+//   );
+// }
+
+
+// const safeSortBy =
+//   sortBy === 'createdAt' ? 'created_at' : sortBy;
+
+// qb.orderBy(`stock.${safeSortBy}`, sortOrder);
+
+//   /* ===================== PAGINATION ===================== */
+//   qb.skip((page - 1) * limit).take(limit);
+
+//   const [data, total] = await qb.getManyAndCount();
+
+//   return {
+//     success: true,
+//     data,
+//     meta: {
+//       total,
+//       page,
+//       limit,
+//       totalPages: Math.ceil(total / limit),
+//     },
+//   };
+// }
 
   @Post('upsert')
   @Permissions(EPermission.STOCK_CREATE, EPermission.STOCK_UPDATE)

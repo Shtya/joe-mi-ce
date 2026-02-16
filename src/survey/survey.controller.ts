@@ -6,11 +6,15 @@ import { CRUD } from 'common/crud.service';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
+import { UsersService } from 'src/users/users.service';
 
 @UseGuards(AuthGuard)
 @Controller('surveys')
 export class SurveyController {
-  constructor(private readonly surveyService: SurveyService) {}
+  constructor(
+    private readonly surveyService: SurveyService,
+    private readonly usersService: UsersService,
+  ) {}
 
   @Post()
   @Permissions(EPermission.SURVEY_CREATE)
@@ -28,8 +32,9 @@ export class SurveyController {
   // 🔹 Get feedback by promoter
   @Get('feedback/by-promoter/:promoterId')
   @Permissions(EPermission.SURVEY_FEEDBACK_READ)
-  async getByPromoter(@Param('promoterId') promoterId: string) {
-    return this.surveyService.getFeedbackByPromoter(promoterId);
+  async getByPromoter(@Param('promoterId') promoterId: string, @Req() req: any) {
+    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
+    return this.surveyService.getFeedbackByPromoter(promoterId, projectId);
   }
 
   // 🔹 Get feedback by survey
@@ -73,7 +78,8 @@ export class SurveyController {
   // 🔹 Delete survey
   @Delete(':id')
   @Permissions(EPermission.SURVEY_DELETE)
-  remove(@Param('id') id: string) {
-    return CRUD.softDelete(this.surveyService.surveyRepo, 'survey', id);
+  async remove(@Param('id') id: string, @Req() req: any) {
+    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
+    return this.surveyService.remove(id, projectId);
   }
 }
