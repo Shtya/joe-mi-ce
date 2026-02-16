@@ -65,7 +65,7 @@ export class Journey extends CoreEntity {
   @Column({ type: 'enum', enum: JourneyStatus, default: JourneyStatus.ABSENT, nullable: true })
   status: JourneyStatus;
 
-  @ManyToOne(() => JourneyPlan, { nullable: true })
+  @ManyToOne(() => JourneyPlan, { nullable: true, onDelete: 'CASCADE' })
   journeyPlan?: Relation<JourneyPlan>;
 
   @OneToOne(() => CheckIn, checkin => checkin.journey)
