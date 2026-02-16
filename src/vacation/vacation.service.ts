@@ -7,7 +7,7 @@ import {
   InternalServerErrorException
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { Repository, In, Brackets } from 'typeorm';
 import {
   CreateVacationDto,
   UpdateDateStatusDto,
@@ -278,23 +278,57 @@ export class VacationService {
     // 🔹 Apply dynamic filters
     if (whereConditions.status) {
       query.andWhere(
-    'vacation.overall_status = :status',
+        'vacation.overall_status = :status',
         { status: whereConditions.status }
       );
     }
 
-    if (whereConditions.branch?.id) {
+    if (whereConditions.branch?.id || whereConditions.branchId) {
       query.andWhere(
         'branch.id = :branchId',
-        { branchId: whereConditions.branch.id }
+        { branchId: whereConditions.branch?.id || whereConditions.branchId }
       );
     }
 
-    if (whereConditions.user?.id) {
+    if (whereConditions.user?.id || whereConditions.userId) {
       query.andWhere(
         'user.id = :userId',
-        { userId: whereConditions.user.id }
+        { userId: whereConditions.user?.id || whereConditions.userId }
       );
+    }
+
+    // 🔹 Search Filter (User, Branch, Reason)
+    if (whereConditions.search) {
+      const search = `%${whereConditions.search}%`;
+      query.andWhere(
+        new Brackets(qb => {
+          qb.where('user.username ILIKE :search', { search })
+            .orWhere('user.name ILIKE :search', { search })
+            .orWhere('branch.name ILIKE :search', { search })
+            .orWhere('vacation.reason ILIKE :search', { search });
+        })
+      );
+    }
+
+    // 🔹 Date Range Filter
+    if (whereConditions.fromDate || whereConditions.toDate) {
+      query.leftJoin('vacation.vacationDates', 'vd_filter');
+      
+      if (whereConditions.fromDate && whereConditions.toDate) {
+        query.andWhere('vd_filter.date BETWEEN :fromDate AND :toDate', {
+          fromDate: whereConditions.fromDate,
+          toDate: whereConditions.toDate,
+        });
+      } else if (whereConditions.fromDate) {
+        query.andWhere('vd_filter.date >= :fromDate', { fromDate: whereConditions.fromDate });
+      } else if (whereConditions.toDate) {
+        query.andWhere('vd_filter.date <= :toDate', { toDate: whereConditions.toDate });
+      }
+      
+      // Since we join dates to filter, we might get duplicate vacations.
+      // We use distinct to avoid duplicates if multiple days in a vacation match the filter.
+      // However, getManyAndCount with skip/take can be tricky with joins.
+      // TypeORM's query builder handles this with its inner join/select mapping usually.
     }
 
     // 🔹 Sorting & pagination
@@ -304,8 +338,6 @@ export class VacationService {
       .take(limit);
 
     const [vacations, total] = await query.getManyAndCount();
-
-
 
     return new PaginatedResponseDto(vacations, total, page, limit);
   } catch (error) {

@@ -64,6 +64,7 @@ async getStocksByProjectPaginated(params: {
   if (query?.filters) {
     const { product, brand, branch, category, createdAt } = query.filters;
 
+    if (product?.id) filters.product = { ...(filters.product || {}), id: product.id };
     if (brand?.id) filters.product = { ...(filters.product || {}), brand: { id: brand.id } };
     if (branch?.id) filters.branch = { ...(filters.branch || {}), id: branch.id };
     if (category?.id) filters.product = { ...(filters.product || {}), category: { id: category.id } };
@@ -79,7 +80,7 @@ async getStocksByProjectPaginated(params: {
     sortBy,
     sortOrder,
     ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
-    ['name'],
+    ['product.name', 'product.sku'],
     filters,
   );
 }

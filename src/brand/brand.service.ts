@@ -62,7 +62,7 @@ export class BrandService {
     return this.brandRepository.save(brand);
   }
 
- async update(id: string, dto: UpdateBrandDto, user: any): Promise<Brand> {
+  async update(id: string, dto: UpdateBrandDto, user: any): Promise<Brand> {
     const brand = await this.brandRepository.findOne({
       where: await this.projectOrOwnerWhere(user, { id }),
       relations: ['categories']
@@ -70,7 +70,19 @@ export class BrandService {
 
     if (!brand) throw new NotFoundException('brand.not_found');
 
-    Object.assign(brand, dto);
+    if (dto.categoryIds) {
+      const categories = await this.categoryRepository.find({
+        where: { id: In(dto.categoryIds) }
+      });
+      if (categories.length !== dto.categoryIds.length) {
+        throw new NotFoundException('category.not_found');
+      }
+      brand.categories = categories;
+    }
+
+    const { categoryIds, ...rest } = dto;
+    Object.assign(brand, rest);
+    
     return this.brandRepository.save(brand);
   }
 

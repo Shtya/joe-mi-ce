@@ -136,8 +136,14 @@ export class VacationController {
   @Permissions(EPermission.VACATION_READ)
   async getAllVacations(@Query() query: any,@Req() req:any) {
     const transformedQuery = this.transformQueryParams(query);
+    const mergedConditions = {
+      ...transformedQuery.filters,
+      status: transformedQuery.status || transformedQuery.filters?.status,
+      search: transformedQuery.search,
+    };
+
     return await this.vacationService.getVacationsWithPaginationProject(
-      {         status: transformedQuery.status,},
+      mergedConditions,
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
@@ -201,15 +207,15 @@ export class VacationController {
     return await this.vacationService.vacationRepo.softDelete(id);
   }
 
-  private transformQueryParams(query: VacationQueryDto): any {
+  private transformQueryParams(query: any): any {
     return {
       page: query.page ? Number(query.page) : 1,
       limit: query.limit ? Number(query.limit) : 10,
       sortBy: query.sortBy || 'created_at',
       sortOrder: query.sortOrder || 'DESC',
       search: query.search,
-      status: query.status, // ✅ pass it
-
+      status: query.status,
+      filters: query.filters,
     };
   }
 }

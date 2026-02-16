@@ -38,13 +38,8 @@ export class ExportController {
     // Split URL into base path and query string
     const [baseUrl, queryString] = url.split('?');
     
-    // Parse existing query parameters from URL
-    const existingParams = new URLSearchParams(queryString || '');
-    const existingParamsObj: Record<string, string> = {};
-    
-    existingParams.forEach((value, key) => {
-      existingParamsObj[key] = value;
-    });
+    // Parse existing query parameters from URL using qs for nested objects support
+    const existingParamsObj = queryString ? qs.parse(queryString) : {};
   
     // Filter out export-related parameters and parameters that conflict with path
     const exportParams = [

@@ -107,6 +107,21 @@ export class ExportService {
       const urlWithoutQuery = url.split('?')[0];
       const parts = urlWithoutQuery.split('/');
       
+      // Look for specific entities first, regardless of where they are in the path
+      const specificEntities = [
+        'journey', 'journeyplan', 'checkin', 'sale', 'sales', 'product', 'stock',
+        'shift', 'vacation', 'audit', 'competitor', 'survey', 'user'
+      ];
+
+      for (const part of parts) {
+        const lowerPart = part.toLowerCase();
+        for (const entity of specificEntities) {
+          if (lowerPart.includes(entity)) {
+            return entity;
+          }
+        }
+      }
+
       for (let i = parts.length - 1; i >= 0; i--) {
         if (parts[i] && parts[i].trim() !== '') {
           let entity = parts[i].toLowerCase();
@@ -1199,8 +1214,8 @@ export class ExportService {
   private async fetchDataFromUrl(url: string, authorization?: string): Promise<any> {
     try {
       const cleanUrl = url.startsWith('/') ? url.substring(1) : url;
-      const baseUrl = process.env.MAIN_API_URL || `http://localhost:${process.env.PORT || 3000}`;
-      const fullUrl = `${baseUrl}/${cleanUrl}`; 
+      const baseUrl = process.env.MAIN_API_URL || `http://localhost:${process.env.PORT || 3030}`;
+      const fullUrl = cleanUrl.startsWith('http') ? cleanUrl : `${baseUrl}/${cleanUrl}`; 
   
       console.log(`Fetching data from: ${fullUrl}`);
   
