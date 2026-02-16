@@ -621,7 +621,19 @@ async getAllPlansWithPagination(
     if (branchId) filters.branch = { id: branchId };
     if (shiftId) filters.shift = { id: shiftId };
     if (type) filters.type = type;
-    if (status) filters.status = status;
+    const rawStatus = status || filters.status;
+    if (rawStatus) {
+      const normalized = String(rawStatus).toLowerCase().replace(/-/g, '_');
+      if (normalized === 'unplanned_absent') {
+        filters.status = In(['unplanned_absent', 'unplanned-absent']);
+      } else if (normalized === 'unplanned_present') {
+        filters.status = In(['unplanned_present', 'unplanned-present']);
+      } else if (normalized === 'unplanned_closed') {
+        filters.status = In(['unplanned_closed', 'unplanned-closed']);
+      } else {
+        filters.status = rawStatus;
+      }
+    }
 
     // Date filters mapping
     if (effectiveFromDate) filters.date_from = effectiveFromDate;

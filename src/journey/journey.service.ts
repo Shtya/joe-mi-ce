@@ -859,9 +859,9 @@ if (typeof value === 'string') {
              date: targetDate,
              branch: { id: plan.branch.id },
              status: Not(In([
-              JourneyStatus.UNPLANNED_ABSENT,
-              JourneyStatus.UNPLANNED_PRESENT,
-              JourneyStatus.UNPLANNED_CLOSED,
+              'unplanned_absent', 'unplanned-absent',
+              'unplanned_present', 'unplanned-present',
+              'unplanned_closed', 'unplanned-closed',
             ])),
            },
            // createJourneysForTomorrow checks for Unplanned status exclusion, let's match that to be safe
@@ -911,7 +911,9 @@ if (typeof value === 'string') {
     const openJourneys = await this.journeyRepo.find({
       where: [
         { status: JourneyStatus.PRESENT },
+        { status: 'present' as any },
         { status: JourneyStatus.UNPLANNED_PRESENT },
+        { status: 'unplanned-present' as any },
       ],
       relations: ['user', 'branch', 'shift'],
     });

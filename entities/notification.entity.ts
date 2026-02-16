@@ -17,16 +17,16 @@ export enum NotificationType {
 @Entity('notifications')
 export class Notification extends CoreEntity {
   // صاحب النوتيفيكেশন (المستلم) → غالباً الـ supervisor
-  @ManyToOne(() => User, { eager: true })
+  @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
   user: User;
 
-  @ManyToOne(() => Branch, { eager: true, nullable: true })
+  @ManyToOne(() => Branch, { eager: true, nullable: true, onDelete: 'CASCADE' })
   branch: Branch | null;
 
-  @ManyToOne(() => Journey, { eager: false, nullable: true })
+  @ManyToOne(() => Journey, { eager: false, nullable: true, onDelete: 'CASCADE' })
   journey: Journey | null;
 
-  @ManyToOne(() => Sale, { eager: false, nullable: true })
+  @ManyToOne(() => Sale, { eager: false, nullable: true, onDelete: 'CASCADE' })
   sale: Sale | null;
 
   @Column({ type: 'enum', enum: NotificationType })
