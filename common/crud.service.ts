@@ -595,6 +595,15 @@ function flatten(obj: any, prefix = ''): Record<string, any> {
   return result;
 }
 
+    const meta = repository.metadata;
+    const colByProp = new Map(meta.columns.map(c => [c.propertyName, c]));
+    const colByDb = new Map(meta.columns.map(c => [c.databaseName, c]));
+
+    function resolveOwnColumnName(field: string): string | null {
+      const col = colByProp.get(field) || colByDb.get(field) || (field === 'created_at' ? colByProp.get('createdAt') : null) || (field === 'createdAt' ? colByDb.get('created_at') : null);
+      return col ? col.databaseName : null;
+    }
+
     if (filters && Object.keys(filters).length > 0) {
       const flatFilters = flatten(filters);
 
@@ -651,7 +660,12 @@ if (value instanceof FindOperator) {
     for (const seg of parts) {
       alias = `${alias}_${seg}`;
     }
-    qualifiedName = `${alias}.${column}`;
+    // Note: nested columns are harder to resolve without recursively going through metadata
+    // For now, we'll quote the last segment as a best-effort
+    qualifiedName = `${alias}."${column}"`;
+  } else {
+    const dbName = resolveOwnColumnName(flatKey) || flatKey;
+    qualifiedName = `${entityName}."${dbName}"`;
   }
 
   if (value.type === 'lessThanOrEqual') {
@@ -694,11 +708,12 @@ if (value instanceof FindOperator) {
               alias = `${alias}_${seg}`;
             }
 
-            query.andWhere(`DATE(${alias}.${column}) ${operator} :${rangeParamKey}`, {
+            query.andWhere(`DATE(${alias}."${column}") ${operator} :${rangeParamKey}`, {
               [rangeParamKey]: value,
             });
           } else {
-            query.andWhere(`DATE(${entityName}.${baseKey}) ${operator} :${rangeParamKey}`, {
+            const dbName = resolveOwnColumnName(baseKey) || baseKey;
+            query.andWhere(`DATE(${entityName}."${dbName}") ${operator} :${rangeParamKey}`, {
               [rangeParamKey]: value,
             });
           }
@@ -715,12 +730,13 @@ if (value instanceof FindOperator) {
             alias = `${alias}_${seg}`; // "audit_branch_city"
           }
 
-          query.andWhere(`${alias}.${column}::text = :${paramKey}`, {
+          query.andWhere(`${alias}."${column}"::text = :${paramKey}`, {
             [paramKey]: value,
           });
         } else {
           // simple field on root entity
-          query.andWhere(`${entityName}.${flatKey}::text = :${paramKey}`, {
+          const dbName = resolveOwnColumnName(flatKey) || flatKey;
+          query.andWhere(`${entityName}."${dbName}"::text = :${paramKey}`, {
             [paramKey]: value,
           });
         }
