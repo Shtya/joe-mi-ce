@@ -173,14 +173,14 @@ export class ProjectService extends BaseService<Project> {
     // 4. Create Shifts (Morning: 09:00-17:00, Night: 17:00-01:00)
     const shift1 = this.shiftRepo.create({
       name: 'Shift Morning',
-      startTime: '09:00',
-      endTime: '17:00',
+      startTime: '13:00',
+      endTime: '16:00',
       project: project,
     });
 
     const shift2 = this.shiftRepo.create({
       name: 'Shift Night',
-      startTime: '17:00',
+      startTime: '21:00',
       endTime: '01:00',
       project: project,
     });

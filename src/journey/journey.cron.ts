@@ -9,7 +9,7 @@ export class JourneyCron {
 
   constructor(private readonly journeyService: JourneyService) {}
 
-  @Cron('0 3 * * *') // كل منتصف الليل
+  @Cron('0 4 * * *',{ timeZone: 'Asia/Riyadh' }) // كل منتصف الليل
   async handleDailyJourneyCreation() {
     this.logger.log('🚀 Starting creation of planned journeys for tomorrow...');
 
@@ -34,7 +34,7 @@ export class JourneyCron {
   }
 
   // Run every 2 hours to fix any gaps
-@Cron('0 6 * * *')
+@Cron('0 6 * * *',{ timeZone: 'Asia/Riyadh' })
   async handleJourneyRecovery() {
     this.logger.log('🛠️ Starting journey recovery check...');
     try {
