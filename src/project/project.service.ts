@@ -4,7 +4,7 @@ import { BaseService } from 'common/base.service';
 import { UpdateProjectDto } from 'dto/project.dto';
 import { Project } from 'entities/project.entity';
 import { User } from 'entities/user.entity';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { UUID } from 'crypto';
 import { ERole } from 'enums/Role.enum';
 import { plainToInstance } from 'class-transformer';
@@ -192,7 +192,7 @@ export class ProjectService extends BaseService<Project> {
       where: {
         project_id: projectId,
         role: {
-          name: In([ERole.PROMOTER, ERole.SUPERVISOR]) 
+          name: Not(In([ERole.SUPER_ADMIN, ERole.PROJECT_ADMIN]))
           // Assuming ERole has these values. If not, string literals 'promoter', 'supervisor'
         }
       },
