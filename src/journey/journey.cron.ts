@@ -9,7 +9,7 @@ export class JourneyCron {
 
   constructor(private readonly journeyService: JourneyService) {}
 
-  @Cron('0 0 * * *') // كل منتصف الليل
+  @Cron('0 3 * * *') // كل منتصف الليل
   async handleDailyJourneyCreation() {
     this.logger.log('🚀 Starting creation of planned journeys for tomorrow...');
 

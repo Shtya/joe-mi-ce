@@ -195,4 +195,13 @@ async findById(
   return this.projectService.findByProjectId(projectId, req.user);
 }
 
+  @Post(':id/reset-plans')
+  @Permissions(EPermission.PROJECT_UPDATE) // Or a specific permission if exists
+  async resetPlans(@Param('id') id: string, @Req() req: any) {
+     // Optional: Check if user is super admin or project owner
+     if (req.user.role?.name !== 'super_admin' && req.user.project_id !== id) {
+        // throw new ForbiddenException('Only super admin or project owner can reset plans');
+     }
+    return this.projectService.resetProjectPlans(id);
+  }
 }

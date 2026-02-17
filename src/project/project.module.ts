@@ -11,8 +11,10 @@ import { UsersService } from 'src/users/users.service';
 
 import { Chain } from 'entities/locations/chain.entity';
 
+import { Journey, JourneyPlan } from 'entities/all_plans.entity';
+
 @Module({
-  imports: [TypeOrmModule.forFeature([Project, Branch, User , Shift, Chain])],
+  imports: [TypeOrmModule.forFeature([Project, Branch, User , Shift, Chain, JourneyPlan, Journey])],
   controllers: [ProjectController],
   providers: [ProjectService,UsersService],
   exports: [ProjectService],
