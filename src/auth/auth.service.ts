@@ -425,9 +425,9 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User, file?: Expres
 
     if (!user) throw new NotFoundException('User not found');
 
-    if (user.project?.id !== requester.project?.id) {
-      throw new ForbiddenException('You can only update users in your own project');
-    }
+    // if (user.project?.id !== requester.project?.id) {
+    //   throw new ForbiddenException('You can only update users in your own project');
+    // }
 
     const role = await this.roleRepository.findOneBy({ id: roleId as any });
     if (!role) throw new NotFoundException('Role not found');
