@@ -34,7 +34,7 @@ export class JourneyCron {
   }
 
   // Run every 2 hours to fix any gaps
-@Cron('0 5 * * *')
+@Cron('0 6 * * *')
   async handleJourneyRecovery() {
     this.logger.log('🛠️ Starting journey recovery check...');
     try {

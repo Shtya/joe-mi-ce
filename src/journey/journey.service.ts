@@ -859,9 +859,9 @@ if (typeof value === 'string') {
              date: targetDate,
              branch: { id: plan.branch.id },
              status: Not(In([
-              'unplanned_absent', 'unplanned-absent',
-              'unplanned_present', 'unplanned-present',
-              'unplanned_closed', 'unplanned-closed',
+              JourneyStatus.UNPLANNED_ABSENT,
+              JourneyStatus.UNPLANNED_PRESENT,
+              JourneyStatus.UNPLANNED_CLOSED,
             ])),
            },
            // createJourneysForTomorrow checks for Unplanned status exclusion, let's match that to be safe

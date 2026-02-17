@@ -358,16 +358,16 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User, file?: Expres
 
 
   // ✅ Project ownership check (same logic as delete)
-  if (!isSuperAdmin) {
-      const requesterProjectId =
-    await this.userService.resolveProjectIdFromUser(requester.id);
+  // if (!isSuperAdmin) {
+  //     const requesterProjectId =
+  //   await this.userService.resolveProjectIdFromUser(requester.id);
 
-    if (user.project_id && user.project_id !== requesterProjectId) {
-      throw new ForbiddenException(
-        'You can only update users in your own project',
-      );
-    }
-  }
+  //   if (user.project_id && user.project_id !== requesterProjectId) {
+  //     throw new ForbiddenException(
+  //       'You can only update users in your own project',
+  //     );
+  //   }
+  // }
 
   // ✅ Optimized mobile check
   if (
