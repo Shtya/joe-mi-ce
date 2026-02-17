@@ -37,6 +37,8 @@ import { StaticPagesModule } from './static-pages/static-pages.module';
 import { ContactUs } from 'entities/contact-us.entity';
 import { ContactUsModule } from './contact-us/contact-us.module';
 import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module';
+import { AppVersionModule } from './app-version/app-version.module';
+
  @Module({
   imports: [
     ConfigModule.forRoot(),
@@ -101,6 +103,7 @@ import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module'
     StaticPagesModule,
     ContactUsModule,
     DocumentbuilderModule,
+    AppVersionModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
