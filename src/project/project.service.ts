@@ -12,8 +12,8 @@ import { Shift } from 'entities/employee/shift.entity';
 import { UsersService } from 'src/users/users.service';
 
 import { Chain } from 'entities/locations/chain.entity';
-import { Journey, JourneyPlan } from 'entities/all_plans.entity';
 import { Branch } from 'entities/branch.entity';
+import { Journey, JourneyPlan, JourneyType } from 'entities/all_plans.entity';
 
 @Injectable()
 export class ProjectService extends BaseService<Project> {
@@ -148,7 +148,18 @@ export class ProjectService extends BaseService<Project> {
     const project = await this.projectRepo.findOne({ where: { id: projectId } });
     if (!project) throw new NotFoundException('Project not found');
 
-    // 2. Find existing plans
+    // 2. Delete all journeys created for 'today'
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    
+    await this.journeyRepo.delete({
+      projectId: projectId,
+      date: todayStr,
+    });
+
+    console.log(`Deleted all journeys for project ${projectId} on date ${todayStr}`);
+
+    // 3. Find existing plans
     const existingPlans = await this.journeyPlanRepo.find({
       where: { projectId: projectId },
       relations: ['journeys'], // Load journeys to unlink them
@@ -212,15 +223,18 @@ export class ProjectService extends BaseService<Project> {
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
     // Fetch historical user-branch associations from yesterday's journeys
+    // We only care about PLANNED journeys to replicate the schedule. Unplanned visits should not become permanent plans.
     const historicalAssociations = await this.journeyRepo.createQueryBuilder('journey')
+      .leftJoin('journey.branch', 'branch')
       .select('journey.userId', 'userId')
-      .addSelect('journey.branchId', 'branchId')
+      .addSelect('branch.id', 'branchId')
       .where('journey.projectId = :projectId', { projectId })
       .andWhere('journey.date = :yesterdayStr', { yesterdayStr })
+      .andWhere('journey.type = :type', { type: JourneyType.PLANNED })
       .distinct(true)
       .getRawMany();
 
-    console.log(`Resetting plans for project ${projectId}. Found ${users.length} users, ${branches.length} branches, and ${historicalAssociations.length} associations from yesterday (${yesterdayStr}).`);
+    console.log(`Resetting plans for project ${projectId}. Found ${users.length} users, ${branches.length} branches, and ${historicalAssociations.length} PLANNED associations from yesterday (${yesterdayStr}).`);
 
     // 6. Create New Plans
     const newPlans: JourneyPlan[] = [];
