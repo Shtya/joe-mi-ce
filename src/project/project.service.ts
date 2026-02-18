@@ -13,7 +13,7 @@ import { UsersService } from 'src/users/users.service';
 
 import { Chain } from 'entities/locations/chain.entity';
 import { Branch } from 'entities/branch.entity';
-import { Journey, JourneyPlan, JourneyType } from 'entities/all_plans.entity';
+import { Journey, JourneyPlan, JourneyType, JourneyStatus } from 'entities/all_plans.entity';
 
 @Injectable()
 export class ProjectService extends BaseService<Project> {
@@ -238,7 +238,8 @@ export class ProjectService extends BaseService<Project> {
 
     // 6. Create New Plans
     const newPlans: JourneyPlan[] = [];
-    const days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    // Use LOWERCASE to match Cron job expectations
+    const days = ['saturday', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 
     for (const user of users) {
       const branchIds = new Set<string>();
@@ -297,11 +298,37 @@ export class ProjectService extends BaseService<Project> {
 
     await this.journeyPlanRepo.save(newPlans);
 
+    // 7. Generate Journeys for Today (Immediate Effect)
+    const todayDayName = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    const todayJourneys: Journey[] = [];
+
+    for (const plan of newPlans) {
+      if (plan.days.includes(todayDayName)) {
+        todayJourneys.push(this.journeyRepo.create({
+          user: plan.user,
+          branch: plan.branch,
+          shift: plan.shift,
+          projectId: projectId,
+          date: todayStr, // Reusing todayStr calculated earlier
+          type: JourneyType.PLANNED,
+          status: JourneyStatus.ABSENT, // Default status
+          journeyPlan: plan,
+          createdBy: project.owner || plan.user,
+        }));
+      }
+    }
+
+    if (todayJourneys.length > 0) {
+      await this.journeyRepo.save(todayJourneys);
+      console.log(`Generated ${todayJourneys.length} journeys for today (${todayStr})`);
+    }
+
     return {
       message: 'Project plans reset successfully',
       deletedPlans: existingPlans.length,
       createdShifts: 2,
-      createdPlans: newPlans.length
+      createdPlans: newPlans.length,
+      createdJourneysToday: todayJourneys.length
     };
   }
 
