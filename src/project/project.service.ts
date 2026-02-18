@@ -13,6 +13,7 @@ import { UsersService } from 'src/users/users.service';
 
 import { Chain } from 'entities/locations/chain.entity';
 import { Journey, JourneyPlan } from 'entities/all_plans.entity';
+import { Branch } from 'entities/branch.entity';
 
 @Injectable()
 export class ProjectService extends BaseService<Project> {
@@ -27,6 +28,8 @@ export class ProjectService extends BaseService<Project> {
     public journeyPlanRepo: Repository<JourneyPlan>,
     @InjectRepository(Journey)
     public journeyRepo: Repository<Journey>,
+    @InjectRepository(Branch)
+    public branchRepo: Repository<Branch>,
     private userService: UsersService
     
   ) {
@@ -187,50 +190,89 @@ export class ProjectService extends BaseService<Project> {
 
     const [savedShift1, savedShift2] = await this.shiftRepo.save([shift1, shift2]);
 
-    // 5. Fetch Promoters & Supervisors
+    // 5. Fetch branches, users, and historical associations
+    const branches = await this.branchRepo.find({
+      where: { project: { id: projectId } as any },
+      relations: ['supervisor', 'supervisors'],
+    });
+
     const users = await this.userRepo.find({
       where: {
         project_id: projectId,
         role: {
           name: Not(In([ERole.SUPER_ADMIN, ERole.PROJECT_ADMIN]))
-          // Assuming ERole has these values. If not, string literals 'promoter', 'supervisor'
         }
       },
-      relations: ['branch'] // We need branch to create a plan? 
-      // JourneyPlan needs: user, branch, shift, projectId, days
-      // Issue: User might not have a branch assigned directly or might find it via other means. 
-      // User entity has `branch` relation. Let's use that.
+      relations: ['branch']
     });
+
+    // Fetch historical user-branch associations from past journeys
+    const historicalAssociations = await this.journeyRepo.createQueryBuilder('journey')
+      .select('journey.userId', 'userId')
+      .addSelect('journey.branchId', 'branchId')
+      .where('journey.projectId = :projectId', { projectId })
+      .distinct(true)
+      .getRawMany();
+
+    console.log(`Resetting plans for project ${projectId}. Found ${users.length} users, ${branches.length} branches, and ${historicalAssociations.length} historical associations.`);
 
     // 6. Create New Plans
     const newPlans: JourneyPlan[] = [];
     const days = ['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
     for (const user of users) {
-      if (!user.branch) {
-        console.warn(`User ${user.id} (${user.username}) has no branch assigned. Skipping plan creation.`);
+      const branchIds = new Set<string>();
+      
+      // Case 1: Direct branch assignment
+      if (user.branch) {
+        branchIds.add(user.branch.id);
+      }
+
+      // Case 2: User is a supervisor for one or more branches
+      const supervised = branches.filter(b => 
+        b.supervisor?.id === user.id || 
+        b.supervisors?.some(s => s.id === user.id)
+      );
+      supervised.forEach(b => branchIds.add(b.id));
+
+      // Case 3: Historical associations (based on past journeys)
+      const historical = historicalAssociations
+        .filter(h => h.userId === user.id || h.journey_userId === user.id)
+        .map(h => h.branchId || h.journey_branchId);
+      
+      historical.forEach(bid => {
+        if (bid) branchIds.add(bid);
+      });
+
+      if (branchIds.size === 0) {
+        console.warn(`User ${user.id} (${user.username}) skipped: No associated branch found.`);
         continue;
       }
 
-      // Plan for Shift 1
-      newPlans.push(this.journeyPlanRepo.create({
-        user: user,
-        branch: user.branch,
-        shift: savedShift1,
-        projectId: projectId,
-        days: days,
-        createdBy: project.owner || user, // Fallback
-      }));
+      for (const branchId of branchIds) {
+        const branch = branches.find(b => b.id === branchId);
+        if (!branch) continue;
 
-      // Plan for Shift 2
-      newPlans.push(this.journeyPlanRepo.create({
-        user: user,
-        branch: user.branch,
-        shift: savedShift2,
-        projectId: projectId,
-        days: days,
-        createdBy: project.owner || user,
-      }));
+        // Plan for Shift 1
+        newPlans.push(this.journeyPlanRepo.create({
+          user: user,
+          branch: branch,
+          shift: savedShift1,
+          projectId: projectId,
+          days: days,
+          createdBy: project.owner || user,
+        }));
+
+        // Plan for Shift 2
+        newPlans.push(this.journeyPlanRepo.create({
+          user: user,
+          branch: branch,
+          shift: savedShift2,
+          projectId: projectId,
+          days: days,
+          createdBy: project.owner || user,
+        }));
+      }
     }
 
     await this.journeyPlanRepo.save(newPlans);
