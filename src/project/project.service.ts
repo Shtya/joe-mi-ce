@@ -206,15 +206,21 @@ export class ProjectService extends BaseService<Project> {
       relations: ['branch']
     });
 
-    // Fetch historical user-branch associations from past journeys
+    // Calculate yesterday's date
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+    // Fetch historical user-branch associations from yesterday's journeys
     const historicalAssociations = await this.journeyRepo.createQueryBuilder('journey')
       .select('journey.userId', 'userId')
       .addSelect('journey.branchId', 'branchId')
       .where('journey.projectId = :projectId', { projectId })
+      .andWhere('journey.date = :yesterdayStr', { yesterdayStr })
       .distinct(true)
       .getRawMany();
 
-    console.log(`Resetting plans for project ${projectId}. Found ${users.length} users, ${branches.length} branches, and ${historicalAssociations.length} historical associations.`);
+    console.log(`Resetting plans for project ${projectId}. Found ${users.length} users, ${branches.length} branches, and ${historicalAssociations.length} associations from yesterday (${yesterdayStr}).`);
 
     // 6. Create New Plans
     const newPlans: JourneyPlan[] = [];
