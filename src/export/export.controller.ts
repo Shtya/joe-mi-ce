@@ -43,7 +43,7 @@ export class ExportController {
   
     // Filter out export-related parameters and parameters that conflict with path
     const exportParams = [
-      'page', 'perPage', 'exportLimit', 'simpleView', 'fileName'
+      'page', 'perPage', 'exportLimit', 'simpleView', 'fileName', 'module'
     ];
   
     // Create final params object

@@ -1078,4 +1078,19 @@ if (typeof value === 'string') {
 
     return results;
   }
+  async removeAllPlansByUser(userId: string) {
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+
+    const plans = await this.journeyPlanRepo.find({
+      where: { user: { id: userId } },
+    });
+
+    if (!plans.length) {
+      throw new NotFoundException(`No journey plans found for user: ${userId}`);
+    }
+
+    return this.journeyPlanRepo.delete({ user: { id: userId } });
+  }
 }

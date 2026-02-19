@@ -90,6 +90,12 @@ export class BranchController {
     return CRUD.findAll(this.branchService.branchRepo, 'branch', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['supervisor', 'supervisors', 'team'], ['name'], { id: branchId , ...query.filters });
   }
 
+  @Get('chain/:identifier')
+  @Permissions(EPermission.BRANCH_READ)
+  async getBranchesByChain(@Param('identifier') identifier: string) {
+    return this.branchService.findByChain(identifier);
+  }
+
   @Get(':id')
   @Permissions(EPermission.BRANCH_READ)
   findOne(@Param('id') id: string) {

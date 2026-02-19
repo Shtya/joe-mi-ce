@@ -570,6 +570,12 @@ async getAllPlansWithPagination(
     return this.journeyService.journeyPlanRepo.delete(id);
   }
 
+  @Delete('plans/user/:userId')
+  @Permissions(EPermission.JOURNEY_DELETE)
+  async removeAllPlansByUser(@Param('userId') userId: string) {
+    return this.journeyService.removeAllPlansByUser(userId);
+  }
+
   // ===== Unplanned Journeys =====
   @Post('unplanned')
   @Permissions(EPermission.JOURNEY_CREATE)

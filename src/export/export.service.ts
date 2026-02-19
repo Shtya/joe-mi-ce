@@ -420,17 +420,20 @@ export class ExportService {
       };
 
         // Special handling for Journey and Unplanned visits
-      if (mainEntityLower.includes('journey') || mainEntityLower.includes('unplanned')) {
+      if (mainEntityLower.includes('journey') || mainEntityLower.includes('unplanned') || mainEntityLower.includes('journeyplan')) {
         // Calculate Status Code: 0=Absent/Unplanned Absent, 1=Present/Unplanned Present, 2=Closed/Unplanned Closed
         let statusCode = 0;
-        const statusVal = item.status || item.journeyStatus || (item.attendanceStatusText ? (item.attendanceStatusText.en || item.attendanceStatusText) : undefined);
+        
+        // Try to find status in various fields
+        const statusVal = item.status || item.journeyStatus || item.attendanceStatusText || 
+                         (item.attendanceStatusText && (item.attendanceStatusText.en || item.attendanceStatusText));
         
         if (statusVal) {
           const lowerStatus = String(statusVal).toLowerCase();
           if (lowerStatus.includes('closed')) {
             statusCode = 1; 
           } else if (lowerStatus.includes('present')) {
-            statusCode = 1;
+             statusCode = 1;
           }
           else{
             statusCode = 0;
@@ -440,13 +443,22 @@ export class ExportService {
         // Ensure Status Code is added to the flattened object with a prominent key
         flattened['Status Code'] = statusCode;
         
-        const checkin = item.checkin;
-        const shift = item.shift;
+        // Normalize Check-in/out data (handle both flat and nested structures)
+        const checkInTimeStr = item.checkInTime || item.checkin?.checkInTime;
+        const checkOutTimeStr = item.checkOutTime || item.checkin?.checkOutTime;
+        const checkInDoc = item.checkInDocument || item.checkin?.checkInDocument;
+        const checkOutDoc = item.checkOutDocument || item.checkin?.checkOutDocument;
+        
+        // Handle Shift data for late calculation
+        let shiftStartTimeStr = item.shiftStartTime; // From optimized plan (ISO or similar)
+        if (!shiftStartTimeStr && item.shift?.startTime) {
+             shiftStartTimeStr = item.shift.startTime; // From nested shift (HH:mm:ss)
+        }
         
         // Calculate Duration
-        if (checkin?.checkInTime && checkin?.checkOutTime) {
-          const start = new Date(checkin.checkInTime);
-          const end = new Date(checkin.checkOutTime);
+        if (checkInTimeStr && checkOutTimeStr) {
+          const start = new Date(checkInTimeStr);
+          const end = new Date(checkOutTimeStr);
           const diffMs = end.getTime() - start.getTime();
           const diffHrs = Math.floor(diffMs / 3600000);
           const diffMins = Math.floor((diffMs % 3600000) / 60000);
@@ -456,13 +468,21 @@ export class ExportService {
         }
         
         // Calculate Late Time
-        if (checkin?.checkInTime && shift?.startTime) {
-          const checkInDate = new Date(checkin.checkInTime);
-          const [sHrs, sMins] = shift.startTime.split(':').map(Number);
-          const shiftStartDate = new Date(checkInDate);
-          shiftStartDate.setHours(sHrs, sMins, 0, 0);
+        if (checkInTimeStr && shiftStartTimeStr) {
+          const checkInDate = new Date(checkInTimeStr);
+          let shiftStartDate: Date;
+
+          // If shiftStartTimeStr is full ISO/Date string
+          if (shiftStartTimeStr.includes('T') || shiftStartTimeStr.includes('-')) {
+             shiftStartDate = new Date(shiftStartTimeStr);
+          } else {
+             // Assume HH:mm:ss and use checkInDate's date part
+             const [sHrs, sMins] = shiftStartTimeStr.split(':').map(Number);
+             shiftStartDate = new Date(checkInDate);
+             shiftStartDate.setHours(sHrs, sMins, 0, 0);
+          }
           
-          if (checkInDate > shiftStartDate) {
+          if (!isNaN(checkInDate.getTime()) && !isNaN(shiftStartDate.getTime()) && checkInDate > shiftStartDate) {
             const lateMs = checkInDate.getTime() - shiftStartDate.getTime();
             const lateMins = Math.floor(lateMs / 60000);
             flattened['Late Time'] = `${lateMins} mins`;
@@ -474,12 +494,14 @@ export class ExportService {
         }
         
         // Add Check in/out times and images (Split into Date and Time)
-        splitDateTime(checkin?.checkInTime, 'Check in date', 'Check in time');
-        splitDateTime(checkin?.checkOutTime, 'Check out date', 'Check out time');
+        splitDateTime(checkInTimeStr, 'Check in date', 'Check in time');
+        splitDateTime(checkOutTimeStr, 'Check out date', 'Check out time');
 
         // Remove the original combined datetime columns if they exist to avoid duplication
         delete flattened['checkin checkInTime'];
         delete flattened['checkin checkOutTime'];
+        delete flattened['checkInTime'];
+        delete flattened['checkOutTime'];
         
         // Image URL formatting
         const formatImageUrl = (path: string) => {
@@ -488,10 +510,21 @@ export class ExportService {
           return `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
         };
         
-        flattened['Check in image'] = formatImageUrl(checkin?.checkInDocument);
-        flattened['Check out image'] = formatImageUrl(checkin?.checkOutDocument);
-        flattened['Check in document'] = formatImageUrl(checkin?.checkInDocument);
-        flattened['Check out document'] = formatImageUrl(checkin?.checkOutDocument);
+        flattened['Check in image'] = formatImageUrl(checkInDoc);
+        flattened['Check out image'] = formatImageUrl(checkOutDoc);
+        flattened['Check in document'] = formatImageUrl(checkInDoc);
+        flattened['Check out document'] = formatImageUrl(checkOutDoc);
+
+        // Normalize Branch Name (Handle flat 'branchName' vs nested 'branch name')
+        if (flattened['branchName']) {
+            flattened['branch name'] = flattened['branchName'];
+            delete flattened['branchName'];
+        }
+        // Ensure explicit Branch key exists for backward compatibility if needed, 
+        // but prefer 'branch name' for the ordered list
+        if (!flattened['Branch'] && flattened['branch name']) {
+            flattened['Branch'] = flattened['branch name'];
+        }
 
         // Define preferred column order based on user request
         const preferredOrder = [
@@ -501,6 +534,7 @@ export class ExportService {
           'chain name',
           'date',
           'user name',
+          'promoterName', // Special case for optimized plans
           'name',
           'Check in date',
           'Check in time',
@@ -576,16 +610,20 @@ export class ExportService {
             delete flattened[key];
           }
           
-          // Remove lowercase versions if capitalized versions exist
-          if (keyLower === 'branch' && flattened['Branch']) delete flattened[key];
-          if (keyLower === 'chain' && flattened['Chain']) delete flattened[key];
+          // Remove lowercase versions if capitalized versions exist, BUT don't delete the capitalized version itself
+          if (keyLower === 'branch' && flattened['Branch'] && key !== 'Branch') delete flattened[key];
+          if (keyLower === 'chain' && flattened['Chain'] && key !== 'Chain') delete flattened[key];
           if (keyLower === 'user active' || keyLower === 'user is active') delete flattened[key];
         });
       }
       
       // Also ensure ANY field that is a date string is formatted correctly
+      // AND ensure ANY field that looks like an image/file path has the full URL
       Object.keys(flattened).forEach(key => {
         const val = flattened[key];
+        const keyLower = key.toLowerCase();
+
+        // Date formatting
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
           const d = new Date(val);
           if (!isNaN(d.getTime())) {
@@ -597,6 +635,25 @@ export class ExportService {
             const seconds = String(d.getSeconds()).padStart(2, '0');
             flattened[key] = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
           }
+        }
+
+        // Image/File URL formatting
+        // Check if key implies an image or file, OR if the value looks like a path
+        const isImageField = keyLower.includes('image') || keyLower.includes('photo') || 
+                             keyLower.includes('logo') || keyLower.includes('icon') ||
+                             keyLower.includes('document') || keyLower.includes('file') ||
+                             keyLower.includes('avatar') || keyLower.includes('url'); // Careful with generic 'url'
+
+        if (typeof val === 'string' && (isImageField || val.startsWith('/uploads') || val.startsWith('/public'))) {
+           if (val.startsWith('/') && !val.startsWith('http')) {
+               flattened[key] = `${baseUrl}${val}`;
+           } else if (!val.startsWith('http') && (val.includes('/') && val.includes('.'))) {
+               // Likely a relative path like 'uploads/file.jpg' without leading slash
+               // But be careful not to prefix things that aren't paths
+               if (val.match(/\.(jpg|jpeg|png|gif|pdf|doc|docx|xls|xlsx)$/i)) {
+                   flattened[key] = `${baseUrl}/${val}`;
+               }
+           }
         }
       });
 

@@ -507,6 +507,29 @@ export class BranchService {
     return branch;
   }
 
+  async findByChain(identifier: string): Promise<Branch[]> {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(identifier);
+
+    const query = this.branchRepo.createQueryBuilder('branch')
+      .leftJoinAndSelect('branch.chain', 'chain')
+      .leftJoinAndSelect('branch.city', 'city')
+      .leftJoinAndSelect('branch.project', 'project');
+
+    if (isUuid) {
+      query.where('chain.id = :identifier', { identifier });
+    } else {
+      query.where('chain.name = :identifier', { identifier });
+    }
+
+    const branches = await query.getMany();
+
+    if (!branches || branches.length === 0) {
+      throw new NotFoundException(`No branches found for chain: ${identifier}`);
+    }
+
+    return branches;
+  }
+
 async remove(id: string, user: User) {
   return this.branchRepo.manager.transaction(async (transactionalEntityManager) => {
     const branch = await transactionalEntityManager.findOne(Branch, {
