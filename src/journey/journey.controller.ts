@@ -126,12 +126,13 @@ async getPlans(
   delete filters.date;
 
   if (userId) {
-    filters.user = { id: userId };
+    filters.user = { ...filters.user, id: userId };
   }
 
-
-
-
+  if (filters.role) {
+    filters.user = { ...filters.user, role: filters.role };
+    delete filters.role;
+  }
 
   return CRUD.findAllRelation(
     this.journeyService.journeyPlanRepo,
@@ -141,7 +142,7 @@ async getPlans(
     limit,
     '',
     'DESC',
-    ['user', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
+    ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
     undefined,
     filters,
   );
@@ -183,11 +184,16 @@ async getOptimizedPlans(
   delete filters.status;
 
   if (userId) {
-    filters.user = { id: userId };
+    filters.user = { ...filters.user, id: userId };
   }
 
   if (branchId) {
-    filters.branch = { id: branchId };
+    filters.branch = { ...filters.branch, id: branchId };
+  }
+
+  if (filters.role) {
+    filters.user = { ...filters.user, role: filters.role };
+    delete filters.role;
   }
 
   const plans = await CRUD.findAllRelation(
@@ -198,7 +204,7 @@ async getOptimizedPlans(
     limit,
     '',
     'DESC',
-    ['user', 'branch', 'branch.city', 'branch.city.region', 'shift', 'journeys', 'journeys.checkin'],
+    ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift', 'journeys', 'journeys.checkin'],
     undefined,
     filters,
   );
@@ -423,9 +429,14 @@ async getAllPlansWithPagination(
   const filters: any = {
     projectId,
     ...query.filters,
-    ...(user.role.name !== ERole.SUPERVISOR && user.role.name !== ERole.PROMOTER && user.branch ? { branch: { id: user.branch.id } } : {}),
-    ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
+    ...(user.role.name !== ERole.SUPERVISOR && user.role.name !== ERole.PROMOTER && user.branch ? { branch: { ...query.filters?.branch, id: user.branch.id } } : {}),
+    ...(user.role.name === ERole.PROMOTER ? { user: { ...query.filters?.user, id: user.id } } : {}),
   };
+
+  if (filters.role) {
+    filters.user = { ...filters.user, role: filters.role };
+    delete filters.role;
+  }
 
   delete filters.fromDate;
   delete filters.toDate;
@@ -623,9 +634,15 @@ async getAllPlansWithPagination(
     delete filters.toDate;
     delete filters.date;
 
-    if (userId) filters.user = { id: userId };
-    if (branchId) filters.branch = { id: branchId };
-    if (shiftId) filters.shift = { id: shiftId };
+    if (userId) filters.user = { ...filters.user, id: userId };
+    if (branchId) filters.branch = { ...filters.branch, id: branchId };
+    if (shiftId) filters.shift = { ...filters.shift, id: shiftId };
+    
+    if (filters.role) {
+      filters.user = { ...filters.user, role: filters.role };
+      delete filters.role;
+    }
+
     if (type) filters.type = type;
     const rawStatus = status || filters.status;
     if (rawStatus) {
@@ -652,7 +669,7 @@ async getAllPlansWithPagination(
     // We pass extraWhere ONLY if we need the default behavior
     const extraWhere = !hasDateFilters
       ? (qb) => {
-          qb.andWhere('journey.date <= :today', { today: new Date() });
+           qb.andWhere('journey.date <= :today', { today: new Date() });
         }
       : undefined;
 
@@ -664,19 +681,9 @@ async getAllPlansWithPagination(
       limit,
       'date',
       'DESC',
-      ['user', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin', 'branch.chain'],
+      ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin', 'branch.chain'],
       undefined,
-      {
-        ...filters,
-        ...(userId ? { user: { id: userId } } : {}),
-        ...(branchId ? { branch: { id: branchId } } : {}),
-        ...(shiftId ? { shift: { id: shiftId } } : {}),
-        ...(type ? { type } : {}),
-        ...(status ? { status } : {}),
-        // Add mapped date filters
-        ...(effectiveFromDate ? { date_from: effectiveFromDate } : {}),
-        ...(effectiveToDate ? { date_to: effectiveToDate } : {}),
-      },
+      filters,
       extraWhere
     );
 
