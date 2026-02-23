@@ -103,8 +103,11 @@ export class VacationDateWithStatusDto {
   @Expose() id: string;
   @Expose() date: string;
   @Expose() status: string;
+  @Expose() Status: string;
   @Expose() city?: string;
+  @Expose() cityName?: string;
   @Expose() createdAt: Date;
+  @Expose() CreateAt: Date;
   @Expose() updatedAt: Date;
   @Expose() deletedAt: Date | null;
   @Expose() processedBy?: string;
@@ -114,12 +117,16 @@ export class VacationDateWithStatusDto {
 
 
 
+
   constructor(vacationDate: any, parentVacation?: any) {
     this.id = vacationDate.id;
     this.date = vacationDate.date;
     this.status = vacationDate.status || parentVacation?.overall_status;
+    this.Status = this.status;
     this.city = parentVacation?.branch?.city?.name;
+    this.cityName = this.city;
     this.createdAt = vacationDate.created_at || parentVacation?.created_at;
+    this.CreateAt = this.createdAt;
     this.updatedAt = vacationDate.updated_at || parentVacation?.updated_at;
 
     this.deletedAt = vacationDate.deleted_at;
@@ -130,6 +137,7 @@ export class VacationDateWithStatusDto {
     this.processedAt = vacationDate.processed_at;
     this.rejectionReason = vacationDate.rejection_reason;
   }
+
 
 }
 
@@ -174,28 +182,30 @@ export class VacationResponseDto {
 }
 
 export class VacationSummaryResponseDto {
-  id: string;
-  userId: string;
-  userName: string;
-  branchId: string;
-  branchName: string;
-  reason: string;
-  imageUrl?: string;
+  @Expose() id: string;
+  @Expose() userId: string;
+  @Expose() userName: string;
+  @Expose() branchId: string;
+  @Expose() branchName: string;
+  @Expose() reason: string;
+  @Expose() imageUrl?: string;
   @Expose() overallStatus: string;
   @Expose() status: string;
+  @Expose() Status: string;
   @Expose() city: string;
+  @Expose() cityName: string;
   @Expose() totalDates: number;
+  @Expose() approvedDates: number;
+  @Expose() pendingDates: number;
+  @Expose() rejectedDates: number;
+  @Expose() dates: VacationDateWithStatusDto[];
+  @Expose() createdAt: Date;
+  @Expose() CreateAt: Date;
+  @Expose() updatedAt: Date;
+  @Expose() user: any;
+  @Expose() branch: any;
+  @Expose() vacationDates: any[];
 
-
-  approvedDates: number;
-  pendingDates: number;
-  rejectedDates: number;
-  dates: VacationDateWithStatusDto[]; // All dates with their status
-  createdAt: Date;
-  updatedAt: Date;
-  user: any;
-  branch: any;
-  vacationDates: any[];
 
 
   constructor(vacation: any) {
@@ -209,9 +219,13 @@ export class VacationSummaryResponseDto {
     this.imageUrl = vacation.image_url;
     this.overallStatus = vacation.overall_status;
     this.status = vacation.overall_status;
+    this.Status = this.status;
     this.city = vacation.branch?.city?.name;
+    this.cityName = this.city;
     this.createdAt = vacation.created_at;
+    this.CreateAt = this.createdAt;
     this.updatedAt = vacation.updated_at;
+
 
 
     const vacationDates = vacation.vacationDates || [];
