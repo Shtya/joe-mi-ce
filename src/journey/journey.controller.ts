@@ -346,7 +346,7 @@ async getOptimizedPlans(
         days: plan.days,
         date: targetDateStr, // Add the specific date
         isActiveForDate,
-        statusKey: statusKey, // The filter key: 'present', 'absent', 'unplanned_present', etc.
+        statusKey: translatedStatus, // The filter key: 'present', 'absent', 'unplanned_present', etc.
         attendanceStatusText: translatedStatus, // Translated text based on lang parameter
         checkInDocument: journey?.checkin?.checkInDocument,
         checkOutDocument: journey?.checkin?.checkOutDocument,
