@@ -221,7 +221,7 @@ export class VacationService {
     sortBy: string = 'created_at',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
 
-  ): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
+  ): Promise<PaginatedResponseDto<any>> {
     try {
       const skip = (page - 1) * limit;
 
@@ -233,8 +233,7 @@ export class VacationService {
         take: limit,
       });
 
-      const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
-      return new PaginatedResponseDto(data, total, page, limit);
+      return new PaginatedResponseDto(vacations, total, page, limit);
     } catch (error) {
       console.log(error)
       throw new InternalServerErrorException('Failed to fetch vacations');
@@ -399,7 +398,7 @@ export class VacationService {
         .createQueryBuilder('vacationDate')
         .leftJoinAndSelect('vacationDate.vacation', 'vacation')
         .where('vacation.user_id = :userId', { userId })
-        .andWhere('vacation.overall_status = :overall_status', { status: 'approved' })
+        .andWhere('vacation.overall_status = :overall_status', { overall_status: 'approved' })
         .andWhere('vacationDate.date BETWEEN :startDate AND :endDate', {
           startDate: start,
           endDate: end
