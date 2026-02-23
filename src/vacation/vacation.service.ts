@@ -221,7 +221,7 @@ export class VacationService {
     sortBy: string = 'created_at',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
 
-  ): Promise<PaginatedResponseDto<any>> {
+  ): Promise<any> {
     try {
       const skip = (page - 1) * limit;
 
@@ -233,7 +233,13 @@ export class VacationService {
         take: limit,
       });
 
-      return new PaginatedResponseDto(vacations, total, page, limit);
+      const dataDto = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
+      const otherdata = new PaginatedResponseDto(dataDto, total, page, limit);
+      return {
+        otherdata,
+        data: vacations,
+        meta: otherdata.meta
+      };
     } catch (error) {
       console.log(error)
       throw new InternalServerErrorException('Failed to fetch vacations');
@@ -246,7 +252,7 @@ export class VacationService {
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   req: any
-): Promise<PaginatedResponseDto<any>> {
+ ): Promise<any> {
   try {
     const skip = (page - 1) * limit;
 
@@ -338,7 +344,13 @@ export class VacationService {
 
     const [vacations, total] = await query.getManyAndCount();
 
-    return new PaginatedResponseDto(vacations, total, page, limit);
+    const dataDto = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
+    const otherdata = new PaginatedResponseDto(dataDto, total, page, limit);
+    return {
+      otherdata,
+      data: vacations,
+      meta: otherdata.meta
+    };
   } catch (error) {
     console.error(error);
     throw new InternalServerErrorException('Failed to fetch vacations');
