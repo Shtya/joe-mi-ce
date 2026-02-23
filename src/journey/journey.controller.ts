@@ -52,6 +52,12 @@ export class JourneyController {
     res.end(buffer);
   }
 
+  @Patch('admin/fix-night-shift')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async fixNightShiftJourneys(@Body('date') date?: string) {
+    return this.journeyService.fixNightShiftJourneys(date);
+  }
+
   @Patch('plans/:id')
   @Permissions(EPermission.JOURNEY_UPDATE)
   async updatePlan(@Param('id') id: string, @Body() dto:UpdateJourneyPlanDto ) {
@@ -742,11 +748,6 @@ async getTodayJourneysForMe(
     return this.journeyService.getAttendanceHistory(projectId, userId, date, fromDate, toDate);
   }
 
-  @Patch('admin/fix-night-shift')
-  @Permissions(EPermission.JOURNEY_UPDATE)
-  async fixNightShiftJourneys(@Body('date') date?: string) {
-    return this.journeyService.fixNightShiftJourneys(date);
-  }
 
   // ===== Cron test endpoint =====
   @Patch('cron/create-tomorrow')

@@ -506,20 +506,12 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         code: 200,
         message: 'Checked out successfully',
         data: {
-          checkInTime: savedCheckIn.checkInTime ? toLocalISOString(savedCheckIn.checkInTime) : null,
-          checkOutTime: savedCheckIn.checkOutTime ? toLocalISOString(savedCheckIn.checkOutTime) : null,
+          checkOutTime: savedCheckIn.checkOutTime ? dayjs(savedCheckIn.checkOutTime).format('HH:mm') : null,
         },
       };
     }
 
-    return {
-      code: 200,
-      message: 'Checked in successfully',
-      data: {
-        checkInTime: savedCheckIn.checkInTime ? toLocalISOString(savedCheckIn.checkInTime) : null,
-        checkOutTime: savedCheckIn.checkOutTime ? toLocalISOString(savedCheckIn.checkOutTime) : null,
-      },
-    };
+    return savedCheckIn;
   }
 
   async adminCheckInOut(dto: AdminCheckInOutDto, adminUser: User, lang: string = 'en') {
@@ -1199,6 +1191,7 @@ if (typeof value === 'string') {
       // 2. Delete checkin if it exists
       if (journey.checkin) {
         await this.checkInRepo.delete(journey.checkin.id);
+        journey.checkin = null; // Clear from memory to avoid persistence issues
         deletedCheckins++;
       }
 
