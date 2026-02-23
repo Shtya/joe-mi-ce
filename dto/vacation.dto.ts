@@ -174,11 +174,16 @@ export class VacationSummaryResponseDto {
   dates: VacationDateWithStatusDto[]; // All dates with their status
   createdAt: Date;
   updatedAt: Date;
+  user: any;
+  branch: any;
+  vacationDates: any[];
+
 
   constructor(vacation: any) {
     this.id = vacation.id;
     this.userId = vacation.user?.id;
-    this.userName = `${vacation.user?.username}`
+    this.userName = vacation.user?.name || vacation.user?.username;
+
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
     this.reason = vacation.reason;
@@ -197,8 +202,14 @@ export class VacationSummaryResponseDto {
     this.approvedDates = this.dates.filter(date => date.status === 'approved').length;
     this.pendingDates = this.dates.filter(date => date.status === 'pending').length;
     this.rejectedDates = this.dates.filter(date => date.status === 'rejected').length;
+
+    // Duplication for compatibility
+    this.user = vacation.user;
+    this.branch = vacation.branch;
+    this.vacationDates = vacation.vacationDates;
   }
 }
+
 
 export class VacationDateStatusSummaryDto {
   pending: VacationDateWithStatusDto[];

@@ -338,7 +338,7 @@ export class VacationService {
       .take(limit);
 
     const [vacations, total] = await query.getManyAndCount();
-    const data = vacations;
+    const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
     const otherdata = new PaginatedResponseDto(data, total, page, limit);
     return otherdata
   } catch (error) {
