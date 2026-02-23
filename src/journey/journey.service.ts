@@ -959,6 +959,80 @@ if (typeof value === 'string') {
     return { closedCount, totalFound: openJourneys.length, timestamp: now };
   }
 
+  // ===== Recovery: restore check-in/out times from shift for records with documents =====
+  async recoverCheckInTimes() {
+    // Find all check-ins that have a document (proof they happened) but no times
+    const checkIns = await this.checkInRepo.find({
+      where: [
+        { checkInTime: null as any },
+      ],
+      relations: ['journey', 'journey.shift', 'journey.branch'],
+    });
+
+    // Filter only those that have a checkInDocument (real check-ins)
+    const toRecover = checkIns.filter(c => c.checkInDocument && !c.checkInTime);
+
+    let recoveredCount = 0;
+    const errors: string[] = [];
+
+    for (const checkIn of toRecover) {
+      try {
+        const journey = checkIn.journey;
+        const shift = journey?.shift;
+
+        if (!journey?.date || !shift?.startTime) {
+          errors.push(`Skipped check-in ${checkIn.id}: missing journey date or shift times`);
+          continue;
+        }
+
+        const journeyDate = journey.date; // 'YYYY-MM-DD'
+
+        // Build checkInTime = journeyDate + shift.startTime (e.g. "08:00:00")
+        const checkInTime = new Date(`${journeyDate}T${shift.startTime}`);
+
+        // Build checkOutTime = journeyDate + shift.endTime (if not already set)
+        let checkOutTime: Date | null = checkIn.checkOutTime;
+        if (!checkOutTime && shift.endTime) {
+          checkOutTime = new Date(`${journeyDate}T${shift.endTime}`);
+          // Handle overnight shifts
+          if (checkOutTime < checkInTime) {
+            checkOutTime.setDate(checkOutTime.getDate() + 1);
+          }
+        }
+
+        checkIn.checkInTime = checkInTime;
+        checkIn.checkOutTime = checkOutTime;
+
+        // Update journey status to CLOSED if it had a checkout
+        if (checkOutTime) {
+          journey.status = journey.type === JourneyType.PLANNED
+            ? JourneyStatus.CLOSED
+            : JourneyStatus.UNPLANNED_CLOSED;
+        } else {
+          journey.status = journey.type === JourneyType.PLANNED
+            ? JourneyStatus.PRESENT
+            : JourneyStatus.UNPLANNED_PRESENT;
+        }
+
+        await this.journeyRepo.manager.transaction(async (em) => {
+          await em.save(CheckIn, checkIn);
+          await em.save(Journey, journey);
+        });
+
+        recoveredCount++;
+      } catch (err) {
+        errors.push(`Error recovering check-in ${checkIn.id}: ${err.message}`);
+      }
+    }
+
+    return {
+      recovered: recoveredCount,
+      skipped: toRecover.length - recoveredCount,
+      totalChecked: checkIns.length,
+      errors,
+    };
+  }
+
 
   async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
     return this.branchRepo.find({

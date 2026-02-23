@@ -51,7 +51,7 @@ import { AppVersionModule } from './app-version/app-version.module';
       password: process.env.DATABASE_PASSWORD,
       database: process.env.DATABASE_NAME,
       autoLoadEntities: true,
-      synchronize: true,
+      synchronize: process.env.NODE_ENV === 'development',
       cache: true,
         extra: {
     poolSize: 20, // Increase pool size

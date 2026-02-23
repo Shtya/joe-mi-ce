@@ -759,4 +759,10 @@ async getTodayJourneysForMe(
   async manualRecoverJourneys(@Body('date') date?: string) {
     return this.journeyService.recoverJourneys(date);
   }
+
+  @Patch('cron/recover-checkin-times')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async recoverCheckInTimes() {
+    return this.journeyService.recoverCheckInTimes();
+  }
 }
