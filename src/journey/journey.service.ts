@@ -422,9 +422,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       }
 
       if (dto.checkOutTime) {
-        if (!checkIn.checkInTime) {
-          throw new ConflictException('Cannot check out without check in');
-        }
+        // if (!checkIn.checkInTime) {
+        //   throw new ConflictException('Cannot check out without check in');
+        // }
         checkIn.checkOutTime = dto.checkOutTime as any;
         checkIn.checkOutDocument = dto.checkOutDocument;
         checkIn.noteOut = dto.noteOut;
