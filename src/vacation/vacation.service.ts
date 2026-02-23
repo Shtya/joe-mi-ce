@@ -340,7 +340,7 @@ export class VacationService {
     const [vacations, total] = await query.getManyAndCount();
     const data = vacations;
     const otherdata = new PaginatedResponseDto(data, total, page, limit);
-    return {otherdata, data}
+    return otherdata
   } catch (error) {
     console.error(error);
     throw new InternalServerErrorException('Failed to fetch vacations');
