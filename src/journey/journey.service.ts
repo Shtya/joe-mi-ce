@@ -1,7 +1,7 @@
 // src/journey/journey.service.ts
 import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not, ILike } from 'typeorm';
 import * as dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto, AdminCheckInOutDto } from 'dto/journey.dto';
@@ -1175,5 +1175,42 @@ if (typeof value === 'string') {
     }
 
     return this.journeyPlanRepo.delete({ user: { id: userId } });
+  }
+
+  async fixNightShiftJourneys(date?: string) {
+    const targetDate = date || dayjs().format('YYYY-MM-DD');
+    
+    // Find all journeys for this date with shift name containing "night"
+    const journeys = await this.journeyRepo.find({
+      where: {
+        date: targetDate,
+        shift: { name: ILike('%night%') }
+      },
+      relations: ['shift', 'checkin']
+    });
+
+    let fixedCount = 0;
+    let deletedCheckins = 0;
+
+    for (const journey of journeys) {
+      // 1. Update status to ABSENT
+      journey.status = JourneyStatus.ABSENT;
+      
+      // 2. Delete checkin if it exists
+      if (journey.checkin) {
+        await this.checkInRepo.delete(journey.checkin.id);
+        deletedCheckins++;
+      }
+
+      await this.journeyRepo.save(journey);
+      fixedCount++;
+    }
+
+    return {
+      date: targetDate,
+      found: journeys.length,
+      fixed: fixedCount,
+      deletedCheckins
+    };
   }
 }
