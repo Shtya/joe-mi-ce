@@ -99,16 +99,25 @@ export class ApprovedDatesQueryDto {
 // ==================== RESPONSE DTOs ====================
 
 export class VacationDateWithStatusDto {
+  id: string;
   date: string;
   status: 'pending' | 'approved' | 'rejected';
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
   processedBy?: string;
   processedByName?: string;
   processedAt?: Date;
   rejectionReason?: string;
 
+
   constructor(vacationDate: any) {
+    this.id = vacationDate.id;
     this.date = vacationDate.date;
     this.status = vacationDate.status;
+    this.createdAt = vacationDate.created_at;
+    this.updatedAt = vacationDate.updated_at;
+    this.deletedAt = vacationDate.deleted_at;
     this.processedBy = vacationDate.processedBy?.id;
     this.processedByName = vacationDate.processedBy ?
       `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` :
@@ -116,6 +125,7 @@ export class VacationDateWithStatusDto {
     this.processedAt = vacationDate.processed_at;
     this.rejectionReason = vacationDate.rejection_reason;
   }
+
 }
 
 export class VacationResponseDto {
