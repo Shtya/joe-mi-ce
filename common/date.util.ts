@@ -35,8 +35,8 @@ export function toLocalISOString(date: Date | string | null | undefined): string
   const d = new Date(date as any);
   if (isNaN(d.getTime())) return null;
   const local = new Date(d.getTime() + localOffsetMs());
-  // Return plain local datetime — no Z, no +02:00
-  return local.toISOString().slice(0, -1); // e.g. "2026-02-23T19:27:33.127"
+  // Keep Z suffix but value is local time — e.g. "2026-02-23T19:27:33.127Z"
+  return local.toISOString();
 }
 
 /**
