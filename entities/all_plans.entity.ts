@@ -87,10 +87,10 @@ export class CheckIn extends CoreEntity {
   @ManyToOne(() => User, { eager: true })
   user: Relation<User>;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   checkInTime: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   checkOutTime: Date;
 
   @Column({ nullable: true })

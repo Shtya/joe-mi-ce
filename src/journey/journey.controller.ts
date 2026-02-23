@@ -16,7 +16,6 @@ import {  multerOptionsCheckinTmp } from 'common/multer.config';
 import { Raw, In, Brackets } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
-import * as dayjs from 'dayjs';
 @UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
@@ -214,17 +213,24 @@ async getOptimizedPlans(
   let targetDates: string[] = [];
 
   if (fromDateParam && toDateParam) {
-    // Date range filtering — iterate using dayjs to avoid UTC midnight shifting
-    let cur = dayjs(fromDateParam);
-    const end = dayjs(toDateParam);
-    while (!cur.isAfter(end)) {
-      targetDates.push(cur.format('YYYY-MM-DD'));
-      cur = cur.add(1, 'day');
+    // Date range filtering
+    const fromDate = new Date(fromDateParam);
+    const toDate = new Date(toDateParam);
+
+    // Generate all dates in the range
+    const currentDate = new Date(fromDate);
+    while (currentDate <= toDate) {
+      targetDates.push(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
     }
   } else if (dateParam) {
-    targetDates.push(dayjs(dateParam).format('YYYY-MM-DD'));
+    // Single date filtering (backward compatibility)
+    const targetDate = new Date(dateParam);
+    targetDates.push(targetDate.toISOString().split('T')[0]);
   } else {
-    targetDates.push(dayjs().format('YYYY-MM-DD'));
+    // Default to today
+    const today = new Date();
+    targetDates.push(today.toISOString().split('T')[0]);
   }
 
   // Define status keys for filtering (these are the values you'll use in ?status= parameter)
@@ -539,8 +545,8 @@ async getAllPlansWithPagination(
       checkOutDocument: todayJourney?.checkin?.checkOutDocument,
       checkInTime: checkInTime?.toISOString(),
       checkOutTime: checkOutTime?.toISOString(),
-      shiftStartTime: shiftStart.toISOString(),
-      shiftEndTime: shiftEnd.toISOString(),
+      shiftStartTime: checkInTime?.toISOString() ||null,
+      shiftEndTime: checkOutTime?.toISOString(),
       noteIn: todayJourney?.checkin?.noteIn,
       noteOut: todayJourney?.checkin?.noteOut,
       isWithinRadius: todayJourney?.checkin?.isWithinRadius,
