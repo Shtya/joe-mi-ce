@@ -5,25 +5,13 @@
  */
 
 /**
- * Get the server's current UTC offset in milliseconds.
- * This reads automatically from the server's TZ env/system timezone.
- * e.g. if TZ=Africa/Cairo (UTC+2), returns 7200000
+ * UTC+2 offset in milliseconds (Egypt / Arabia Standard Time).
+ * Hardcoded because Node.js reads TZ at startup — dotenv is too late to change it.
  */
-function localOffsetMs(): number {
-  return -new Date().getTimezoneOffset() * 60 * 1000;
-}
+const OFFSET_MS = 2 * 60 * 60 * 1000; // +02:00
 
-/**
- * Get the server's timezone offset as "+HH:MM" or "-HH:MM" string.
- * e.g. UTC+2 → "+02:00"
- */
-function localOffsetStr(): string {
-  const totalMinutes = -new Date().getTimezoneOffset();
-  const sign = totalMinutes >= 0 ? '+' : '-';
-  const abs = Math.abs(totalMinutes);
-  const h = String(Math.floor(abs / 60)).padStart(2, '0');
-  const m = String(abs % 60).padStart(2, '0');
-  return `${sign}${h}:${m}`;
+function localOffsetMs(): number {
+  return OFFSET_MS;
 }
 
 /**
