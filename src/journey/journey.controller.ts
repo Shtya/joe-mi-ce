@@ -546,8 +546,8 @@ async getAllPlansWithPagination(
       checkOutDocument: todayJourney?.checkin?.checkOutDocument,
       checkInTime: toLocalISOString(checkInTime),
       checkOutTime: toLocalISOString(checkOutTime),
-      shiftStartTime:  toLocalISOString(checkInTime),
-      shiftEndTime: toLocalISOString(checkOutTime),
+      shiftStartTime: shiftStart.toISOString(),   // ← shift scheduled start (NOT check-in time)
+      shiftEndTime: shiftEnd.toISOString(),         // ← shift scheduled end (NOT check-out time)
       noteIn: todayJourney?.checkin?.noteIn,
       noteOut: todayJourney?.checkin?.noteOut,
       isWithinRadius: todayJourney?.checkin?.isWithinRadius,
