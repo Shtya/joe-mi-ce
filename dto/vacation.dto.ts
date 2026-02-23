@@ -9,7 +9,8 @@ import {
   ValidateNested,
   IsEmpty
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Expose } from 'class-transformer';
+
 
 // ==================== REQUEST DTOs ====================
 
@@ -99,24 +100,28 @@ export class ApprovedDatesQueryDto {
 // ==================== RESPONSE DTOs ====================
 
 export class VacationDateWithStatusDto {
-  id: string;
-  date: string;
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt: Date;
-  updatedAt: Date;
-  deletedAt: Date | null;
-  processedBy?: string;
-  processedByName?: string;
-  processedAt?: Date;
-  rejectionReason?: string;
+  @Expose() id: string;
+  @Expose() date: string;
+  @Expose() status: string;
+  @Expose() city?: string;
+  @Expose() createdAt: Date;
+  @Expose() updatedAt: Date;
+  @Expose() deletedAt: Date | null;
+  @Expose() processedBy?: string;
+  @Expose() processedByName?: string;
+  @Expose() processedAt?: Date;
+  @Expose() rejectionReason?: string;
 
 
-  constructor(vacationDate: any) {
+
+  constructor(vacationDate: any, parentVacation?: any) {
     this.id = vacationDate.id;
     this.date = vacationDate.date;
-    this.status = vacationDate.status;
-    this.createdAt = vacationDate.created_at;
-    this.updatedAt = vacationDate.updated_at;
+    this.status = vacationDate.status || parentVacation?.overall_status;
+    this.city = parentVacation?.branch?.city?.name;
+    this.createdAt = vacationDate.created_at || parentVacation?.created_at;
+    this.updatedAt = vacationDate.updated_at || parentVacation?.updated_at;
+
     this.deletedAt = vacationDate.deleted_at;
     this.processedBy = vacationDate.processedBy?.id;
     this.processedByName = vacationDate.processedBy ?
@@ -176,8 +181,12 @@ export class VacationSummaryResponseDto {
   branchName: string;
   reason: string;
   imageUrl?: string;
-  overallStatus: string;
-  totalDates: number;
+  @Expose() overallStatus: string;
+  @Expose() status: string;
+  @Expose() city: string;
+  @Expose() totalDates: number;
+
+
   approvedDates: number;
   pendingDates: number;
   rejectedDates: number;
@@ -199,13 +208,17 @@ export class VacationSummaryResponseDto {
     this.reason = vacation.reason;
     this.imageUrl = vacation.image_url;
     this.overallStatus = vacation.overall_status;
+    this.status = vacation.overall_status;
+    this.city = vacation.branch?.city?.name;
     this.createdAt = vacation.created_at;
     this.updatedAt = vacation.updated_at;
+
 
     const vacationDates = vacation.vacationDates || [];
 
     // All dates with their status
-    this.dates = vacationDates.map((date: any) => new VacationDateWithStatusDto(date));
+    this.dates = vacationDates.map((date: any) => new VacationDateWithStatusDto(date, vacation));
+
 
     // Statistics
     this.totalDates = this.dates.length;

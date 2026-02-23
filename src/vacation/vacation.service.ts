@@ -227,7 +227,13 @@ export class VacationService {
 
       const [vacations, total] = await this.vacationRepo.findAndCount({
         where: whereConditions,
-        relations: ['user', 'branch', 'vacationDates'],
+        relations: {
+          user: true,
+          branch: {
+            city: true
+          },
+          vacationDates: true
+        },
         order: { [sortBy]: sortOrder },
         skip,
         take: limit,
@@ -273,6 +279,7 @@ export class VacationService {
       .leftJoinAndSelect('vacation.user', 'user')
       .leftJoinAndSelect('vacation.branch', 'branch')
       .leftJoinAndSelect('branch.project', 'project')
+      .leftJoinAndSelect('branch.city', 'city')
       .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
       .where('project.id = :projectId', { projectId });
     // 🔹 Apply dynamic filters
