@@ -221,7 +221,7 @@ export class VacationService {
     sortBy: string = 'created_at',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
 
-  ): Promise<any> {
+  ): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
     try {
       const skip = (page - 1) * limit;
 
@@ -233,13 +233,8 @@ export class VacationService {
         take: limit,
       });
 
-      const dataDto = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
-      const otherdata = new PaginatedResponseDto(dataDto, total, page, limit);
-      return {
-        otherdata,
-        data: vacations,
-        meta: otherdata.meta
-      };
+      const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
+      return new PaginatedResponseDto(data, total, page, limit);
     } catch (error) {
       console.log(error)
       throw new InternalServerErrorException('Failed to fetch vacations');
@@ -252,7 +247,7 @@ export class VacationService {
   sortBy: string = 'created_at',
   sortOrder: 'ASC' | 'DESC' = 'DESC',
   req: any
- ): Promise<any> {
+) {
   try {
     const skip = (page - 1) * limit;
 
@@ -343,14 +338,9 @@ export class VacationService {
       .take(limit);
 
     const [vacations, total] = await query.getManyAndCount();
-
-    const dataDto = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
-    const otherdata = new PaginatedResponseDto(dataDto, total, page, limit);
-    return {
-      otherdata,
-      data: vacations,
-      meta: otherdata.meta
-    };
+    const data = vacations;
+    const otherdata = new PaginatedResponseDto(data, total, page, limit);
+    return {otherdata, data}
   } catch (error) {
     console.error(error);
     throw new InternalServerErrorException('Failed to fetch vacations');
@@ -410,7 +400,7 @@ export class VacationService {
         .createQueryBuilder('vacationDate')
         .leftJoinAndSelect('vacationDate.vacation', 'vacation')
         .where('vacation.user_id = :userId', { userId })
-        .andWhere('vacation.overall_status = :overall_status', { overall_status: 'approved' })
+        .andWhere('vacation.overall_status = :overall_status', { status: 'approved' })
         .andWhere('vacationDate.date BETWEEN :startDate AND :endDate', {
           startDate: start,
           endDate: end
