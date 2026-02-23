@@ -325,9 +325,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         : statusTranslations[attendanceStatus].en,
 
       // ✅ NEW (same as supervisor)
-      status: lang === 'ar'
-        ? statusTranslations[attendanceStatus].ar
-        : statusTranslations[attendanceStatus].en,
+      status: statusKeys[attendanceStatus],
       attendanceStatusText:
         lang === 'ar'
           ? statusTranslations[attendanceStatus].ar
