@@ -9,8 +9,7 @@ import {
   ValidateNested,
   IsEmpty
 } from 'class-validator';
-import { Type, Expose } from 'class-transformer';
-
+import { Type } from 'class-transformer';
 
 // ==================== REQUEST DTOs ====================
 
@@ -100,57 +99,23 @@ export class ApprovedDatesQueryDto {
 // ==================== RESPONSE DTOs ====================
 
 export class VacationDateWithStatusDto {
-  @Expose() id: string;
-  @Expose() date: string;
-  @Expose() status: string;
-  @Expose() Status: string;
-  @Expose() overall_status: string;
-  @Expose() city?: string;
-  @Expose() cityName?: string;
-  @Expose() createdAt: Date;
-  @Expose() CreateAt: Date;
-  @Expose() created_at: Date;
-  @Expose() updatedAt: Date;
-  @Expose() updated_at: Date;
-  @Expose() deletedAt: Date | null;
-  @Expose() deleted_at: Date | null;
-  @Expose() processedBy?: string;
-  @Expose() processedByName?: string;
-  @Expose() processedAt?: Date;
-  @Expose() rejectionReason?: string;
-  @Expose() rejection_reason?: string;
+  date: string;
+  status: 'pending' | 'approved' | 'rejected';
+  processedBy?: string;
+  processedByName?: string;
+  processedAt?: Date;
+  rejectionReason?: string;
 
-
-
-
-
-  constructor(vacationDate: any, parentVacation?: any) {
-    this.id = vacationDate.id;
+  constructor(vacationDate: any) {
     this.date = vacationDate.date;
-    this.status = vacationDate.status || parentVacation?.overall_status;
-    this.Status = this.status;
-    this.overall_status = this.status;
-    this.city = parentVacation?.branch?.city?.name;
-    this.cityName = this.city;
-    this.createdAt = vacationDate.created_at || parentVacation?.created_at;
-    this.CreateAt = this.createdAt;
-    this.created_at = this.createdAt;
-    this.updatedAt = vacationDate.updated_at || parentVacation?.updated_at;
-    this.updated_at = this.updatedAt;
-
-    this.deletedAt = vacationDate.deleted_at;
-    this.deleted_at = this.deletedAt;
+    this.status = vacationDate.status;
     this.processedBy = vacationDate.processedBy?.id;
     this.processedByName = vacationDate.processedBy ?
       `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` :
       undefined;
     this.processedAt = vacationDate.processed_at;
     this.rejectionReason = vacationDate.rejection_reason;
-    this.rejection_reason = this.rejectionReason;
   }
-
-
-
 }
 
 export class VacationResponseDto {
@@ -194,79 +159,46 @@ export class VacationResponseDto {
 }
 
 export class VacationSummaryResponseDto {
-  @Expose() id: string;
-  @Expose() userId: string;
-  @Expose() userName: string;
-  @Expose() branchId: string;
-  @Expose() branchName: string;
-  @Expose() reason: string;
-  @Expose() imageUrl?: string;
-  @Expose() overallStatus: string;
-  @Expose() overall_status: string;
-  @Expose() status: string;
-  @Expose() Status: string;
-  @Expose() city: string;
-  @Expose() cityName: string;
-  @Expose() totalDates: number;
-  @Expose() approvedDates: number;
-  @Expose() pendingDates: number;
-  @Expose() rejectedDates: number;
-  @Expose() dates: VacationDateWithStatusDto[];
-  @Expose() createdAt: Date;
-  @Expose() CreateAt: Date;
-  @Expose() created_at: Date;
-  @Expose() updatedAt: Date;
-  @Expose() updated_at: Date;
-  @Expose() user: any;
-  @Expose() branch: any;
-  @Expose() vacationDates: any[];
-
-
-
+  id: string;
+  userId: string;
+  userName: string;
+  branchId: string;
+  branchName: string;
+  reason: string;
+  imageUrl?: string;
+  overallStatus: string;
+  totalDates: number;
+  approvedDates: number;
+  pendingDates: number;
+  rejectedDates: number;
+  dates: VacationDateWithStatusDto[]; // All dates with their status
+  createdAt: Date;
+  updatedAt: Date;
 
   constructor(vacation: any) {
     this.id = vacation.id;
     this.userId = vacation.user?.id;
-    this.userName = vacation.user?.name || vacation.user?.username;
-
+    this.userName = `${vacation.user?.username}`
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
     this.reason = vacation.reason;
     this.imageUrl = vacation.image_url;
     this.overallStatus = vacation.overall_status;
-    this.overall_status = vacation.overall_status;
-    this.status = vacation.overall_status;
-    this.Status = this.status;
-    this.city = vacation.branch?.city?.name;
-    this.cityName = this.city;
     this.createdAt = vacation.created_at;
-    this.CreateAt = this.createdAt;
-    this.created_at = this.createdAt;
     this.updatedAt = vacation.updated_at;
-    this.updated_at = this.updatedAt;
-
-
-
 
     const vacationDates = vacation.vacationDates || [];
 
     // All dates with their status
-    this.dates = vacationDates.map((date: any) => new VacationDateWithStatusDto(date, vacation));
-
+    this.dates = vacationDates.map((date: any) => new VacationDateWithStatusDto(date));
 
     // Statistics
     this.totalDates = this.dates.length;
     this.approvedDates = this.dates.filter(date => date.status === 'approved').length;
     this.pendingDates = this.dates.filter(date => date.status === 'pending').length;
     this.rejectedDates = this.dates.filter(date => date.status === 'rejected').length;
-
-    // Duplication for compatibility
-    this.user = vacation.user;
-    this.branch = vacation.branch;
-    this.vacationDates = vacation.vacationDates;
   }
 }
-
 
 export class VacationDateStatusSummaryDto {
   pending: VacationDateWithStatusDto[];
