@@ -358,7 +358,7 @@ async getOptimizedPlans(
         noteOut: journey?.checkin?.noteOut,
         isWithinRadius: journey?.checkin?.isWithinRadius,
         journeyId: journey?.id,
-        journeyStatus: journey?.status,
+        journeyStatus: translatedStatus,
         journeyType: journey?.type,
         journeyDate: journey?.date,
       });
