@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
+import { splitLocalDateTime } from 'common/date.util';
 import * as ExcelJS from 'exceljs';
 import { Branch } from 'entities/branch.entity';
 import { Product } from 'entities/products/product.entity';
@@ -397,26 +398,9 @@ export class ExportService {
       
       // Helper to split DateTime into Date and Time columns
       const splitDateTime = (date: any, dateKey: string, timeKey: string) => {
-        if (!date) {
-          flattened[dateKey] = '-';
-          flattened[timeKey] = '-';
-          return;
-        }
-        const d = new Date(date);
-        if (isNaN(d.getTime())) {
-          flattened[dateKey] = '-';
-          flattened[timeKey] = '-';
-          return;
-        }
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const hours = String(d.getHours()).padStart(2, '0');
-        const minutes = String(d.getMinutes()).padStart(2, '0');
-        const seconds = String(d.getSeconds()).padStart(2, '0');
-        
-        flattened[dateKey] = `${year}-${month}-${day}`;
-        flattened[timeKey] = `${hours}:${minutes}:${seconds}`;
+        const { date: d, time: t } = splitLocalDateTime(date);
+        flattened[dateKey] = d;
+        flattened[timeKey] = t;
       };
 
         // Special handling for Journey and Unplanned visits
@@ -625,15 +609,9 @@ export class ExportService {
 
         // Date formatting
         if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
-          const d = new Date(val);
-          if (!isNaN(d.getTime())) {
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, '0');
-            const day = String(d.getDate()).padStart(2, '0');
-            const hours = String(d.getHours()).padStart(2, '0');
-            const minutes = String(d.getMinutes()).padStart(2, '0');
-            const seconds = String(d.getSeconds()).padStart(2, '0');
-            flattened[key] = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          const { date: ld, time: lt } = splitLocalDateTime(val);
+          if (ld !== '-') {
+            flattened[key] = `${ld} ${lt}`;
           }
         }
 

@@ -16,6 +16,7 @@ import {  multerOptionsCheckinTmp } from 'common/multer.config';
 import { Raw, In, Brackets } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
+import { toLocalISOString } from 'common/date.util';
 @UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
@@ -343,8 +344,8 @@ async getOptimizedPlans(
         attendanceStatusText: translatedStatus, // Translated text based on lang parameter
         checkInDocument: journey?.checkin?.checkInDocument,
         checkOutDocument: journey?.checkin?.checkOutDocument,
-        checkInTime: checkInTime?.toISOString(),
-        checkOutTime: checkOutTime?.toISOString(),
+        checkInTime: toLocalISOString(checkInTime),
+        checkOutTime: toLocalISOString(checkOutTime),
         shiftStartTime: shiftStart.toISOString(),
         shiftEndTime: shiftEnd.toISOString(),
         noteIn: journey?.checkin?.noteIn,
@@ -543,10 +544,10 @@ async getAllPlansWithPagination(
       attendanceStatus, // Status field similar to first function
       checkInDocument: todayJourney?.checkin?.checkInDocument,
       checkOutDocument: todayJourney?.checkin?.checkOutDocument,
-      checkInTime: checkInTime?.toISOString(),
-      checkOutTime: checkOutTime?.toISOString(),
-      shiftStartTime: checkInTime?.toISOString() ||null,
-      shiftEndTime: checkOutTime?.toISOString(),
+      checkInTime: toLocalISOString(checkInTime),
+      checkOutTime: toLocalISOString(checkOutTime),
+      shiftStartTime:  toLocalISOString(checkInTime),
+      shiftEndTime: toLocalISOString(checkOutTime),
       noteIn: todayJourney?.checkin?.noteIn,
       noteOut: todayJourney?.checkin?.noteOut,
       isWithinRadius: todayJourney?.checkin?.isWithinRadius,

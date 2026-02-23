@@ -14,6 +14,7 @@ import { VacationDate } from 'entities/employee/vacation-date.entity';
 import { getDistance } from 'geolib';
 import { CRUD } from 'common/crud.service';
 import { NotificationService } from 'src/notification/notification.service';
+import { toLocalISOString } from 'common/date.util';
 
 @Injectable()
 export class JourneyService {
@@ -329,8 +330,8 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           : statusTranslations[attendanceStatus].en,
 
       // check-in data
-      checkInTime: checkin?.checkInTime,
-      checkOutTime: checkin?.checkOutTime,
+      checkInTime: checkin?.checkInTime ? toLocalISOString(new Date(checkin.checkInTime)) : null,
+      checkOutTime: checkin?.checkOutTime ? toLocalISOString(new Date(checkin.checkOutTime)) : null,
       checkInDocument: checkin?.checkInDocument,
       checkOutDocument: checkin?.checkOutDocument,
       noteIn: checkin?.noteIn,
@@ -505,12 +506,20 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         code: 200,
         message: 'Checked out successfully',
         data: {
-          checkOutTime: savedCheckIn.checkOutTime ? dayjs(savedCheckIn.checkOutTime).format('HH:mm') : null,
+          checkInTime: savedCheckIn.checkInTime ? toLocalISOString(savedCheckIn.checkInTime) : null,
+          checkOutTime: savedCheckIn.checkOutTime ? toLocalISOString(savedCheckIn.checkOutTime) : null,
         },
       };
     }
-    
-    return savedCheckIn;
+
+    return {
+      code: 200,
+      message: 'Checked in successfully',
+      data: {
+        checkInTime: savedCheckIn.checkInTime ? toLocalISOString(savedCheckIn.checkInTime) : null,
+        checkOutTime: savedCheckIn.checkOutTime ? toLocalISOString(savedCheckIn.checkOutTime) : null,
+      },
+    };
   }
 
   async adminCheckInOut(dto: AdminCheckInOutDto, adminUser: User, lang: string = 'en') {
