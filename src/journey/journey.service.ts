@@ -435,9 +435,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       checkIn.image = dto.image;
       checkIn.isWithinRadius = isWithinGeofence;
     } else {
-      if (!dto.checkInTime) {
-        throw new ConflictException('Check in time is required for first time');
-      }
+      // if (!dto.checkInTime) {
+      //   throw new ConflictException('Check in time is required for first time');
+      // }
 
       checkIn = this.checkInRepo.create({
         journey,
