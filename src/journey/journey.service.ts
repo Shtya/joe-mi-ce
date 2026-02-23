@@ -320,10 +320,14 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       shiftEndTime: journey.shift?.endTime,
 
       journeyType: journey.type,
-      journeyStatus: journey.status,
+      journeyStatus: lang === 'ar'
+        ? statusTranslations[attendanceStatus].ar
+        : statusTranslations[attendanceStatus].en,
 
       // ✅ NEW (same as supervisor)
-      status: statusKeys[attendanceStatus],
+      status: lang === 'ar'
+        ? statusTranslations[attendanceStatus].ar
+        : statusTranslations[attendanceStatus].en,
       attendanceStatusText:
         lang === 'ar'
           ? statusTranslations[attendanceStatus].ar
