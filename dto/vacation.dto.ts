@@ -104,16 +104,22 @@ export class VacationDateWithStatusDto {
   @Expose() date: string;
   @Expose() status: string;
   @Expose() Status: string;
+  @Expose() overall_status: string;
   @Expose() city?: string;
   @Expose() cityName?: string;
   @Expose() createdAt: Date;
   @Expose() CreateAt: Date;
+  @Expose() created_at: Date;
   @Expose() updatedAt: Date;
+  @Expose() updated_at: Date;
   @Expose() deletedAt: Date | null;
+  @Expose() deleted_at: Date | null;
   @Expose() processedBy?: string;
   @Expose() processedByName?: string;
   @Expose() processedAt?: Date;
   @Expose() rejectionReason?: string;
+  @Expose() rejection_reason?: string;
+
 
 
 
@@ -123,20 +129,26 @@ export class VacationDateWithStatusDto {
     this.date = vacationDate.date;
     this.status = vacationDate.status || parentVacation?.overall_status;
     this.Status = this.status;
+    this.overall_status = this.status;
     this.city = parentVacation?.branch?.city?.name;
     this.cityName = this.city;
     this.createdAt = vacationDate.created_at || parentVacation?.created_at;
     this.CreateAt = this.createdAt;
+    this.created_at = this.createdAt;
     this.updatedAt = vacationDate.updated_at || parentVacation?.updated_at;
+    this.updated_at = this.updatedAt;
 
     this.deletedAt = vacationDate.deleted_at;
+    this.deleted_at = this.deletedAt;
     this.processedBy = vacationDate.processedBy?.id;
     this.processedByName = vacationDate.processedBy ?
       `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` :
       undefined;
     this.processedAt = vacationDate.processed_at;
     this.rejectionReason = vacationDate.rejection_reason;
+    this.rejection_reason = this.rejectionReason;
   }
+
 
 
 }
@@ -190,6 +202,7 @@ export class VacationSummaryResponseDto {
   @Expose() reason: string;
   @Expose() imageUrl?: string;
   @Expose() overallStatus: string;
+  @Expose() overall_status: string;
   @Expose() status: string;
   @Expose() Status: string;
   @Expose() city: string;
@@ -201,10 +214,13 @@ export class VacationSummaryResponseDto {
   @Expose() dates: VacationDateWithStatusDto[];
   @Expose() createdAt: Date;
   @Expose() CreateAt: Date;
+  @Expose() created_at: Date;
   @Expose() updatedAt: Date;
+  @Expose() updated_at: Date;
   @Expose() user: any;
   @Expose() branch: any;
   @Expose() vacationDates: any[];
+
 
 
 
@@ -218,13 +234,17 @@ export class VacationSummaryResponseDto {
     this.reason = vacation.reason;
     this.imageUrl = vacation.image_url;
     this.overallStatus = vacation.overall_status;
+    this.overall_status = vacation.overall_status;
     this.status = vacation.overall_status;
     this.Status = this.status;
     this.city = vacation.branch?.city?.name;
     this.cityName = this.city;
     this.createdAt = vacation.created_at;
     this.CreateAt = this.createdAt;
+    this.created_at = this.createdAt;
     this.updatedAt = vacation.updated_at;
+    this.updated_at = this.updatedAt;
+
 
 
 
