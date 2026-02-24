@@ -17,6 +17,7 @@ import { UsersService } from 'src/users/users.service';
 import { Project } from 'entities/project.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
+import { Sale } from 'entities/products/sale.entity';
 
 @Module({
   imports: [
@@ -32,7 +33,8 @@ import { VacationDate } from 'entities/employee/vacation-date.entity';
       User,
       Project,
       Vacation,
-      VacationDate
+      VacationDate,
+      Sale
     ]),
     ScheduleModule.forRoot(),
 		NotificationModule,

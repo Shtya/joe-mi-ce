@@ -120,3 +120,25 @@ export class AdminCheckInOutDto {
   @IsDateString()
   checkOutTime?: string;
 }
+
+export class UserStatsResponseDto {
+  user: {
+    id: string;
+    name: string;
+    username: string;
+    mobile: string;
+    avatar_url: string;
+    role: string;
+    project: string;
+  };
+  attendance: {
+    absentDays: number;
+    closedDays: number;
+    lateDays: number;
+  };
+  sales: {
+    totalSales: number;
+    monthlySales: number;
+    weeklySales: number;
+  };
+}

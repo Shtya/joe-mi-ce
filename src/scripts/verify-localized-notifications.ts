@@ -10,6 +10,7 @@ import { Branch } from '../../entities/branch.entity';
 import { Shift } from '../../entities/employee/shift.entity';
 import { Notification, NotificationType } from '../../entities/notification.entity';
 import { VacationDate } from '../../entities/employee/vacation-date.entity';
+import { Sale } from '../../entities/products/sale.entity';
 import { NotificationService } from '../notification/notification.service';
 import { JourneyService } from '../journey/journey.service';
 import { Logger } from '@nestjs/common';
@@ -37,6 +38,7 @@ const run = async () => {
     const journeyPlanRepo = dataSource.getRepository(JourneyPlan);
     const notificationRepo = dataSource.getRepository(Notification);
     const vacationDateRepo = dataSource.getRepository(VacationDate);
+    const saleRepo = dataSource.getRepository(Sale);
 
     // Mock Logger
     const loggerSpy = {
@@ -57,6 +59,7 @@ const run = async () => {
         branchRepo,
         shiftRepo,
         vacationDateRepo,
+        saleRepo,
         notificationService
     );
 

@@ -3,11 +3,17 @@ import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, Unaut
 import { UserResponseDto, UsersByBranchResponseDto, ProjectUsersResponseDto } from 'dto/users.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { UsersService } from './users.service';
+import { JourneyService } from 'src/journey/journey.service';
+import { Permissions } from 'decorators/permissions.decorators';
+import { EPermission } from 'enums/Permissions.enum';
 
 @Controller('user')
 @UseGuards(AuthGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly journeyService: JourneyService,
+  ) {}
 
   // Get current user profile (using token)
   @Get('profile')
@@ -74,4 +80,10 @@ async getPromotersAndSupervisors(@Request() req) {
 //     const user = userId || req.user.id
 //     return this.usersService.deleteUser(user, lang);
 //   }
+
+  @Get('stats/:userId')
+  @Permissions(EPermission.JOURNEY_READ)
+  async getUserStats(@Param('userId', ParseUUIDPipe) userId: string) {
+    return this.journeyService.getUserStats(userId);
+  }
 }

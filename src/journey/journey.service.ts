@@ -11,6 +11,7 @@ import { User } from 'entities/user.entity';
 import { Branch } from 'entities/branch.entity';
 import { Shift } from 'entities/employee/shift.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
+import { Sale } from 'entities/products/sale.entity';
 import { getDistance } from 'geolib';
 import { CRUD } from 'common/crud.service';
 import { NotificationService } from 'src/notification/notification.service';
@@ -39,6 +40,9 @@ export class JourneyService {
 
     @InjectRepository(VacationDate)
     public vacationDateRepo: Repository<VacationDate>,
+
+    @InjectRepository(Sale)
+    public saleRepo: Repository<Sale>,
 
     private readonly notificationService: NotificationService,
   ) {}
@@ -1206,6 +1210,86 @@ if (typeof value === 'string') {
       found: journeys.length,
       fixed: fixedCount,
       deletedCheckins
+    };
+  }
+
+  async getUserStats(userId: string) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['role', 'project'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Attendance Stats
+    const journeys = await this.journeyRepo.find({
+      where: { user: { id: userId } },
+      relations: ['shift', 'checkin'],
+    });
+
+    let absentDays = 0;
+    let closedDays = 0;
+    let lateDays = 0;
+
+    journeys.forEach(journey => {
+      if (journey.status === JourneyStatus.ABSENT || journey.status === JourneyStatus.UNPLANNED_ABSENT) {
+        absentDays++;
+      } else if (journey.status === JourneyStatus.CLOSED || journey.status === JourneyStatus.UNPLANNED_CLOSED) {
+        closedDays++;
+      }
+
+      if (journey.checkin?.checkInTime && journey.shift?.startTime) {
+        const checkInTime = dayjs(journey.checkin.checkInTime);
+        const [shiftHours, shiftMinutes] = journey.shift.startTime.split(':').map(Number);
+        const shiftStart = dayjs(journey.checkin.checkInTime).hour(shiftHours).minute(shiftMinutes).second(0);
+
+        if (checkInTime.isAfter(shiftStart)) {
+          lateDays++;
+        }
+      }
+    });
+
+    // Sales Stats
+    const now = dayjs();
+    const startOfMonth = now.startOf('month').toDate();
+    const last7Days = now.subtract(7, 'day').toDate();
+
+    const allSales = await this.saleRepo.find({
+      where: { user: { id: userId }, status: 'completed' },
+    });
+
+    const totalSalesAmount = allSales.reduce((acc, sale) => acc + Number(sale.total_amount), 0);
+    
+    const monthlySalesAmount = allSales
+      .filter(sale => dayjs(sale.sale_date).isAfter(startOfMonth))
+      .reduce((acc, sale) => acc + Number(sale.total_amount), 0);
+
+    const weeklySalesAmount = allSales
+      .filter(sale => dayjs(sale.sale_date).isAfter(last7Days))
+      .reduce((acc, sale) => acc + Number(sale.total_amount), 0);
+
+    return {
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        mobile: user.mobile,
+        avatar_url: user.avatar_url,
+        role: user.role?.name,
+        project: user.project?.name,
+      },
+      attendance: {
+        absentDays,
+        closedDays,
+        lateDays,
+      },
+      sales: {
+        totalSales: totalSalesAmount,
+        monthlySales: monthlySalesAmount,
+        weeklySales: weeklySalesAmount,
+      },
     };
   }
 }
