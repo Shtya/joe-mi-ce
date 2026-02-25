@@ -1,5 +1,5 @@
 // src/journey/journey.service.ts
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not, ILike } from 'typeorm';
 import * as dayjs from 'dayjs';
@@ -624,6 +624,38 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
   }
 
 
+  async validateJourneyStatus(id: string) {
+    const journey = await this.journeyRepo.findOne({
+      where: { id },
+    });
+
+    if (!journey) {
+      throw new NotFoundException('Journey not found');
+    }
+
+    if (
+      journey.status === JourneyStatus.CLOSED ||
+      journey.status === JourneyStatus.UNPLANNED_CLOSED
+    ) {
+      throw new ForbiddenException('Journey is already closed');
+    }
+
+    if (
+      journey.status === JourneyStatus.PRESENT ||
+      journey.status === JourneyStatus.UNPLANNED_PRESENT
+    ) {
+      return {
+        code: 200,
+        message: 'Journey is active',
+      };
+    }
+
+    return {
+      code: 200,
+      status: journey.status,
+    };
+  }
+
   // ===== سجل الحضور =====
   async getAttendanceHistory(projectId?: string, userId?: string, date?: string, fromDate?: string, toDate?: string) {
     const where: any = {};
@@ -918,9 +950,7 @@ if (typeof value === 'string') {
     const openJourneys = await this.journeyRepo.find({
       where: [
         { status: JourneyStatus.PRESENT },
-        { status: 'present' as any },
         { status: JourneyStatus.UNPLANNED_PRESENT },
-        { status: 'unplanned-present' as any },
       ],
       relations: ['user', 'branch', 'shift'],
     });

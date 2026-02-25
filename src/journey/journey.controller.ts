@@ -245,6 +245,7 @@ async getOptimizedPlans(
     [JourneyStatus.ABSENT]: 'absent',
     [JourneyStatus.PRESENT]: 'present',
     [JourneyStatus.CLOSED]: 'closed',
+    [JourneyStatus.VACATION]: 'vacation',
     [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned-absent',
     [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned-present',
     [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned-closed',
@@ -255,6 +256,7 @@ async getOptimizedPlans(
     [JourneyStatus.ABSENT]: { en: 'Absent', ar: 'غائب' },
     [JourneyStatus.PRESENT]: { en: 'Present', ar: 'حاضر' },
     [JourneyStatus.CLOSED]: { en: 'Closed', ar: 'مغلق' },
+    [JourneyStatus.VACATION]: { en: 'Vacation', ar: 'إجازة' },
     [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
     [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
     [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
@@ -713,6 +715,12 @@ async getAllPlansWithPagination(
   @Permissions(EPermission.JOURNEY_READ)
   async getJourney(@Param('id') id: string) {
     return CRUD.findOne(this.journeyService.journeyRepo, 'journey', id, ['user', 'branch', 'branch.city', 'branch.city.region', 'shift']);
+  }
+
+  @Get(':id/status-check')
+  @Permissions(EPermission.JOURNEY_READ)
+  async validateJourneyStatus(@Param('id') id: string) {
+    return this.journeyService.validateJourneyStatus(id);
   }
 
   @Patch(':id')
