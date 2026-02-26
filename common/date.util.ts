@@ -5,13 +5,13 @@
  */
 
 /**
- * UTC+2 offset in milliseconds (Egypt / Arabia Standard Time).
- * Hardcoded because Node.js reads TZ at startup — dotenv is too late to change it.
+ * Dynamic timezone offset in milliseconds.
+ * Uses the environment's timezone (TZ variable or system default).
  */
-const OFFSET_MS = 2 * 60 * 60 * 1000; // +02:00
-
 function localOffsetMs(): number {
-  return OFFSET_MS;
+  // getTimezoneOffset() returns minutes between UTC and local time (positive if behind UTC, negative if ahead).
+  // We negate it to get the actual offset (e.g., UTC+2 -> -120 -> +120 mins).
+  return -new Date().getTimezoneOffset() * 60 * 1000;
 }
 
 /**
