@@ -10,17 +10,17 @@ export class Stock extends CoreEntity {
   @Column('int')
   quantity: number;
 
-  @ManyToOne(() => Branch, branch => branch.stock, { eager: true })
+  @ManyToOne(() => Branch, branch => branch.stock, { eager: true, nullable: false })
   @JoinColumn({ name: 'branch_id' })
   branch: Branch;
 
-  @ManyToOne(() => Product, product => product.stock, { eager: true })
+  @ManyToOne(() => Product, product => product.stock, { eager: true, nullable: false })
   @JoinColumn({ name: 'product_id' })
   product: Product;
 
-  @Column({ nullable: true })
+  @Column({ nullable: false })
   branch_id: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: false })
   product_id: string;
 }

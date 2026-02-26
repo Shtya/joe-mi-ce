@@ -85,52 +85,67 @@ async getStocksByProjectPaginated(params: {
   );
 }
 
-  async createOrUpdate(createStockDto: CreateStockDto): Promise<Stock> {
-    const { product_id, branch_id, quantity } = createStockDto;
+  async createOrUpdate(createStockDto: CreateStockDto): Promise<Stock | Stock[]> {
+    const { product_id, branch_id, branch_ids, quantity } = createStockDto;
 
-    // Validate quantity
     if (!Number.isInteger(quantity) || quantity < 0) {
       throw new BadRequestException('Quantity must be an integer >= 0');
     }
 
     const product = await this.productRepo.findOne({
       where: { id: product_id },
-      relations: ['project', 'brand'], // Added 'brand'
+      relations: ['project', 'brand'],
     });
     if (!product) {
       throw new NotFoundException(`Product with ID ${product_id} not found`);
     }
 
-    const branch = await this.branchRepo.findOne({
-      where: { id: branch_id },
-      relations: ['project'],
-    });
-    if (!branch) {
-      throw new NotFoundException(`Branch with ID ${branch_id} not found`);
+    const bIds = branch_ids && branch_ids.length > 0 ? branch_ids : [branch_id];
+    const validIds = bIds.filter(id => !!id);
+    if (validIds.length === 0) {
+      throw new BadRequestException('branch_id or branch_ids is required');
     }
 
-    let stock = await this.stockRepo.findOne({
-      where: {
-        product: { id: product_id },
-        branch: { id: branch_id },
-      },
-      withDeleted:true,
-  relations: ['product', 'branch', 'product.brand'], // Added 'product.brand'
-    });
-    if (stock) {
-      stock.deleted_at = null;
-      stock.quantity = quantity;
-    } else {
-      stock = this.stockRepo.create({
-        quantity,
-        product,
-        branch,
-        product_id,
-        branch_id,
+    const results: Stock[] = [];
+
+    for (const bId of validIds) {
+      const branch = await this.branchRepo.findOne({
+        where: { id: bId },
+        relations: ['project'],
       });
+      if (!branch) {
+        throw new NotFoundException(`Branch with ID ${bId} not found`);
+      }
+
+      let stock = await this.stockRepo.findOne({
+        where: {
+          product: { id: product.id },
+          branch: { id: branch.id },
+        },
+        withDeleted: true,
+        relations: ['product', 'branch', 'product.brand'],
+      });
+
+      if (stock) {
+        stock.deleted_at = null;
+        stock.quantity = quantity;
+        stock.product = product;
+        stock.branch = branch;
+        stock.product_id = product.id;
+        stock.branch_id = branch.id;
+      } else {
+        stock = this.stockRepo.create({
+          quantity,
+          product,
+          branch,
+          product_id: product.id,
+          branch_id: branch.id,
+        });
+      }
+      results.push(await this.stockRepo.save(stock));
     }
 
-    return this.stockRepo.save(stock);
+    return results.length === 1 && !branch_ids ? results[0] : results;
   }
 
   async getStocksByBranch(
@@ -744,141 +759,94 @@ if (!branch) {
 }
 
 // Mobile - Create stock for user's branch
-async createStockMobile(
-  userId: string,
-  createStockDto: CreateStockDto
-) {
-  const { product_id, branch_id, quantity } = createStockDto;
+  async createStockMobile(
+    userId: string,
+    createStockDto: CreateStockDto
+  ) {
+    const { product_id, branch_id, quantity } = createStockDto;
 
-  // ─────────────────────────────────────────────
-  // Validate User
-  // ─────────────────────────────────────────────
-  const user = await this.userRepo.findOne({
-    where: { id: userId },
-  });
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
 
-  if (!user) {
-    throw new NotFoundException('User not found');
-  }
+    if (!Number.isInteger(quantity) || quantity < 0) {
+      throw new BadRequestException('Quantity must be an integer >= 0');
+    }
 
-  // ─────────────────────────────────────────────
-  // Validate Branch
-  // ─────────────────────────────────────────────
-  const branch = await this.branchRepo.findOne({
-    where: { id: branch_id },
-  });
-
-  if (!branch) {
-    throw new NotFoundException('Branch not found');
-  }
-
-  // ─────────────────────────────────────────────
-  // Validate Quantity
-  // ─────────────────────────────────────────────
-  if (!Number.isInteger(quantity) || quantity < 0) {
-    throw new BadRequestException('Quantity must be an integer >= 0');
-  }
-
-  // ─────────────────────────────────────────────
-  // Validate Product
-  // ─────────────────────────────────────────────
-  const product = await this.productRepo.findOne({
-    where: { id: product_id },
-    relations: ['brand', 'category'],
-  });
-
-  if (!product) {
-    throw new NotFoundException(`Product with ID ${product_id} not found`);
-  }
-
-  // ─────────────────────────────────────────────
-  // Check & Update Existing Stock
-  // ─────────────────────────────────────────────
-  const existingStock = await this.stockRepo.findOne({
-    where: {
-      product_id,
-      branch_id
-    },
-    withDeleted: true,
-    relations: ['product', 'branch', 'product.brand', 'product.category'],
-  });
-
-  let stock: Stock;
-
-  if (existingStock) {
-    existingStock.deleted_at = null
-    existingStock.quantity += quantity;
-    stock = await this.stockRepo.save(existingStock);
-  } else {
-    stock = this.stockRepo.create({
-      quantity,
-      product,
-      branch,
-      product_id,
-      branch_id,
+    const product = await this.productRepo.findOne({
+      where: { id: product_id },
+      relations: ['brand', 'category'],
     });
+    if (!product) {
+      throw new NotFoundException(`Product with ID ${product_id} not found`);
+    }
+
+    const branch = await this.branchRepo.findOne({ where: { id: branch_id } });
+    if (!branch) throw new NotFoundException(`Branch with ID ${branch_id} not found`);
+
+    let stock = await this.stockRepo.findOne({
+      where: {
+        product: { id: product.id },
+        branch: { id: branch.id },
+      },
+      withDeleted: true,
+      relations: ['product', 'branch', 'product.brand', 'product.category'],
+    });
+
+    if (stock) {
+      stock.deleted_at = null;
+      stock.quantity += quantity;
+      stock.product = product;
+      stock.branch = branch;
+      stock.product_id = product.id;
+      stock.branch_id = branch.id;
+    } else {
+      stock = this.stockRepo.create({
+        quantity,
+        product,
+        branch,
+        product_id: product.id,
+        branch_id: branch.id,
+      });
+    }
 
     stock = await this.stockRepo.save(stock);
 
-    // Reload with all relations
-    stock = await this.stockRepo.findOne({
-      where: { id: stock.id },
-      relations: ['product', 'branch', 'product.brand', 'product.category'],
-    });
-  }
+    const productPrice = product.price || 0;
+    const discount = product.discount || 0;
 
-  // ─────────────────────────────────────────────
-  // Calculate Price Fields
-  // ─────────────────────────────────────────────
-  const productPrice = product.price || 0;
-  const discount = product.discount || 0;
-
-  const unitAmount = productPrice;
-  const totalAmount = productPrice * stock.quantity;
-  const discountedAmount = (productPrice - discount) * stock.quantity;
-
-  // ─────────────────────────────────────────────
-  // Response DTO
-  // ─────────────────────────────────────────────
-  return {
-    message: existingStock ? 'Stock updated successfully' : 'Stock created successfully',
-    total_records: 1,
-    current_page: 1,
-    per_page: 1,
-
-    branch: {
-      id: branch.id,
-      name: branch.name,
-      city: branch.city,
-    },
-
-    user: {
-      id: user.id,
-      name: user.name,
-    },
-
-    records: [
-      {
-        id: stock.id,
-        quantity: stock.quantity,
-        created_at: stock.created_at,
-
-        product: {
-          id: product.id,
-          name: product.name,
-          sku: product.sku,
-          price: productPrice,
-          discount,
-          unit_amount: unitAmount,
-          total_amount: totalAmount,
-          discounted_amount: discountedAmount,
-          brand_name: product.brand?.name || null,
-          category_name: product.category?.name || null,
-        },
+    const record = {
+      id: stock.id,
+      quantity: stock.quantity,
+      created_at: stock.created_at,
+      product: {
+        id: product.id,
+        name: product.name,
+        sku: product.sku,
+        price: productPrice,
+        discount,
+        unit_amount: productPrice,
+        total_amount: productPrice * stock.quantity,
+        discounted_amount: (productPrice - discount) * stock.quantity,
+        brand_name: product.brand?.name || null,
+        category_name: product.category?.name || null,
       },
-    ],
-  };
-}
+      branch: {
+        id: branch.id,
+        name: branch.name,
+        city: branch.city,
+      }
+    };
+
+    return {
+      message: 'Stock processed successfully',
+      total_records: 1,
+      current_page: 1,
+      per_page: 1,
+      branch: record.branch,
+      user: { id: user.id, name: user.name },
+      records: [record],
+    };
+  }
 
 
 // Mobile - Update stock for user's branch

@@ -7,13 +7,16 @@ export class CreateStockDto {
   product_id: string;
 
   @IsUUID()
-  @IsNotEmpty()
-  branch_id: string;
+  @IsOptional()
+  branch_id?: string;
+
+  @IsOptional()
+  @IsUUID(undefined, { each: true })
+  branch_ids?: string[];
 
   @IsInt()
   @IsNotEmpty()
   quantity: number;
-
 }
 export class CreateStockForAllBranch{
     @IsUUID()
