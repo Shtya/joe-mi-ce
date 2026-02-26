@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { HeaderResolver, I18nModule, QueryResolver } from 'nestjs-i18n';
 import { join } from 'path';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
+import { TimezoneMiddleware } from 'common/timezone.middleware';
 import { LoggingValidationPipe } from 'common/translationPipe';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from './auth/auth.module';
@@ -109,4 +110,8 @@ import { AppVersionModule } from './app-version/app-version.module';
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
   exports: [LoggingValidationPipe],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TimezoneMiddleware).forRoutes('journeys', 'products', 'export');
+  }
+}
