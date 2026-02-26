@@ -113,6 +113,6 @@ import { TimezoneMiddleware } from 'common/timezone.middleware';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TimezoneMiddleware).forRoutes('*');
+    consumer.apply(TimezoneMiddleware).forRoutes('journeys', 'products', 'export');
   }
 }
