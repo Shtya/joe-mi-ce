@@ -34,11 +34,11 @@ export class TimezoneMiddleware implements NestMiddleware {
       }
     }
 
-    // 3. Fallback (If UTC server, default to Egypt +2 as requested by user)
+    // 3. Fallback (If UTC server, default to Saudi +3 as requested by user)
     if (offsetMinutes === undefined) {
       const serverOffset = -new Date().getTimezoneOffset();
       if (serverOffset === 0) {
-        offsetMinutes = 120; // Default to Egypt +02:00
+        offsetMinutes = 180; // Default to Saudi +03:00
       } else {
         offsetMinutes = serverOffset;
       }
