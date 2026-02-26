@@ -82,6 +82,7 @@ async getStocksByProjectPaginated(params: {
     ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
     ['product.name', 'product.sku'],
     filters,
+    (qb) => qb.andWhere('stock.product_id IS NOT NULL'),
   );
 }
 
@@ -177,8 +178,9 @@ async getStocksByProjectPaginated(params: {
       sortBy,
       sortOrder,
       ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
-      ['name'],
+      ['product.id', 'product.name', 'product.sku'],
       baseFilters,
+      (qb) => qb.andWhere('stock.product_id IS NOT NULL'),
     );
   }
 
@@ -211,8 +213,9 @@ async getStocksByProduct(
     sortBy,
     sortOrder,
     ['product', 'branch', 'branch.project', 'product.brand', 'product.category'],
-    ['name'],
+    ['product.id', 'product.name', 'product.sku'],
     baseFilters,
+    (qb) => qb.andWhere('stock.product_id IS NOT NULL'),
   );
 }
 
@@ -656,7 +659,7 @@ if (!branch) {
 }
   // Create query builder with all needed relations
   const qb = this.stockRepo.createQueryBuilder('stock')
-    .leftJoinAndSelect('stock.product', 'product')
+    .innerJoinAndSelect('stock.product', 'product')
     .leftJoinAndSelect('product.brand', 'brand')
     .leftJoinAndSelect('product.category', 'category')
     .leftJoinAndSelect('stock.branch', 'branch')
