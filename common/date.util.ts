@@ -4,21 +4,14 @@
  * Set TZ=Africa/Cairo on the server to get Egypt local time automatically.
  */
 
-import { RequestContext } from './request-context';
-
 /**
- * Dynamic timezone offset in milliseconds.
- * Prioritizes request-scoped offset (e.g. from IP/Header) stored in RequestContext.
- * Falls back to the environment's timezone (TZ variable or system default).
+ * UTC+2 offset in milliseconds (Egypt / Arabia Standard Time).
+ * Hardcoded because Node.js reads TZ at startup — dotenv is too late to change it.
  */
+const OFFSET_MS = 2 * 60 * 60 * 1000; // +02:00
+
 function localOffsetMs(): number {
-  const contextOffsetMins = RequestContext.getTimezoneOffset();
-  if (contextOffsetMins !== undefined) {
-    return contextOffsetMins * 60 * 1000;
-  }
-  // getTimezoneOffset() returns minutes between UTC and local time (positive if behind UTC, negative if ahead).
-  // We negate it to get the actual offset (e.g., UTC+2 -> -120 -> +120 mins).
-  return -new Date().getTimezoneOffset() * 60 * 1000;
+  return OFFSET_MS;
 }
 
 /**
