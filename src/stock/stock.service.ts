@@ -733,12 +733,7 @@ if (!branch) {
     branch: {
       id: branch.id,
       name: branch.name,
-      city: {
-        id: branch.city.id,
-        name: branch.city.name,
-        created_at: branch.city.created_at,
-        region:branch.city.region || {}
-      }
+      city: branch.city
     },
     user: {
       id: user.id,
