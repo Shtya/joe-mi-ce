@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, NestModule, MiddlewareConsumer } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { HeaderResolver, I18nModule, QueryResolver } from 'nestjs-i18n';
@@ -38,6 +38,8 @@ import { ContactUs } from 'entities/contact-us.entity';
 import { ContactUsModule } from './contact-us/contact-us.module';
 import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module';
 import { AppVersionModule } from './app-version/app-version.module';
+
+import { TimezoneMiddleware } from 'common/timezone.middleware';
 
  @Module({
   imports: [
@@ -109,4 +111,8 @@ import { AppVersionModule } from './app-version/app-version.module';
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
   exports: [LoggingValidationPipe],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TimezoneMiddleware).forRoutes('*');
+  }
+}

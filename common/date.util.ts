@@ -4,11 +4,18 @@
  * Set TZ=Africa/Cairo on the server to get Egypt local time automatically.
  */
 
+import { RequestContext } from './request-context';
+
 /**
  * Dynamic timezone offset in milliseconds.
- * Uses the environment's timezone (TZ variable or system default).
+ * Prioritizes request-scoped offset (e.g. from IP/Header) stored in RequestContext.
+ * Falls back to the environment's timezone (TZ variable or system default).
  */
 function localOffsetMs(): number {
+  const contextOffsetMins = RequestContext.getTimezoneOffset();
+  if (contextOffsetMins !== undefined) {
+    return contextOffsetMins * 60 * 1000;
+  }
   // getTimezoneOffset() returns minutes between UTC and local time (positive if behind UTC, negative if ahead).
   // We negate it to get the actual offset (e.g., UTC+2 -> -120 -> +120 mins).
   return -new Date().getTimezoneOffset() * 60 * 1000;
