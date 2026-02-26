@@ -663,7 +663,9 @@ if (!branch) {
       'branch.city'
     ])
     .where('branch.id = :branchId', { branchId })
+    .andWhere("stock.quantity > 0")
     .skip(skip)
+
     .take(limitNumber);
 
   // Apply search if provided
