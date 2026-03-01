@@ -456,6 +456,7 @@ export class VacationService {
   }
 
   private formatDateString(dateStr: string): string {
+    dateStr = this.convertArabicToWestern(dateStr);
     let date: Date;
 
     if (dateStr.includes('T')) {
@@ -507,6 +508,12 @@ export class VacationService {
     const day = String(date.getDate()).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
+  }
+
+  private convertArabicToWestern(str: string): string {
+    const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+    const westernDigits = '0123456789';
+    return str.replace(/[٠-٩]/g, (d) => westernDigits[arabicDigits.indexOf(d)]);
   }
 
   private async checkForOverlappingVacations(userId: string, dates: string[]): Promise<void> {
