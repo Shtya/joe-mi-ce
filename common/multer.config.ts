@@ -34,7 +34,13 @@ export const multerOptions = {
 // Multer configuration (same as before)
 export const multerOptionsVaction = {
   storage: diskStorage({
-    destination: './uploads/vacations',
+    destination: (req, file, cb) => {
+      const uploadDir = './uploads/vacations';
+      if (!existsSync(uploadDir)) {
+        mkdirSync(uploadDir, { recursive: true });
+      }
+      cb(null, uploadDir);
+    },
     filename: (req, file, callback) => {
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
       const ext = extname(file.originalname);
