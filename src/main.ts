@@ -79,7 +79,9 @@ async function configureApp(app: NestExpressApplication) {
 // --------------------------------------------
 if (isDev) {
   (async () => {
-    const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+      bodyParser: false,
+    });
     await configureApp(app);
 
     const port = process.env.PORT || 3030;
@@ -102,8 +104,7 @@ async function bootstrapServerless() {
     const app = await NestFactory.create<NestExpressApplication>(
       AppModule,
       new ExpressAdapter(server),
-      {cors:false}
-
+      { cors: false, bodyParser: false }
     );
 
     await configureApp(app);

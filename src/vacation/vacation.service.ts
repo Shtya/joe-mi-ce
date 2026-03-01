@@ -49,19 +49,17 @@ export class VacationService {
         throw new NotFoundException("there are not user")
       }
       const user = await this.userRepo.findOne({
-        where: { id: dto.userId  }, relations :['branch']
+        where: { id: dto.userId  }, relations :['branch' ,'journeys','journeys.branch']
       });
       if (!user) {
         throw new NotFoundException(`User with id ${dto.userId} not found`);
       }
       if(!dto.branchId){
-        if(!user.branch){
-          throw new NotFoundException('the user is without branch')
+        const branchId = user.branch?.id || user.journeys?.[0]?.branch?.id;
+        if (!branchId) {
+          throw new NotFoundException('the user is without branch');
         }
-        dto.branchId = user.branch.id
-      }
-      if(!dto.branchId){
-        throw new NotFoundException("there are not branch")
+        dto.branchId = branchId;
       }
       const branch = await this.branchRepo.findOne({
         where: { id: dto.branchId }
@@ -463,14 +461,36 @@ export class VacationService {
     if (dateStr.includes('T')) {
       date = new Date(dateStr);
     } else if (dateStr.includes('-')) {
-      const [year, month, day] = dateStr.split('-').map(Number);
-      date = new Date(year, month - 1, day);
-    } else if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
+      const parts = dateStr.split('-').map(Number);
       if (parts.length === 3) {
-        const date1 = new Date(Number(parts[2]), Number(parts[0]) - 1, Number(parts[1]));
-        const date2 = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
-        date = isNaN(date1.getTime()) ? date2 : date1;
+        if (parts[0] > 1000) {
+          // YYYY-MM-DD
+          date = new Date(parts[0], parts[1] - 1, parts[2]);
+        } else if (parts[2] > 1000) {
+          // DD-MM-YYYY or MM-DD-YYYY
+          const date1 = new Date(parts[2], parts[1] - 1, parts[0]);
+          const date2 = new Date(parts[2], parts[0] - 1, parts[1]);
+          date = isNaN(date1.getTime()) ? date2 : date1;
+        } else {
+          throw new Error('Invalid date format');
+        }
+      } else {
+        throw new Error('Invalid date format');
+      }
+    } else if (dateStr.includes('/')) {
+      const parts = dateStr.split('/').map(Number);
+      if (parts.length === 3) {
+        if (parts[0] > 1000) {
+          // YYYY/MM/DD
+          date = new Date(parts[0], parts[1] - 1, parts[2]);
+        } else if (parts[2] > 1000) {
+          // MM/DD/YYYY or DD/MM/YYYY
+          const date1 = new Date(parts[2], parts[0] - 1, parts[1]);
+          const date2 = new Date(parts[2], parts[1] - 1, parts[0]);
+          date = isNaN(date1.getTime()) ? date2 : date1;
+        } else {
+          throw new Error('Invalid date format');
+        }
       } else {
         throw new Error('Invalid date format');
       }

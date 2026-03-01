@@ -75,9 +75,9 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       }
 
       if (requester.role.name === ERole.PROJECT_ADMIN) {
-        if (dto.role === ERole.PROJECT_ADMIN) {
-          throw new ForbiddenException('You cannot create other Project Admins');
-        }
+        // if (dto.role === ERole.PROJECT_ADMIN) {
+        //   throw new ForbiddenException('You cannot create other Project Admins');
+        // }
         dto.project_id = await this.userService.resolveProjectIdFromUser(requester.id);
       }
     } else {
