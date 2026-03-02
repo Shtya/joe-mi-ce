@@ -7,6 +7,8 @@ import { Branch } from '../../entities/branch.entity';
 import { Shift } from '../../entities/employee/shift.entity';
 import { VacationDate } from '../../entities/employee/vacation-date.entity';
 import { Sale } from '../../entities/products/sale.entity';
+import { PromoterLocation } from '../../entities/promoter-location.entity';
+import { LocationLog } from '../../entities/location-log.entity';
 import { NotificationService } from '../notification/notification.service';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 
@@ -41,6 +43,8 @@ describe('JourneyService Regression', () => {
         { provide: getRepositoryToken(Shift), useValue: mockRepo },
         { provide: getRepositoryToken(VacationDate), useValue: mockRepo },
         { provide: getRepositoryToken(Sale), useValue: mockRepo },
+        { provide: getRepositoryToken(PromoterLocation), useValue: mockRepo },
+        { provide: getRepositoryToken(LocationLog), useValue: mockRepo },
         { provide: NotificationService, useValue: mockNotificationService },
       ],
     }).compile();

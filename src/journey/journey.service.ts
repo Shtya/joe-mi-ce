@@ -1,7 +1,7 @@
 // src/journey/journey.service.ts
 import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not, ILike } from 'typeorm';
+import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not, ILike, MoreThan } from 'typeorm';
 import * as dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
 import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto, AdminCheckInOutDto } from 'dto/journey.dto';
@@ -12,6 +12,8 @@ import { Branch } from 'entities/branch.entity';
 import { Shift } from 'entities/employee/shift.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
 import { Sale } from 'entities/products/sale.entity';
+import { PromoterLocation } from 'entities/promoter-location.entity';
+import { LocationLog } from 'entities/location-log.entity';
 import { getDistance } from 'geolib';
 import { CRUD } from 'common/crud.service';
 import { NotificationService } from 'src/notification/notification.service';
@@ -44,8 +46,117 @@ export class JourneyService {
     @InjectRepository(Sale)
     public saleRepo: Repository<Sale>,
 
+    @InjectRepository(PromoterLocation)
+    public locationRepo: Repository<PromoterLocation>,
+
+    @InjectRepository(LocationLog)
+    public locationLogRepo: Repository<LocationLog>,
+
     private readonly notificationService: NotificationService,
   ) {}
+
+  // ===== Live Location =====
+
+  /**
+   * Upsert the promoter's current position (called from WS gateway & REST fallback).
+   * Resolves projectId from today's journey if not supplied.
+   * Appends a LocationLog row every call (full audit trail).
+   */
+  async upsertPromoterLocation(params: {
+    userId: string;
+    lat: number;
+    lng: number;
+    journeyId?: string;
+    recordedAt?: Date;
+    isOffline?: boolean;
+  }): Promise<PromoterLocation> {
+    const { userId, lat, lng, journeyId, recordedAt = new Date(), isOffline = false } = params;
+
+    // Load user info for denormalised name/avatar stored in promoter_locations
+    const user = await this.userRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    // Resolve projectId: from journey (if provided) or from today's open journey
+    let projectId: string | null = null;
+    let branch: Branch | null = null;
+
+    if (journeyId) {
+      const journey = await this.journeyRepo.findOne({
+        where: { id: journeyId },
+        relations: ['branch', 'branch.chain'],
+      });
+      if (journey) {
+        projectId = journey.projectId;
+        branch = journey.branch;
+      }
+    } else {
+      const today = dayjs().format('YYYY-MM-DD');
+      const journey = await this.journeyRepo.findOne({
+        where: { user: { id: userId }, date: today },
+        relations: ['branch', 'branch.chain'],
+        order: { created_at: 'DESC' },
+      });
+      if (journey) {
+        projectId = journey.projectId;
+        branch = journey.branch;
+      }
+    }
+
+    // Determine geofence status
+    let isOutside = false;
+    if (branch) {
+      try {
+        const chainName = (branch as any).chain?.name ?? '';
+        const isCheckGeo = !chainName.toLowerCase().includes('roaming');
+        isOutside = isCheckGeo ? !this.isWithinGeofencePublic(branch, `${lat},${lng}`) : false;
+      } catch { isOutside = false; }
+    }
+
+    // Upsert the single-row position record
+    await this.locationRepo.upsert(
+      { userId, lat, lng, projectId, name: user.name, avatar_url: user.avatar_url, isOutside },
+      ['userId'],
+    );
+
+    // Always write to audit log
+    await this.locationLogRepo.save(
+      this.locationLogRepo.create({ userId, journeyId, lat, lng, isOutside, isOffline, recordedAt }),
+    );
+
+    // Return the fresh row so the gateway can broadcast it
+    return this.locationRepo.findOne({ where: { userId } });
+  }
+
+  /**
+   * Returns all promoters who sent a location ping in the last `minutes` minutes.
+   * Uses the (projectId, updatedAt) index — single range scan, very fast.
+   */
+  async getActivePromoterLocations(projectId: string, minutes = 30): Promise<PromoterLocation[]> {
+    const threshold = new Date(Date.now() - minutes * 60_000);
+    return this.locationRepo.find({
+      where: { projectId, updatedAt: MoreThan(threshold) },
+      order: { updatedAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Returns the raw location audit log for a user / journey.
+   */
+  async getLocationLog(params: { userId?: string; journeyId?: string; fromDate?: string; toDate?: string }) {
+    const { userId, journeyId, fromDate, toDate } = params;
+    const where: any = {};
+    if (userId) where.userId = userId;
+    if (journeyId) where.journeyId = journeyId;
+    if (fromDate && toDate) {
+      where.recordedAt = Between(new Date(fromDate), new Date(toDate));
+    }
+    return this.locationLogRepo.find({ where, order: { recordedAt: 'DESC' }, take: 200 });
+  }
+
+  /** Exposed for the gateway – same geofence logic but public */
+  isWithinGeofencePublic(branch: Branch, geo: any): boolean {
+    return this.isWithinGeofence(branch, geo);
+  }
 
   // ===== إدارة الخطط =====
   async createPlan(dto: CreateJourneyPlanDto) {
@@ -415,6 +526,37 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     const isCheckGeo = !chainName?.toLowerCase().includes('roaming');
 
     const isWithinGeofence = isCheckGeo ? this.isWithinGeofence(journey.branch, dto.geo) : true;
+
+    // 📍 Log location on every check-in/out (even if within radius)
+    try {
+      const geoCoords = this.parseLatLng(dto.geo);
+      await this.locationLogRepo.save(
+        this.locationLogRepo.create({
+          userId: dto.userId || journey.user?.id,
+          journeyId: dto.journeyId,
+          lat: geoCoords.lat,
+          lng: geoCoords.lng,
+          isOutside: !isWithinGeofence,
+          isOffline: false,
+          recordedAt: new Date(dto.checkInTime || dto.checkOutTime || Date.now()),
+        }),
+      );
+      // Also upsert the live position
+      if (journey.user?.id && journey.projectId) {
+        await this.locationRepo.upsert(
+          {
+            userId: journey.user.id,
+            lat: geoCoords.lat,
+            lng: geoCoords.lng,
+            projectId: journey.projectId,
+            name: journey.user.name,
+            avatar_url: journey.user.avatar_url,
+            isOutside: !isWithinGeofence,
+          },
+          ['userId'],
+        );
+      }
+    } catch { /* geo logging is non-critical, never block the main flow */ }
 
     if(!isWithinGeofence){
       throw new BadRequestException('You are too far from the location');

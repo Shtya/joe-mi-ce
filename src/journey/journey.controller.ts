@@ -801,4 +801,26 @@ async getTodayJourneysForMe(
   async recoverCheckInTimes() {
     return this.journeyService.recoverCheckInTimes();
   }
+
+
+  @Get('location/live')
+  @Permissions(EPermission.JOURNEY_READ)
+  async getLiveLocations(
+    @Query('projectId') projectId: string,
+    @Query('minutes') minutes: number = 30,
+  ) {
+    return this.journeyService.getActivePromoterLocations(projectId, Number(minutes));
+  }
+
+  @Get('location/log')
+  @Permissions(EPermission.JOURNEY_READ)
+  async getLocationLog(
+    @Query('userId') userId?: string,
+    @Query('journeyId') journeyId?: string,
+    @Query('fromDate') fromDate?: string,
+    @Query('toDate') toDate?: string,
+  ) {
+    return this.journeyService.getLocationLog({ userId, journeyId, fromDate, toDate });
+  }
 }
+

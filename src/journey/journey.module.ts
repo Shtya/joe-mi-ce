@@ -3,6 +3,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { JwtModule } from '@nestjs/jwt';
 import { JourneyService } from './journey.service';
 import { JourneyController } from './journey.controller';
 import { JourneyCron } from './journey.cron';
@@ -18,6 +19,9 @@ import { Project } from 'entities/project.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
 import { Sale } from 'entities/products/sale.entity';
+import { PromoterLocation } from 'entities/promoter-location.entity';
+import { LocationLog } from 'entities/location-log.entity';
+import { LocationGateway } from './location.gateway';
 
 @Module({
   imports: [
@@ -34,13 +38,19 @@ import { Sale } from 'entities/products/sale.entity';
       Project,
       Vacation,
       VacationDate,
-      Sale
+      Sale,
+      PromoterLocation,
+      LocationLog,
     ]),
     ScheduleModule.forRoot(),
-		NotificationModule,
+    JwtModule.register({
+      secret: process.env.JWT_SECRET,
+    }),
+    NotificationModule,
   ],
   controllers: [JourneyController],
-  providers: [JourneyService, JourneyCron,UsersService],
-  exports: [JourneyService,],
+  providers: [JourneyService, JourneyCron, UsersService, LocationGateway],
+  exports: [JourneyService],
 })
 export class JourneyModule {}
+

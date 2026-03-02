@@ -121,6 +121,31 @@ export class AdminCheckInOutDto {
   checkOutTime?: string;
 }
 
+export class UpdatePromoterLocationDto {
+  @IsOptional()
+  lat: number;
+
+  @IsOptional()
+  lng: number;
+
+  /** Link this ping to a journey for audit trail */
+  @IsOptional()
+  @IsString()
+  journeyId?: string;
+
+  /**
+   * Original GPS timestamp — required for offline-queued pings
+   * so the server stores the correct time even though it arrives late.
+   */
+  @IsOptional()
+  @IsDateString()
+  recordedAt?: string;
+
+  /** Set true when this ping was queued while the app had no connection */
+  @IsOptional()
+  isOffline?: boolean;
+}
+
 export class UserStatsResponseDto {
   user: {
     id: string;
