@@ -247,10 +247,13 @@ export class SaleController {
     );
   }
 
-// sale.controller.ts
 @Get('by-user/:userId')
 @Permissions(EPermission.SALE_READ)
 findByUser(@Param('userId') userId: string, @Query() query: any) {
+  const today = new Date();
+  const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+
   const filters = { ...query.filters };
   delete filters.fromDate;
   delete filters.toDate;
@@ -263,7 +266,9 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
     query.limit,
     query.sortBy,
     query.sortOrder,
-    { ...filters }
+    { ...filters },
+    startDate,
+    endDate
   );
 }
 
