@@ -272,6 +272,7 @@ export class VacationService {
       .leftJoinAndSelect('vacation.user', 'user')
       .leftJoinAndSelect('user.branch', 'userBranch')
       .leftJoinAndSelect('vacation.branch', 'branch')
+      .leftJoinAndSelect('branch.city', 'city')
       .leftJoinAndSelect('branch.project', 'project')
       .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
       .where('project.id = :projectId', { projectId });

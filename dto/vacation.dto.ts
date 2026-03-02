@@ -124,10 +124,13 @@ export class VacationResponseDto {
   id: string;
   userId: string;
   userName: string;
+  promoterName: string;
   userEmail?: string;
   branchId: string;
   branchName: string;
+  city: string;
   reason: string;
+  username: string;
   imageUrl?: string;
   overallStatus: string;
   dates: VacationDateWithStatusDto[]; // Each date with status
@@ -141,10 +144,14 @@ export class VacationResponseDto {
     this.id = vacation.id;
     this.userId = vacation.user?.id;
     this.userName = `${vacation.user?.first_name || ''} ${vacation.user?.last_name || ''}`.trim();
+    if (!this.userName) this.userName = vacation.user?.name || vacation.user?.username || '';
+    this.promoterName = vacation.user?.name || vacation.user?.username || '';
     this.userEmail = vacation.user?.email;
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
+    this.city = vacation.branch?.city?.name;
     this.reason = vacation.reason;
+    this.username = vacation.user?.username;
     this.imageUrl = vacation.image_url;
     this.overallStatus = vacation.overall_status;
     this.createdAt = vacation.created_at;
@@ -166,7 +173,9 @@ export class VacationSummaryResponseDto {
   userName: string;
   branchId: string;
   branchName: string;
+  city: string;
   reason: string;
+  username: string;
   imageUrl?: string;
   overallStatus: string;
   totalDates: number;
@@ -186,7 +195,9 @@ export class VacationSummaryResponseDto {
     this.promoterName =vacation.user?.name ?? vacation.user?.username ?? ''
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
+    this.city = vacation.branch?.city?.name;
     this.reason = vacation.reason;
+    this.username = vacation.user?.name ?? vacation.user?.username ?? ''
     this.imageUrl = vacation.image_url;
     this.overallStatus = vacation.overall_status;
     this.createdAt = vacation.created_at;
