@@ -174,6 +174,7 @@ export class VacationSummaryResponseDto {
   pendingDates: number;
   rejectedDates: number;
   dates: VacationDateWithStatusDto[]; // All dates with their status
+  promoterName: string;
   createdAt: Date;
   updatedAt: Date;
 
@@ -182,6 +183,7 @@ export class VacationSummaryResponseDto {
     this.userId = vacation.user?.id;
     // User entity has `name` field (not first_name/last_name)
     this.userName = vacation.user?.name ?? vacation.user?.username ?? '';
+    this.promoterName =vacation.user?.name ?? vacation.user?.username ?? ''
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
     this.reason = vacation.reason;

@@ -7,7 +7,7 @@ import {
   InternalServerErrorException
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Brackets } from 'typeorm';
+import { Repository, In, Brackets, Not } from 'typeorm';
 import {
   CreateVacationDto,
   UpdateDateStatusDto,
@@ -22,6 +22,7 @@ import { Branch } from 'entities/branch.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
 import { Journey, JourneyStatus } from 'entities/all_plans.entity';
+import { ERole } from 'enums/Role.enum';
 
 @Injectable()
 export class VacationService {
@@ -251,7 +252,7 @@ export class VacationService {
 
     const user = await this.userRepo.findOne({
       where: { id: req.user.id },
-      relations: ['project', 'branch', 'branch.project'],
+      relations: ['project', 'branch', 'branch.project', 'role'],
       select:{project:{id:true}}
     });
 
@@ -269,6 +270,7 @@ export class VacationService {
     const query = this.vacationRepo
       .createQueryBuilder('vacation')
       .leftJoinAndSelect('vacation.user', 'user')
+      .leftJoinAndSelect('user.branch', 'userBranch')
       .leftJoinAndSelect('vacation.branch', 'branch')
       .leftJoinAndSelect('branch.project', 'project')
       .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
@@ -336,9 +338,28 @@ export class VacationService {
       .take(limit);
 
     const [vacations, total] = await query.getManyAndCount();
-    const data = vacations;
-    const otherdata = new PaginatedResponseDto(data, total, page, limit);
-    return otherdata
+
+    // 🔑 Auto-assign branch if requester is supervisor and promoter has no branch
+    if (user?.role?.name === ERole.SUPERVISOR) {
+      await Promise.all(vacations.map(async (vacation) => {
+        if (!vacation.user.branch && vacation.user.id) {
+          const resolvedBranch = await this.resolveAndAssignBranchForUser(vacation.user.id);
+          if (resolvedBranch) {
+            vacation.user.branch = resolvedBranch;
+            // Also update vacation branch if it was missing or mismatched?
+            // User says "take from it the branch id and i need to assing this branch to the prmoter"
+            // If the vacation itself has no branch, update it too.
+            if (!vacation.branch) {
+                vacation.branch = resolvedBranch;
+                await this.vacationRepo.update({ id: vacation.id }, { branch: { id: resolvedBranch.id } });
+            }
+          }
+        }
+      }));
+    }
+
+    const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
+    return new PaginatedResponseDto(data, total, page, limit);
   } catch (error) {
     console.error(error);
     throw new InternalServerErrorException('Failed to fetch vacations');
@@ -533,5 +554,33 @@ export class VacationService {
         `Vacation request conflicts with existing requests on dates: ${conflictingDates.join(', ')}`
       );
     }
+  }
+
+  async resolveAndAssignBranchForUser(userId: string): Promise<Branch | null> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['branch'],
+    });
+
+    if (!user) return null;
+    if (user.branch) return user.branch;
+
+    // Resolve branch from last journey with check-in
+    const lastJourneyWithCheckIn = await this.journeyRepo.findOne({
+      where: {
+        user: { id: userId },
+        checkin: { checkInTime: Not(null as any) },
+      },
+      relations: ['branch'],
+      order: { date: 'DESC' },
+    });
+
+    if (lastJourneyWithCheckIn && lastJourneyWithCheckIn.branch) {
+      const branchId = lastJourneyWithCheckIn.branch.id;
+      // Also update the user record to persist this branch assignment
+      return lastJourneyWithCheckIn.branch;
+    }
+
+    return null;
   }
 }
