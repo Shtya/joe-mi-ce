@@ -1256,4 +1256,103 @@ private async downloadWithHttpModule(url: string): Promise<string> {
     const savedProduct = await this.productRepository.save(product);
     await this.assignStock(savedProduct, project, productData);
   }
+
+  /**
+   * Cleanup repeated product names and remove duplicates
+   */
+  async cleanupProductNames(projectId: string) {
+    const products = await this.productRepository.find({
+      where: { project: { id: projectId } },
+      relations: ['project'],
+    });
+
+    const results = {
+      cleaned: 0,
+      deleted: 0,
+      skipped: 0,
+    };
+
+    for (const product of products) {
+      const originalName = product.name;
+      const cleanName = this.getCleanProductName(originalName);
+
+      if (cleanName !== originalName) {
+        // Check if duplicate exists with clean name
+        const existing = await this.productRepository.findOne({
+          where: { name: cleanName, project: { id: projectId } },
+        });
+
+        if (existing && existing.id !== product.id) {
+          // 1. Transfer Stock safely
+          const stocks = await this.stockRepository.find({ 
+            where: { product: { id: product.id } } 
+          });
+          
+          for (const s of stocks) {
+            const existingStock = await this.stockRepository.findOne({
+              where: { product: { id: existing.id }, branch: { id: s.branch_id } }
+            });
+
+            if (existingStock) {
+              existingStock.quantity += s.quantity;
+              await this.stockRepository.save(existingStock);
+              await this.stockRepository.remove(s);
+            } else {
+              s.product = existing;
+              await this.stockRepository.save(s);
+            }
+          }
+
+          // 2. Transfer Sales
+          try {
+            await this.productRepository.manager.update(
+              'sale', // Entity name/table
+              { productId: product.id }, // Match by productId
+              { product: existing }
+            );
+          } catch (e) {
+            console.error(`Failed to transfer sales for product ${product.id}:`, e.message);
+          }
+
+          // 3. Delete this one as it's a duplicate
+          await this.productRepository.remove(product);
+          results.deleted++;
+        } else {
+          // Rename this one
+          product.name = cleanName;
+          await this.productRepository.save(product);
+          results.cleaned++;
+        }
+      } else {
+        results.skipped++;
+      }
+    }
+
+    return results;
+  }
+
+  private getCleanProductName(name: string): string {
+    const trimmed = name.trim();
+    const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+    if (words.length < 2) return trimmed;
+
+    // Case 1: Exact duplicate halves: "iPhone 15 iPhone 15" -> "iPhone 15"
+    if (words.length % 2 === 0) {
+      const mid = words.length / 2;
+      const firstHalf = words.slice(0, mid).join(' ');
+      const secondHalf = words.slice(mid).join(' ');
+      if (firstHalf.toLowerCase() === secondHalf.toLowerCase()) {
+        return firstHalf;
+      }
+    }
+
+    // Case 2: Consecutive duplicate words: "iPhone iPhone 15" -> "iPhone 15"
+    const cleanedWords = [];
+    for (let i = 0; i < words.length; i++) {
+      if (i === 0 || words[i].toLowerCase() !== words[i - 1].toLowerCase()) {
+        cleanedWords.push(words[i]);
+      }
+    }
+    return cleanedWords.join(' ');
+  }
 }

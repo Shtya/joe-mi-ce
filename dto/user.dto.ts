@@ -60,6 +60,7 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   name?: string;
+
   @IsOptional()
   @IsString()
   role_id?: string;
@@ -68,8 +69,8 @@ export class UpdateUserDto {
   @IsString()
   username?: string;
 
-  
   @IsOptional()
+  @IsString()
   mobile?: string;
 
   @IsOptional()
@@ -80,10 +81,13 @@ export class UpdateUserDto {
   @IsString()
   password?: string;
 
-
   @IsString()
   @IsOptional()
   avatar?: string;
+
+  @IsString()
+  @IsOptional()
+  national_id?: string;
 }
 
 export class UpdateUserRoleDto {

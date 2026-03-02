@@ -267,6 +267,7 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       created_by: userWithRelations.created_by,
       mobile: userWithRelations.mobile,
       is_active: userWithRelations.is_active,
+      national_id: userWithRelations.national_id,
     };
   }
   async getUserById(userId: string) {
@@ -603,6 +604,7 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User, file?: Expres
       is_active: true,
       avatar_url: row.avatar_url,
       created_by: requester,
+      national_id: row.national_id || null,
     });
 
     if (row.avatar_url) {

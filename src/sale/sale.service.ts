@@ -627,7 +627,9 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     sortOrder: 'ASC' | 'DESC' = 'DESC',
     filters?: any,
     startDate?: Date,
-    endDate?: Date
+    endDate?: Date,
+    brandId?: string,
+
   ) {
   const pageNumber = Number(page) || 1;
   const limitNumber = Number(limit) || 10;
@@ -668,6 +670,9 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
   if (userId) {
      qb.andWhere('user.id = :userId', { userId });
+  }
+  if(brandId){
+    qb.andWhere('brand.id = :brandId', { brandId });
   }
 
   // Apply search if provided

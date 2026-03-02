@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, UseGuards, Query, ParseUUIDPipe, Res, HttpStatus, UseInterceptors, BadRequestException, UploadedFile, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Put, Delete, UseGuards, Query, ParseUUIDPipe, Res, HttpStatus, UseInterceptors, BadRequestException, UploadedFile, Req } from '@nestjs/common';
 import { Response } from 'express';
 import * as fs from 'fs';
 import { CreateProductDto, GetProductsByBranchDto, ImportProductsDto, UpdateProductDto } from 'dto/product.dto';
@@ -339,16 +339,16 @@ async findAll(@Query() q: any, @Req() req: any) {
       console.log(`Import completed: Created: ${result.created}, Updated: ${result.updated}, Failed: ${result.failed}`);
       return result;
     } catch (err) {
-      // Clean up on error
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
       console.error('Import error:', err);
       throw new BadRequestException(`Import failed: ${err.message}`);
     }
   }
 
-
+  @Patch('cleanup/:projectId')
+  @Permissions(EPermission.PRODUCT_UPDATE)
+  async cleanupProductNames(@Param('projectId', ParseUUIDPipe) projectId: string) {
+    return this.productService.cleanupProductNames(projectId);
+  }
     private async processCSVInBatches(
       filePath: string,
       projectId: string,
