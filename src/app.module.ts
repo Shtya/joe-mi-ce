@@ -39,6 +39,7 @@ import { ContactUs } from 'entities/contact-us.entity';
 import { ContactUsModule } from './contact-us/contact-us.module';
 import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module';
 import { AppVersionModule } from './app-version/app-version.module';
+import { FirebaseModule } from './firebase/firebase.module';
 
  @Module({
   imports: [
@@ -105,6 +106,7 @@ import { AppVersionModule } from './app-version/app-version.module';
     ContactUsModule,
     DocumentbuilderModule,
     AppVersionModule,
+    FirebaseModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],

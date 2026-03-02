@@ -183,6 +183,11 @@ async resolveProjectIdFromUser(userId: string): Promise<string> {
 
   throw new ForbiddenException('User is not assigned to any project');
 }
+  async registerFcmToken(userId: string, token: string): Promise<{ success: boolean }> {
+    await this.userRepository.update({ id: userId }, { fcm_token: token });
+    return { success: true };
+  }
+
   async deleteUser(
     userId: string,
     lang: 'ar' | 'en' = 'en',

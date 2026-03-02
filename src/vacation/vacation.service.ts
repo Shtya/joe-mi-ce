@@ -179,7 +179,7 @@ export class VacationService {
         throw new NotFoundException(`Vacation with id ${id} not found`);
       }
 
-      return  vacation;
+      return new VacationSummaryResponseDto(vacation);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

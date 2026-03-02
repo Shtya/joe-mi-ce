@@ -48,7 +48,13 @@ const run = async () => {
     };
 
     // Instantiate Services
-    const notificationService = new NotificationService(notificationRepo);
+    // FirebaseService is stubbed out (no real Firebase in this script)
+    const firebaseStub = {
+        sendPushNotification: async () => {},
+        sendMulticastPushNotification: async () => {},
+    } as any;
+
+    const notificationService = new NotificationService(notificationRepo, userRepo, firebaseStub);
     (notificationService as any).logger = loggerSpy;
 
     const journeyService = new JourneyService(

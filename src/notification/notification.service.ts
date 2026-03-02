@@ -7,6 +7,7 @@ import { User } from 'entities/user.entity';
 import { Branch } from 'entities/branch.entity';
 import { Journey } from 'entities/all_plans.entity';
 import { Sale } from 'entities/products/sale.entity';
+import { FirebaseService } from 'src/firebase/firebase.service';
 
 export type SupervisorCheckinType = 'checkin' | 'checkout' | 'update';
 
@@ -37,6 +38,9 @@ export class NotificationService {
   constructor(
     @InjectRepository(Notification)
     public readonly notificationRepo: Repository<Notification>,
+    @InjectRepository(User)
+    private readonly userRepo: Repository<User>,
+    private readonly firebaseService: FirebaseService,
   ) {}
 
   // ====== PUBLIC API FOR OTHER MODULES ======
@@ -65,6 +69,20 @@ export class NotificationService {
 
     await this.notificationRepo.save(notification);
     this.logger.log(`Notification stored for supervisor ${payload.supervisorId} (journey ${payload.journeyId})`);
+
+    // 🔔 Send FCM push notification
+    const supervisorUser = await this.userRepo.findOne({
+      where: { id: payload.supervisorId },
+      select: ['id', 'fcm_token'],
+    });
+    if (supervisorUser?.fcm_token) {
+      await this.firebaseService.sendPushNotification(
+        supervisorUser.fcm_token,
+        lang === 'ar' ? titleAr : titleEn,
+        lang === 'ar' ? messageAr : messageEn,
+        { type, journeyId: payload.journeyId, branchId: payload.branchId },
+      );
+    }
   }
 
   async notifyPromoterOnCheckin(payload: PromoterCheckinPayload, lang: string = 'en') {
@@ -91,6 +109,20 @@ export class NotificationService {
 
     await this.notificationRepo.save(notification);
     this.logger.log(`Notification stored for promoter ${payload.promoterId} (journey ${payload.journeyId})`);
+
+    // 🔔 Send FCM push notification
+    const promoterUser = await this.userRepo.findOne({
+      where: { id: payload.promoterId },
+      select: ['id', 'fcm_token'],
+    });
+    if (promoterUser?.fcm_token) {
+      await this.firebaseService.sendPushNotification(
+        promoterUser.fcm_token,
+        lang === 'ar' ? titleAr : titleEn,
+        lang === 'ar' ? messageAr : messageEn,
+        { type, journeyId: payload.journeyId, branchId: payload.branchId },
+      );
+    }
   }
 
   private translateType(type: string): string {

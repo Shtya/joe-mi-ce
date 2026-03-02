@@ -108,11 +108,13 @@ export class VacationDateWithStatusDto {
 
   constructor(vacationDate: any) {
     this.date = vacationDate.date;
-    this.status = vacationDate.status;
+    // VacationDate entity currently has no status column — default to 'pending'
+    this.status = vacationDate.status ?? 'pending';
     this.processedBy = vacationDate.processedBy?.id;
-    this.processedByName = vacationDate.processedBy ?
-      `${vacationDate.processedBy.first_name} ${vacationDate.processedBy.last_name}` :
-      undefined;
+    this.processedByName = vacationDate.processedBy
+      ? `${vacationDate.processedBy.first_name ?? ''} ${vacationDate.processedBy.last_name ?? ''}`.trim() ||
+        vacationDate.processedBy.name
+      : undefined;
     this.processedAt = vacationDate.processed_at;
     this.rejectionReason = vacationDate.rejection_reason;
   }
@@ -178,7 +180,8 @@ export class VacationSummaryResponseDto {
   constructor(vacation: any) {
     this.id = vacation.id;
     this.userId = vacation.user?.id;
-    this.userName = `${vacation.user?.username}`
+    // User entity has `name` field (not first_name/last_name)
+    this.userName = vacation.user?.name ?? vacation.user?.username ?? '';
     this.branchId = vacation.branch?.id;
     this.branchName = vacation.branch?.name;
     this.reason = vacation.reason;

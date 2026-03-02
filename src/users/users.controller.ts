@@ -1,5 +1,5 @@
 // controllers/users.controller.ts
-import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException, Delete, Req, Body } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException, Delete, Req, Body, Post, HttpCode, HttpStatus } from '@nestjs/common';
 import { UserResponseDto, UsersByBranchResponseDto, ProjectUsersResponseDto } from 'dto/users.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { UsersService } from './users.service';
@@ -85,5 +85,11 @@ async getPromotersAndSupervisors(@Request() req) {
   @Permissions(EPermission.JOURNEY_READ)
   async getUserStats(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.journeyService.getUserStats(userId);
+  }
+
+  @Post('fcm-token')
+  @HttpCode(HttpStatus.OK)
+  async registerFcmToken(@Req() req, @Body('token') token: string) {
+    return this.usersService.registerFcmToken(req.user.id, token);
   }
 }
