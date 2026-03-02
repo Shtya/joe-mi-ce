@@ -109,6 +109,18 @@ export class JourneyController {
     return this.journeyService.adminCheckInOut(dto, req.user, );
   }
 
+  @Patch('admin/remove-checkout/:userId')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async adminRemoveCheckout(@Param('userId') userId: string) {
+    return this.journeyService.adminRemoveCheckout(userId);
+  }
+
+  @Patch('admin/remove-checkin/:userId')
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async adminRemoveCheckin(@Param('userId') userId: string) {
+    return this.journeyService.adminRemoveCheckin(userId);
+  }
+
 
 
 

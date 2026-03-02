@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JourneyService } from './journey.service';
-import { Journey, JourneyPlan, CheckIn, JourneyStatus } from '../../entities/all_plans.entity';
+import { Journey, JourneyPlan, CheckIn, JourneyStatus, JourneyType } from '../../entities/all_plans.entity';
 import { User } from '../../entities/user.entity';
 import { Branch } from '../../entities/branch.entity';
 import { Shift } from '../../entities/employee/shift.entity';
@@ -82,6 +82,72 @@ describe('JourneyService Regression', () => {
           { status: JourneyStatus.UNPLANNED_PRESENT },
         ],
       }));
+    });
+  });
+
+  describe('adminRemoveCheckout', () => {
+    it('should remove checkout info and set status to PRESENT for PLANNED journey', async () => {
+      const mockJourney = {
+        id: 'j1',
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.CLOSED,
+        checkin: { id: 'c1', checkOutTime: new Date(), checkOutDocument: 'doc.pdf' },
+      };
+      mockRepo.findOne.mockResolvedValue(mockJourney);
+      mockRepo.save.mockImplementation(v => Promise.resolve(v));
+
+      const result = await service.adminRemoveCheckout('user1');
+
+      expect(result.status).toBe(JourneyStatus.PRESENT);
+      expect(mockJourney.checkin.checkOutTime).toBeNull();
+      expect(mockJourney.checkin.checkOutDocument).toBeNull();
+      expect(mockRepo.save).toHaveBeenCalled();
+    });
+
+    it('should set status to UNPLANNED_PRESENT for UNPLANNED journey', async () => {
+      const mockJourney = {
+        id: 'j2',
+        type: JourneyType.UNPLANNED,
+        status: JourneyStatus.UNPLANNED_CLOSED,
+        checkin: { id: 'c2', checkOutTime: new Date() },
+      };
+      mockRepo.findOne.mockResolvedValue(mockJourney);
+
+      const result = await service.adminRemoveCheckout('user1');
+
+      expect(result.status).toBe(JourneyStatus.UNPLANNED_PRESENT);
+    });
+  });
+
+  describe('adminRemoveCheckin', () => {
+    it('should remove all checkin/out info and set status to ABSENT for PLANNED journey', async () => {
+      const mockJourney = {
+        id: 'j3',
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.PRESENT,
+        checkin: { id: 'c3', checkInTime: new Date(), checkInDocument: 'in.pdf' },
+      };
+      mockRepo.findOne.mockResolvedValue(mockJourney);
+
+      const result = await service.adminRemoveCheckin('user1');
+
+      expect(result.status).toBe(JourneyStatus.ABSENT);
+      expect(mockJourney.checkin.checkInTime).toBeNull();
+      expect(mockJourney.checkin.checkInDocument).toBeNull();
+    });
+
+    it('should set status to UNPLANNED_ABSENT for UNPLANNED journey', async () => {
+      const mockJourney = {
+        id: 'j4',
+        type: JourneyType.UNPLANNED,
+        status: JourneyStatus.UNPLANNED_PRESENT,
+        checkin: { id: 'c4', checkInTime: new Date() },
+      };
+      mockRepo.findOne.mockResolvedValue(mockJourney);
+
+      const result = await service.adminRemoveCheckin('user1');
+
+      expect(result.status).toBe(JourneyStatus.UNPLANNED_ABSENT);
     });
   });
 });

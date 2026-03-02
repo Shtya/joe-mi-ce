@@ -623,6 +623,67 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return savedCheckIn;
   }
 
+  async adminRemoveCheckout(userId: string) {
+    const today = dayjs().format('YYYY-MM-DD');
+    const journey = await this.journeyRepo.findOne({
+      where: {
+        user: { id: userId },
+        date: today,
+      },
+      relations: ['checkin'],
+    });
+
+    if (!journey) {
+      throw new NotFoundException('No journey found for this user today');
+    }
+
+    if (journey.checkin) {
+      journey.checkin.checkOutTime = null;
+      journey.checkin.checkOutDocument = null;
+      await this.checkInRepo.save(journey.checkin);
+    }
+
+    if (journey.type === JourneyType.PLANNED) {
+      journey.status = JourneyStatus.PRESENT;
+    } else {
+      journey.status = JourneyStatus.UNPLANNED_PRESENT;
+    }
+
+    return this.journeyRepo.save(journey);
+  }
+
+  async adminRemoveCheckin(userId: string) {
+    const today = dayjs().format('YYYY-MM-DD');
+    const journey = await this.journeyRepo.findOne({
+      where: {
+        user: { id: userId },
+        date: today,
+      },
+      relations: ['checkin'],
+    });
+
+    if (!journey) {
+      throw new NotFoundException('No journey found for this user today');
+    }
+
+    if (journey.checkin) {
+      // If we remove check-in, we should also remove check-out as it depends on it
+      journey.checkin.checkInTime = null;
+      journey.checkin.checkInDocument = null;
+      journey.checkin.checkOutTime = null;
+      journey.checkin.checkOutDocument = null;
+      await this.checkInRepo.save(journey.checkin);
+    }
+
+    if (journey.type === JourneyType.PLANNED) {
+      journey.status = JourneyStatus.ABSENT;
+    } else {
+      journey.status = JourneyStatus.UNPLANNED_ABSENT;
+    }
+
+    return this.journeyRepo.save(journey);
+  }
+
 
   async validateJourneyStatus(id: string) {
     const journey = await this.journeyRepo.findOne({
