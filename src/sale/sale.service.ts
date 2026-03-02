@@ -974,11 +974,69 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     }
   }
 
+  // --- Category Summaries Aggregation ---
+  const categoryQb = this.saleRepo.createQueryBuilder('sale')
+    .leftJoin('sale.product', 'product')
+    .leftJoin('product.category', 'category')
+    .leftJoin('sale.user', 'user')
+    .leftJoin('sale.branch', 'branch')
+    .leftJoin('product.brand', 'brand')
+    .select([
+      'category.id as category_id',
+      'category.name as category_name',
+      'SUM(sale.quantity) as total_quantity',
+      'SUM(sale.total_amount) as total_price'
+    ])
+    .groupBy('category.id, category.name');
+
+  if (userId) {
+    categoryQb.andWhere('user.id = :userId', { userId });
+  }
+  if (brandId) {
+    categoryQb.andWhere('brand.id = :brandId', { brandId });
+  }
+
+  if (search) {
+    categoryQb.andWhere('product.name ILIKE :search', { search: `%${search}%` });
+  }
+
+  if (startDate && endDate) {
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+    categoryQb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', { startDate: startDateStr, endDate: endDateStr });
+  } else if (startDate) {
+    categoryQb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDate.toISOString().split('T')[0] });
+  } else if (endDate) {
+    categoryQb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDate.toISOString().split('T')[0] });
+  }
+
+  if (filters) {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        if (key.includes('.')) {
+          const [relation, field] = key.split('.');
+          categoryQb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { [key.replace('.', '_')]: value });
+        } else {
+          categoryQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
+        }
+      }
+    });
+  }
+
+  const categorySummariesRaw = await categoryQb.getRawMany();
+  const category_summaries = categorySummariesRaw.map(item => ({
+    category_id: item.category_id,
+    category_name: item.category_name || 'Uncategorized',
+    total_quantity: parseFloat(item.total_quantity) || 0,
+    total_price: parseFloat(item.total_price) || 0
+  }));
+
   return {
     total_records,
     total_quantity,
     total_sales,
     last_journey_totals,
+    category_summaries, // New Field
     current_page: pageNumber,
     per_page: limitNumber,
     branch: branchInfo, // Branch appears only once here
