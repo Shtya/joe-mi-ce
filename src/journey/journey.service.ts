@@ -623,18 +623,25 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return savedCheckIn;
   }
 
-  async adminRemoveCheckout(userId: string) {
-    const today = dayjs().format('YYYY-MM-DD');
+  async adminRemoveCheckout(userId?: string, journeyId?: string, date?: string) {
+    const today = date || dayjs().format('YYYY-MM-DD');
+    const where: any = {};
+    if (journeyId) {
+      where.id = journeyId;
+    } else if (userId) {
+      where.user = { id: userId };
+      where.date = today;
+    } else {
+      throw new BadRequestException('userId or journeyId must be provided');
+    }
+
     const journey = await this.journeyRepo.findOne({
-      where: {
-        user: { id: userId },
-        date: today,
-      },
+      where,
       relations: ['checkin'],
     });
 
     if (!journey) {
-      throw new NotFoundException('No journey found for this user today');
+      throw new NotFoundException('No journey found');
     }
 
     if (journey.checkin) {
@@ -652,18 +659,25 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return this.journeyRepo.save(journey);
   }
 
-  async adminRemoveCheckin(userId: string) {
-    const today = dayjs().format('YYYY-MM-DD');
+  async adminRemoveCheckin(userId?: string, journeyId?: string, date?: string) {
+    const today = date || dayjs().format('YYYY-MM-DD');
+    const where: any = {};
+    if (journeyId) {
+      where.id = journeyId;
+    } else if (userId) {
+      where.user = { id: userId };
+      where.date = today;
+    } else {
+      throw new BadRequestException('userId or journeyId must be provided');
+    }
+
     const journey = await this.journeyRepo.findOne({
-      where: {
-        user: { id: userId },
-        date: today,
-      },
+      where,
       relations: ['checkin'],
     });
 
     if (!journey) {
-      throw new NotFoundException('No journey found for this user today');
+      throw new NotFoundException('No journey found');
     }
 
     if (journey.checkin) {

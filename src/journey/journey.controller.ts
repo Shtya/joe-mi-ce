@@ -111,14 +111,22 @@ export class JourneyController {
 
   @Patch('admin/remove-checkout/:userId')
   @Permissions(EPermission.JOURNEY_UPDATE)
-  async adminRemoveCheckout(@Param('userId') userId: string) {
-    return this.journeyService.adminRemoveCheckout(userId);
+  async adminRemoveCheckout(
+    @Param('userId') userId: string,
+    @Query('journeyId') journeyId?: string,
+    @Query('date') date?: string
+  ) {
+    return this.journeyService.adminRemoveCheckout(userId, journeyId, date);
   }
 
   @Patch('admin/remove-checkin/:userId')
   @Permissions(EPermission.JOURNEY_UPDATE)
-  async adminRemoveCheckin(@Param('userId') userId: string) {
-    return this.journeyService.adminRemoveCheckin(userId);
+  async adminRemoveCheckin(
+    @Param('userId') userId: string,
+    @Query('journeyId') journeyId?: string,
+    @Query('date') date?: string
+  ) {
+    return this.journeyService.adminRemoveCheckin(userId, journeyId, date);
   }
 
 

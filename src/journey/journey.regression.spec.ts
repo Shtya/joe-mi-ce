@@ -117,6 +117,39 @@ describe('JourneyService Regression', () => {
 
       expect(result.status).toBe(JourneyStatus.UNPLANNED_PRESENT);
     });
+
+    it('should remove by journeyId if provided', async () => {
+      const mockJourney = {
+        id: 'journey-123',
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.CLOSED,
+        checkin: { id: 'c1', checkOutTime: new Date() },
+      };
+      mockRepo.findOne.mockResolvedValue(mockJourney);
+
+      const result = await service.adminRemoveCheckout(undefined, 'journey-123');
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'journey-123' },
+      }));
+      expect(result.id).toBe('journey-123');
+    });
+
+    it('should remove by userId and specific date if provided', async () => {
+      const mockJourney = {
+        id: 'j1',
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.CLOSED,
+        checkin: { id: 'c1', checkOutTime: new Date() },
+      };
+      mockRepo.findOne.mockResolvedValue(mockJourney);
+
+      await service.adminRemoveCheckout('user1', undefined, '2025-01-01');
+
+      expect(mockRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+        where: { user: { id: 'user1' }, date: '2025-01-01' },
+      }));
+    });
   });
 
   describe('adminRemoveCheckin', () => {
@@ -136,18 +169,21 @@ describe('JourneyService Regression', () => {
       expect(mockJourney.checkin.checkInDocument).toBeNull();
     });
 
-    it('should set status to UNPLANNED_ABSENT for UNPLANNED journey', async () => {
+    it('should remove by journeyId if provided', async () => {
       const mockJourney = {
-        id: 'j4',
-        type: JourneyType.UNPLANNED,
-        status: JourneyStatus.UNPLANNED_PRESENT,
-        checkin: { id: 'c4', checkInTime: new Date() },
+        id: 'journey-456',
+        type: JourneyType.PLANNED,
+        status: JourneyStatus.PRESENT,
+        checkin: { id: 'c1', checkInTime: new Date() },
       };
       mockRepo.findOne.mockResolvedValue(mockJourney);
 
-      const result = await service.adminRemoveCheckin('user1');
+      const result = await service.adminRemoveCheckin(undefined, 'journey-456');
 
-      expect(result.status).toBe(JourneyStatus.UNPLANNED_ABSENT);
+      expect(mockRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'journey-456' },
+      }));
+      expect(result.id).toBe('journey-456');
     });
   });
 });
