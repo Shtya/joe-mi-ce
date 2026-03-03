@@ -131,7 +131,7 @@ describe('JourneyService Regression', () => {
       };
       mockRepo.findOne.mockResolvedValue(mockJourney);
 
-      const result = await service.adminRemoveCheckout(undefined, 'journey-123');
+      const result = await service.adminRemoveCheckout( 'journey-123');
 
       expect(mockRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 'journey-123' },
@@ -148,7 +148,7 @@ describe('JourneyService Regression', () => {
       };
       mockRepo.findOne.mockResolvedValue(mockJourney);
 
-      await service.adminRemoveCheckout('user1', undefined, '2025-01-01');
+      await service.adminRemoveCheckout( 'journey-123');
 
       expect(mockRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
         where: { user: { id: 'user1' }, date: '2025-01-01' },
@@ -182,7 +182,7 @@ describe('JourneyService Regression', () => {
       };
       mockRepo.findOne.mockResolvedValue(mockJourney);
 
-      const result = await service.adminRemoveCheckin(undefined, 'journey-456');
+      const result = await service.adminRemoveCheckin( 'journey-456');
 
       expect(mockRepo.findOne).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 'journey-456' },

@@ -765,17 +765,13 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return savedCheckIn;
   }
 
-  async adminRemoveCheckout(userId?: string, journeyId?: string, date?: string) {
-    const today = date || dayjs().format('YYYY-MM-DD');
+  async adminRemoveCheckout( journeyId: string,) {
     const where: any = {};
-    if (journeyId) {
+   if(journeyId){
       where.id = journeyId;
-    } else if (userId) {
-      where.user = { id: userId };
-      where.date = today;
-    } else {
-      throw new BadRequestException('userId or journeyId must be provided');
-    }
+   }else{
+    throw new BadRequestException('journeyId must be provided');
+   }
 
     const journey = await this.journeyRepo.findOne({
       where,
@@ -801,16 +797,12 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return this.journeyRepo.save(journey);
   }
 
-  async adminRemoveCheckin(userId?: string, journeyId?: string, date?: string) {
-    const today = date || dayjs().format('YYYY-MM-DD');
+  async adminRemoveCheckin(journeyId: string) {
     const where: any = {};
     if (journeyId) {
       where.id = journeyId;
-    } else if (userId) {
-      where.user = { id: userId };
-      where.date = today;
     } else {
-      throw new BadRequestException('userId or journeyId must be provided');
+      throw new BadRequestException('journeyId must be provided');
     }
 
     const journey = await this.journeyRepo.findOne({
