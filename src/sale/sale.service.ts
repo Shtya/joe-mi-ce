@@ -989,13 +989,19 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       .getOne();
 
     if (lastJourney) {
-      const lastJourneyTotals = await this.saleRepo.createQueryBuilder('sale')
+      const lastJourneyTotalsQb = this.saleRepo.createQueryBuilder('sale')
         .select('SUM(sale.quantity)', 'totalQuantity')
         .addSelect('SUM(sale.total_amount)', 'totalSales')
         .where('sale.user.id = :userId', { userId })
         .andWhere('sale.branch.id = :branchId', { branchId: lastJourney.branch?.id })
-        .andWhere('DATE(sale.created_at) = :date', { date: lastJourney.date })
-        .getRawOne();
+        .andWhere('DATE(sale.created_at) = :date', { date: lastJourney.date });
+
+      if (brandId) {
+        lastJourneyTotalsQb.leftJoin('sale.product', 'p').leftJoin('p.brand', 'b');
+        lastJourneyTotalsQb.andWhere('b.id = :brandId', { brandId });
+      }
+
+      const lastJourneyTotals = await lastJourneyTotalsQb.getRawOne();
       
       last_journey_totals = {
         total_quantity: parseFloat(lastJourneyTotals.totalQuantity) || 0,
