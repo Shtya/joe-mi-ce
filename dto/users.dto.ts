@@ -8,6 +8,8 @@ export class UserResponseDto {
   device_id: string;
   is_active: boolean;
   national_id: string;
+  account_name: string;
+  iban: string;
   role: string;
   branch?: {
     id: string;

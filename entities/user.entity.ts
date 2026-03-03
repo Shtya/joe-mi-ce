@@ -40,6 +40,12 @@ export class User extends CoreEntity {
   @Column({ length: 255, nullable: true })
   fcm_token: string;
 
+  @Column({ length: 255, nullable: true })
+  account_name: string;
+
+  @Column({ length: 255, nullable: true })
+  iban: string;
+
   @Column({nullable: true })
   project_id: string;
 

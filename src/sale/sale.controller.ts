@@ -268,7 +268,8 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
     query.sortOrder,
     { ...filters },
     startDate,
-    endDate
+    endDate,
+    query.brand_id
   );
 }
 

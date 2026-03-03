@@ -54,6 +54,14 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   avatar?: string;
+
+  @IsString()
+  @IsOptional()
+  account_name?: string;
+
+  @IsString()
+  @IsOptional()
+  iban?: string;
 }
 
 export class UpdateUserDto {
@@ -88,6 +96,14 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   national_id?: string;
+
+  @IsString()
+  @IsOptional()
+  account_name?: string;
+
+  @IsString()
+  @IsOptional()
+  iban?: string;
 }
 
 export class UpdateUserRoleDto {

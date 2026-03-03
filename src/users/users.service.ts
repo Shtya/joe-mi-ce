@@ -132,6 +132,8 @@ async resolveUserWithProject(userId: string) {
       is_active: user.is_active,
       role: user.role?.name,
       national_id: user.national_id,
+      account_name: user.account_name,
+      iban: user.iban,
       branch: user.branch
         ? {
             id: user.branch.id,

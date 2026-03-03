@@ -820,7 +820,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
      // 2. Calculate User's Total Sales in this Period for this Branch
      // Using query builder on saleRepo
-     const { userTotal } = await this.saleRepo
+     const userTotalQb = this.saleRepo
        .createQueryBuilder('sale')
        .select('SUM(sale.total_amount)', 'userTotal')
        .where('sale.user.id = :userId', { userId })
@@ -829,8 +829,14 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
          start: periodStart.toISOString(), 
          end: periodEnd.toISOString() 
        })
-       .andWhere('sale.status != :cancelled', { cancelled: 'cancelled' })
-       .getRawOne();
+       .andWhere('sale.status != :cancelled', { cancelled: 'cancelled' });
+
+     if (brandId) {
+       userTotalQb.leftJoin('sale.product', 'p').leftJoin('p.brand', 'b');
+       userTotalQb.andWhere('b.id = :brandId', { brandId });
+     }
+
+     const { userTotal } = await userTotalQb.getRawOne();
 
       targetPerformance = {
         periodType: targetType,
@@ -913,6 +919,11 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
   if (userId) {
      totalsQb.andWhere('user.id = :userId', { userId });
+  }
+
+  if (brandId) {
+    totalsQb.leftJoin('product.brand', 'brand');
+    totalsQb.andWhere('brand.id = :brandId', { brandId });
   }
 
   if (search) {

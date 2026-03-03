@@ -174,6 +174,8 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       created_by: requester,
       mobile: dto.mobile,
       avatar_url:avatar_url,
+      account_name: dto.account_name,
+      iban: dto.iban,
     });
 
     const savedUser = await this.userRepository.save(user);
@@ -268,6 +270,8 @@ const existingUserPhone = await this.userRepository.findOne({ where: { mobile: d
       mobile: userWithRelations.mobile,
       is_active: userWithRelations.is_active,
       national_id: userWithRelations.national_id,
+      account_name: userWithRelations.account_name,
+      iban: userWithRelations.iban,
     };
   }
   async getUserById(userId: string) {
@@ -455,6 +459,8 @@ async updateUser(userId: any, dto: UpdateUserDto, requester: User, file?: Expres
         project_id: user.project?.id ?? user.project_id,
         is_active: user.is_active,
         national_id: user.national_id,
+        account_name: user.account_name,
+        iban: user.iban,
       },
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,
