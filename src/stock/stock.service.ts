@@ -1162,37 +1162,44 @@ async getOutOfStockByUserBranchMobile(
   };
 }
 // Mobile - Create stock for user's branch
+  // Mobile - Create stock for all branches in a project
   async createStockAllBranches(
     userId: string,
- 
+    productId?: string
   ) {
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
     const projectId = await this.userService.resolveProjectIdFromUser(userId);
+    if (!projectId) {
+      throw new BadRequestException('User does not belong to a project');
+    }
 
-    // Fetch all products in the project
-    const products = await this.productRepo.find({
-      where: { project: { id: projectId } }
-    });
+    // Fetch products and branches in parallel
+    const [products, branches] = await Promise.all([
+      this.productRepo.find({
+        where: { 
+          project: { id: projectId },
+          ...(productId && { id: productId }) 
+        }
+      }),
+      this.branchRepo.find({
+        where: { project: { id: projectId } }
+      })
+    ]);
 
     if (products.length === 0) {
       return {
-        message: 'No products found in this project',
+        message: productId ? `Product with ID ${productId} not found in this project` : 'No products found in this project',
         totalProducts: 0,
-        totalBranches: 0,
+        totalBranches: branches.length,
         created: 0,
         skipped: 0
       };
     }
 
-    // Fetch all branches in the project
-    const branches = await this.branchRepo.find({
-      where: { project: { id: projectId } }
-    });
-
     if (branches.length === 0) {
-       return {
+      return {
         message: 'No branches found in this project',
         totalProducts: products.length,
         totalBranches: 0,
@@ -1201,59 +1208,58 @@ async getOutOfStockByUserBranchMobile(
       };
     }
 
-    let createdCount = 0;
-    let skippedCount = 0;
-
-    // Use a single query to find all existing stocks for this project to minimize DB calls
-    // We can fetch just the IDs or product/branch pairs
+    // Optimization: Fetch only relevant existing stocks for these products/branches
     const existingStocks = await this.stockRepo.find({
       where: {
-         product: { project: { id: projectId } } 
+        branch: { project: { id: projectId } },
+        ...(productId && { product: { id: productId } })
       },
       relations: ['product', 'branch'],
-      select: ['id', 'product', 'branch']
+      select: {
+        id: true,
+        product: { id: true },
+        branch: { id: true }
+      }
     });
-    
-    // Create a set for quick lookup: "productId-branchId"
+
     const existingSet = new Set(
-        existingStocks
-            .filter(s => s.product && s.branch)
-            .map(s => `${s.product.id}-${s.branch.id}`)
+      existingStocks
+        .filter(s => s.product?.id && s.branch?.id)
+        .map(s => `${s.product.id}-${s.branch.id}`)
     );
 
     const stocksToCreate = [];
+    let createdCount = 0;
+    let skippedCount = 0;
 
     for (const branch of branches) {
       for (const product of products) {
         const key = `${product.id}-${branch.id}`;
-        
+
         if (existingSet.has(key)) {
-            skippedCount++;
-            continue;
+          skippedCount++;
+          continue;
         }
 
         stocksToCreate.push(
-            this.stockRepo.create({
-                quantity: 1, // Default to 0 as per requirement
-                product,
-                branch,
-                product_id: product.id,
-                branch_id: branch.id,
-            })
+          this.stockRepo.create({
+            quantity: 0, // Default quantity
+            product,
+            branch,
+            product_id: product.id,
+            branch_id: branch.id,
+          })
         );
         createdCount++;
       }
     }
 
-    // Batch save if there are any to create
     if (stocksToCreate.length > 0) {
-        // Save in chunks to avoid memory issues if too large, though likely fine for now.
-        // TypeORM save can handle arrays.
-        await this.stockRepo.save(stocksToCreate, { chunk: 100 });
+      await this.stockRepo.save(stocksToCreate, { chunk: 100 });
     }
 
     return {
-      message: 'Batch stock synchronization completed',
+      message: productId ? `Stock sync for product completed` : 'Batch stock synchronization completed',
       totalProducts: products.length,
       totalBranches: branches.length,
       created: createdCount,

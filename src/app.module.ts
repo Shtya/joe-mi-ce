@@ -40,8 +40,11 @@ import { ContactUsModule } from './contact-us/contact-us.module';
 import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { TrainingModule } from './training/training.module';
+import { EntranceLetterModule } from './entrance-letter/entrance-letter.module';
 
  @Module({
+
   imports: [
     ConfigModule.forRoot(),
     ScheduleModule.forRoot(),
@@ -107,6 +110,8 @@ import { FirebaseModule } from './firebase/firebase.module';
     DocumentbuilderModule,
     AppVersionModule,
     FirebaseModule,
+    TrainingModule,
+    EntranceLetterModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],

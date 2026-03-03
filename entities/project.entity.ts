@@ -11,9 +11,11 @@ import { Brand } from './products/brand.entity';
 import { Category } from './products/category.entity';
 import { Chain } from './locations/chain.entity';
 import { SalesTarget, SalesTargetType } from './sales-target.entity';
+import { Training } from './training.entity';
 
 @Entity()
 export class Project extends CoreEntity {
+
   @Column()
   name: string;
 
@@ -59,5 +61,6 @@ export class Project extends CoreEntity {
   @OneToMany(() => Chain, chain => chain.project)
   chains: Chain[];
 
-
+  @OneToMany(() => Training, (training) => training.project)
+  trainings: Training[];
 }
