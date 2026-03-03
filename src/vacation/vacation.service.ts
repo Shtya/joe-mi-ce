@@ -59,7 +59,7 @@ export class VacationService {
         const branchId = user.branch?.id || user.journeys?.[0]?.branch?.id;
         if (!branchId) {
           throw new NotFoundException('the user is without branch');
-        }
+          }
         dto.branchId = branchId;
       }
       const branch = await this.branchRepo.findOne({
@@ -253,7 +253,7 @@ export class VacationService {
     const user = await this.userRepo.findOne({
       where: { id: req.user.id },
       relations: ['project', 'branch', 'branch.project', 'role'],
-      select:{project:{id:true}}
+      select: { project: { id: true } }
     });
 
     if (!user) {
@@ -266,6 +266,24 @@ export class VacationService {
       user.project_id ??
       user.branch?.project?.id;
 
+    // 🔑 Supervisor: restrict to their assigned branches only (no resolve/assign)
+    let supervisorBranchIds: string[] | null = null;
+    if (user?.role?.name === ERole.SUPERVISOR) {
+      const assignedBranches = await this.branchRepo
+        .createQueryBuilder('branch')
+        .innerJoin('branch.supervisors', 'supervisor')
+        .where('supervisor.id = :userId', { userId: user.id })
+        .select(['branch.id'])
+        .getMany();
+
+      supervisorBranchIds = assignedBranches.map(b => b.id);
+
+      // Supervisor has no assigned branches — return empty result
+      if (supervisorBranchIds.length === 0) {
+        return new PaginatedResponseDto([], 0, page, limit);
+      }
+    }
+
     // 🔹 Build query
     const query = this.vacationRepo
       .createQueryBuilder('vacation')
@@ -276,6 +294,12 @@ export class VacationService {
       .leftJoinAndSelect('branch.project', 'project')
       .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
       .where('project.id = :projectId', { projectId });
+
+    // 🔑 Supervisor: filter by their assigned branches
+    if (supervisorBranchIds !== null) {
+      query.andWhere('branch.id IN (:...supervisorBranchIds)', { supervisorBranchIds });
+    }
+
     // 🔹 Apply dynamic filters
     if (whereConditions.status) {
       query.andWhere(
@@ -314,7 +338,7 @@ export class VacationService {
     // 🔹 Date Range Filter
     if (whereConditions.fromDate || whereConditions.toDate) {
       query.leftJoin('vacation.vacationDates', 'vd_filter');
-      
+
       if (whereConditions.fromDate && whereConditions.toDate) {
         query.andWhere('vd_filter.date BETWEEN :fromDate AND :toDate', {
           fromDate: whereConditions.fromDate,
@@ -325,11 +349,6 @@ export class VacationService {
       } else if (whereConditions.toDate) {
         query.andWhere('vd_filter.date <= :toDate', { toDate: whereConditions.toDate });
       }
-      
-      // Since we join dates to filter, we might get duplicate vacations.
-      // We use distinct to avoid duplicates if multiple days in a vacation match the filter.
-      // However, getManyAndCount with skip/take can be tricky with joins.
-      // TypeORM's query builder handles this with its inner join/select mapping usually.
     }
 
     // 🔹 Sorting & pagination
@@ -340,25 +359,6 @@ export class VacationService {
 
     const [vacations, total] = await query.getManyAndCount();
 
-    // 🔑 Auto-assign branch if requester is supervisor and promoter has no branch
-    if (user?.role?.name === ERole.SUPERVISOR) {
-      await Promise.all(vacations.map(async (vacation) => {
-        if (!vacation.user.branch && vacation.user.id) {
-          const resolvedBranch = await this.resolveAndAssignBranchForUser(vacation.user.id);
-          if (resolvedBranch) {
-            vacation.user.branch = resolvedBranch;
-            // Also update vacation branch if it was missing or mismatched?
-            // User says "take from it the branch id and i need to assing this branch to the prmoter"
-            // If the vacation itself has no branch, update it too.
-            if (!vacation.branch) {
-                vacation.branch = resolvedBranch;
-                await this.vacationRepo.update({ id: vacation.id }, { branch: { id: resolvedBranch.id } });
-            }
-          }
-        }
-      }));
-    }
-
     const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
     return new PaginatedResponseDto(data, total, page, limit);
   } catch (error) {
@@ -366,6 +366,192 @@ export class VacationService {
     throw new InternalServerErrorException('Failed to fetch vacations');
   }
 }
+
+  // Update branchId from last check-in/out journey per user for all vacations
+  async updateVacationBranchesFromJourney(
+    req: any,
+    page: number = 1,
+    limit: number = 10,
+    sortBy: string = 'created_at',
+    sortOrder: 'ASC' | 'DESC' = 'DESC',
+  ) {
+    try {
+      const skip = (page - 1) * limit;
+
+      const requestingUser = await this.userRepo.findOne({
+        where: { id: req.user.id },
+        relations: ['project', 'branch', 'branch.project'],
+        select: { project: { id: true } },
+      });
+
+      if (!requestingUser) {
+        throw new NotFoundException(`User with id ${req.user.id} not found`);
+      }
+
+      const projectId =
+        requestingUser.project?.id ??
+        requestingUser.project_id ??
+        requestingUser.branch?.project?.id;
+
+      // Fetch paginated vacations scoped to the project
+      const [vacations, total] = await this.vacationRepo
+        .createQueryBuilder('vacation')
+        .leftJoinAndSelect('vacation.user', 'user')
+        .leftJoinAndSelect('vacation.branch', 'branch')
+        .leftJoinAndSelect('branch.city', 'city')
+        .leftJoinAndSelect('branch.project', 'project')
+        .leftJoinAndSelect('vacation.vacationDates', 'vacationDates')
+        .where('project.id = :projectId', { projectId })
+        .orderBy(`vacation.${sortBy}`, sortOrder)
+        .skip(skip)
+        .take(limit)
+        .getManyAndCount();
+
+      let fixedCount = 0;
+
+      // For each vacation, find the user's last check-in/out journey branch and UPDATE DB
+      const records = await Promise.all(
+        vacations.map(async (vacation) => {
+          const lastJourneyBranch = await this.resolveBranchFromLastJourney(vacation.user.id);
+
+          // Capture before state
+          const before = {
+            branchId: vacation.branch?.id ?? null,
+            branchName: vacation.branch?.name ?? null,
+          };
+
+          let fixed = false;
+          if (lastJourneyBranch) {
+            if (!vacation.branch || vacation.branch.id !== lastJourneyBranch.id) {
+              vacation.branch = lastJourneyBranch;
+              await this.vacationRepo.save(vacation);
+              fixedCount++;
+              fixed = true;
+            }
+          }
+
+          return {
+            id: vacation.id,
+            fixed,
+            before,
+            reason: vacation.reason,
+            overall_status: vacation.overall_status,
+            status: vacation.overall_status,
+            image_url: vacation.image_url,
+            createdAt: vacation.created_at,
+            created_at: vacation.created_at,
+            updated_at: vacation.updated_at,
+            vacationDates: vacation.vacationDates.map((vd) => ({
+              id: vd.id,
+              date: vd.date,
+              created_at: vd.created_at,
+              updated_at: vd.updated_at,
+              deleted_at: vd.deleted_at,
+            })),
+            user: {
+              id: vacation.user?.id,
+              name: vacation.user?.name,
+              username: vacation.user?.username,
+              mobile: vacation.user?.mobile,
+              avatar_url: vacation.user?.avatar_url,
+              created_at: vacation.user?.created_at,
+            },
+            branch: vacation.branch
+              ? {
+                  id: vacation.branch.id,
+                  name: vacation.branch.name,
+                  city: vacation.branch.city
+                    ? { id: vacation.branch.city.id, name: vacation.branch.city.name }
+                    : null,
+                }
+              : null,
+          };
+        }),
+      );
+
+      return {
+        fixedCount,
+        totalProcessed: vacations.length,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+        records,
+      };
+    } catch (error) {
+      console.error(error);
+      throw new InternalServerErrorException('Failed to update vacation branches via journey');
+    }
+  }
+
+  // Manually reassign a vacation's branch to a specific branchId
+  async reassignVacationBranch(vacationId: string, branchId: string) {
+    try {
+      const vacation = await this.vacationRepo.findOne({
+        where: { id: vacationId },
+        relations: ['user', 'branch', 'branch.city', 'vacationDates'],
+      });
+
+      if (!vacation) {
+        throw new NotFoundException(`Vacation with id ${vacationId} not found`);
+      }
+
+      const branch = await this.branchRepo.findOne({
+        where: { id: branchId },
+        relations: ['city'],
+      });
+
+      if (!branch) {
+        throw new NotFoundException(`Branch with id ${branchId} not found`);
+      }
+
+      // Capture before state
+      const before = {
+        branchId: vacation.branch?.id ?? null,
+        branchName: vacation.branch?.name ?? null,
+      };
+
+      vacation.branch = branch;
+      await this.vacationRepo.save(vacation);
+
+      return {
+        message: 'Branch reassigned successfully',
+        before,
+        id: vacation.id,
+        reason: vacation.reason,
+        overall_status: vacation.overall_status,
+        status: vacation.overall_status,
+        image_url: vacation.image_url,
+        createdAt: vacation.created_at,
+        created_at: vacation.created_at,
+        updated_at: vacation.updated_at,
+        vacationDates: vacation.vacationDates.map((vd) => ({
+          id: vd.id,
+          date: vd.date,
+          created_at: vd.created_at,
+          updated_at: vd.updated_at,
+          deleted_at: vd.deleted_at,
+        })),
+        user: {
+          id: vacation.user?.id,
+          name: vacation.user?.name,
+          username: vacation.user?.username,
+          mobile: vacation.user?.mobile,
+          avatar_url: vacation.user?.avatar_url,
+          created_at: vacation.user?.created_at,
+        },
+        branch: {
+          id: branch.id,
+          name: branch.name,
+          city: branch.city ? { id: branch.city.id, name: branch.city.name } : null,
+        },
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      console.error(error);
+      throw new InternalServerErrorException('Failed to reassign vacation branch');
+    }
+  }
 
   // Get date status summary - Simple date lists
   // async getDateStatusSummary(vacationId: string): Promise<VacationDateStatusSummaryDto> {
@@ -555,6 +741,26 @@ export class VacationService {
         `Vacation request conflicts with existing requests on dates: ${conflictingDates.join(', ')}`
       );
     }
+  }
+
+  async resolveBranchFromLastJourney(userId: string): Promise<Branch | null> {
+    const lastJourney = await this.journeyRepo
+      .createQueryBuilder('journey')
+      .leftJoinAndSelect('journey.checkin', 'checkin')
+      .leftJoinAndSelect('journey.branch', 'branch')
+      .leftJoinAndSelect('branch.city', 'city')
+      .where('journey.user = :userId', { userId })
+      .andWhere(
+        new Brackets((qb) => {
+          qb.where('checkin.checkInTime IS NOT NULL').orWhere(
+            'checkin.checkOutTime IS NOT NULL',
+          );
+        }),
+      )
+      .orderBy('journey.date', 'DESC')
+      .getOne();
+
+    return lastJourney?.branch || null;
   }
 
   async resolveAndAssignBranchForUser(userId: string): Promise<Branch | null> {

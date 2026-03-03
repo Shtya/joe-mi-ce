@@ -186,6 +186,33 @@ export class VacationController {
   //     query.endDate
   //   );
   // }
+  // 🔹 Update vacation branches from last check-in/out journey
+  @Patch('update-branches-from-journey')
+  @Permissions(EPermission.VACATION_READ)
+  async updateVacationBranchesFromJourney(
+    @Req() req: any,
+    @Query() query: VacationQueryDto
+  ) {
+    const transformedQuery = this.transformQueryParams(query);
+    return await this.vacationService.updateVacationBranchesFromJourney(
+      req,
+      transformedQuery.page,
+      transformedQuery.limit,
+      transformedQuery.sortBy,
+      transformedQuery.sortOrder,
+    );
+  }
+
+  // 🔹 Manually reassign a vacation's branch (if data is incorrect, use this to correct it)
+  @Patch(':id/reassign-branch')
+  @Permissions(EPermission.VACATION_UPDATE)
+  async reassignVacationBranch(
+    @Param('id') id: string,
+    @Body('branchId') branchId: string,
+  ) {
+    return await this.vacationService.reassignVacationBranch(id, branchId);
+  }
+
   // 🔹 Get vacation by ID with full details
   @Get(':id')
   @Permissions(EPermission.VACATION_READ)
