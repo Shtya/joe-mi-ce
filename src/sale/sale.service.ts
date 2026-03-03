@@ -726,17 +726,49 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
   const [records, total_records] = await qb.getManyAndCount();
 
-  // Extract branch and user info (they should be the same for all records)
-  const branchInfo = records.length > 0 ? {
-    id: records[0].branch?.id || null,
-    name: records[0].branch?.name || null,
-    city: records[0].branch?.city || null
-  } : null;
+  // --- Resolve User and Branch Info (with fallbacks) ---
+  let userInfo = null;
+  let branchInfo = null;
+  let branchToUse = null;
 
-  const userInfo = records.length > 0 ? {
-    id: records[0].user?.id || null,
-    name: records[0].user?.name || null
-  } : null;
+  // 1. Resolve User
+  if (userId) {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['role', 'branch', 'branch.project']
+    });
+    if (user) {
+      userInfo = { id: user.id, name: user.name };
+      branchToUse = user.branch;
+    }
+  }
+
+  // 2. Resolve Branch (Priority: Sales Records -> User's assigned branch -> Last Journey's branch)
+  if (records.length > 0 && records[0].branch) {
+    branchToUse = records[0].branch;
+  }
+
+  if (!branchToUse && userId) {
+    // Fallback to last journey's branch
+    const lastJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
+      .leftJoinAndSelect('journey.branch', 'branch')
+      .where('journey.userId = :userId', { userId })
+      .orderBy('journey.date', 'DESC')
+      .addOrderBy('journey.updated_at', 'DESC')
+      .getOne();
+    
+    if (lastJourney?.branch) {
+      branchToUse = lastJourney.branch;
+    }
+  }
+
+  if (branchToUse) {
+    branchInfo = {
+      id: branchToUse.id,
+      name: branchToUse.name,
+      city: branchToUse.city || null
+    };
+  }
 
   // --- Fetch Check-In Data Logic ---
   const checkInMap = new Map<string, any>();
@@ -769,26 +801,13 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   // Target Calculation Logic (Only if specific userId is provided)
   let targetPerformance = null;
   if (userId) {
-  // Fetch full user context to determine branch/project regardless of sales records
-  // We need branch.project because user.project is typically for the owner
-  const userContext = await this.userRepo.findOne({
-    where: { id: userId },
-    relations: ['branch', 'branch.project']
-  });
-
-  console.log('User Context:', userContext);
-
-  let branchToUse = userContext?.branch;
-
-  // Fallback: If user has no branch assigned, try to get it from the sales records
-  if (!branchToUse && records.length > 0 && records[0].branch) {
-     console.log('User has no branch, using branch from sales records:', records[0].branch.id);
-     // We need to fetch the full branch entity to get the project
-     branchToUse = await this.branchRepo.findOne({
-         where: { id: records[0].branch.id },
-         relations: ['project']
-     });
-  }
+    // If we don't have branchToUse with project relation yet, fetch it
+    if (branchToUse && !branchToUse.project) {
+       branchToUse = await this.branchRepo.findOne({
+           where: { id: branchToUse.id },
+           relations: ['project']
+       });
+    }
 
   // Use branch.project as the source of truth for the project context
   if (branchToUse && branchToUse.project) {
