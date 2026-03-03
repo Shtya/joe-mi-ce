@@ -158,86 +158,64 @@ export class VacationService {
   }
 
 
-  // Get vacation by ID - Simple response with dates
+  // Get vacation by ID with full detail
   async getVacationById(id: string) {
-    try {
-      const vacation = await this.vacationRepo.findOne({
-        where: { id },
-        relations: [
-          'user',
-          'branch',
-          'processedBy',
-          'vacationDates'
-        ],
-        order: {
-          vacationDates: {
-            date: 'ASC'
-          }
+    const vacation = await this.vacationRepo.findOne({
+      where: { id },
+      relations: [
+        'user',
+        'branch',
+        'branch.city',
+        'branch.project',
+        'vacationDates',
+        'user.role',
+        'processedBy'
+      ],
+      order: {
+        vacationDates: {
+          date: 'ASC'
         }
-      });
-
-      if (!vacation) {
-        throw new NotFoundException(`Vacation with id ${id} not found`);
       }
+    });
 
-      return new VacationSummaryResponseDto(vacation);
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to fetch vacation');
+    if (!vacation) {
+      throw new NotFoundException(`Vacation with id ${id} not found`);
     }
+
+    return this.mapToVacationResponse(vacation);
   }
 
-  // Get all vacations by user - Simple summary with dates
-  async getVacationsByUser(userId: string): Promise<VacationSummaryResponseDto[]> {
-    try {
-      const user = await this.userRepo.findOne({ where: { id: userId } });
-      if (!user) {
-        throw new NotFoundException(`User with id ${userId} not found`);
-      }
+  // Get all vacations by user with full detail
+  async getVacationsByUser(userId: string) {
+    const vacations = await this.vacationRepo.find({
+      where: { user: { id: userId } },
+      relations: ['user', 'branch', 'branch.city', 'vacationDates'],
+      order: { created_at: 'DESC' }
+    });
 
-      const vacations = await this.vacationRepo.find({
-        where: { user: { id: userId } },
-        relations: ['user', 'branch', 'vacationDates'],
-        order: { created_at: 'DESC' }
-      });
-
-      return vacations.map(vacation => new VacationSummaryResponseDto(vacation));
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new InternalServerErrorException('Failed to fetch user vacations');
-    }
+    return vacations.map(vacation => this.mapToVacationResponse(vacation));
   }
 
-  // Get vacations with pagination - Simple response
+  // Get vacations with pagination with full detail
   async getVacationsWithPagination(
     whereConditions: any = {},
     page: number = 1,
     limit: number = 10,
     sortBy: string = 'created_at',
     sortOrder: 'ASC' | 'DESC' = 'DESC',
+  ): Promise<PaginatedResponseDto<any>> {
+    const skip = (page - 1) * limit;
 
-  ): Promise<PaginatedResponseDto<VacationSummaryResponseDto>> {
-    try {
-      const skip = (page - 1) * limit;
+    const [vacations, total] = await this.vacationRepo.findAndCount({
+      where: whereConditions,
+      relations: ['user', 'branch', 'branch.city', 'vacationDates'],
+      order: { [sortBy]: sortOrder },
+      skip,
+      take: limit,
+    });
 
-      const [vacations, total] = await this.vacationRepo.findAndCount({
-        where: whereConditions,
-        relations: ['user', 'branch', 'vacationDates'],
-        order: { [sortBy]: sortOrder },
-        skip,
-        take: limit,
-      });
-
-      const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
-      return new PaginatedResponseDto(data, total, page, limit);
-    } catch (error) {
-      console.log(error)
-      throw new InternalServerErrorException('Failed to fetch vacations');
-    }
+    const data = vacations.map(vacation => this.mapToVacationResponse(vacation));
+    return new PaginatedResponseDto(data, total, page, limit);
   }
  async getVacationsWithPaginationProject(
   whereConditions: any = {},
@@ -359,7 +337,8 @@ export class VacationService {
 
     const [vacations, total] = await query.getManyAndCount();
 
-    const data = vacations.map(vacation => new VacationSummaryResponseDto(vacation));
+    const data = vacations.map((v) => this.mapToVacationResponse(v));
+
     return new PaginatedResponseDto(data, total, page, limit);
   } catch (error) {
     console.error(error);
@@ -431,40 +410,9 @@ export class VacationService {
           }
 
           return {
-            id: vacation.id,
             fixed,
             before,
-            reason: vacation.reason,
-            overall_status: vacation.overall_status,
-            status: vacation.overall_status,
-            image_url: vacation.image_url,
-            createdAt: vacation.created_at,
-            created_at: vacation.created_at,
-            updated_at: vacation.updated_at,
-            vacationDates: vacation.vacationDates.map((vd) => ({
-              id: vd.id,
-              date: vd.date,
-              created_at: vd.created_at,
-              updated_at: vd.updated_at,
-              deleted_at: vd.deleted_at,
-            })),
-            user: {
-              id: vacation.user?.id,
-              name: vacation.user?.name,
-              username: vacation.user?.username,
-              mobile: vacation.user?.mobile,
-              avatar_url: vacation.user?.avatar_url,
-              created_at: vacation.user?.created_at,
-            },
-            branch: vacation.branch
-              ? {
-                  id: vacation.branch.id,
-                  name: vacation.branch.name,
-                  city: vacation.branch.city
-                    ? { id: vacation.branch.city.id, name: vacation.branch.city.name }
-                    : null,
-                }
-              : null,
+            ...this.mapToVacationResponse(vacation),
           };
         }),
       );
@@ -483,6 +431,8 @@ export class VacationService {
       throw new InternalServerErrorException('Failed to update vacation branches via journey');
     }
   }
+
+
 
   // Manually reassign a vacation's branch to a specific branchId
   async reassignVacationBranch(vacationId: string, branchId: string) {
@@ -517,34 +467,7 @@ export class VacationService {
       return {
         message: 'Branch reassigned successfully',
         before,
-        id: vacation.id,
-        reason: vacation.reason,
-        overall_status: vacation.overall_status,
-        status: vacation.overall_status,
-        image_url: vacation.image_url,
-        createdAt: vacation.created_at,
-        created_at: vacation.created_at,
-        updated_at: vacation.updated_at,
-        vacationDates: vacation.vacationDates.map((vd) => ({
-          id: vd.id,
-          date: vd.date,
-          created_at: vd.created_at,
-          updated_at: vd.updated_at,
-          deleted_at: vd.deleted_at,
-        })),
-        user: {
-          id: vacation.user?.id,
-          name: vacation.user?.name,
-          username: vacation.user?.username,
-          mobile: vacation.user?.mobile,
-          avatar_url: vacation.user?.avatar_url,
-          created_at: vacation.user?.created_at,
-        },
-        branch: {
-          id: branch.id,
-          name: branch.name,
-          city: branch.city ? { id: branch.city.id, name: branch.city.name } : null,
-        },
+        ...this.mapToVacationResponse(vacation),
       };
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
@@ -789,5 +712,91 @@ export class VacationService {
     }
 
     return null;
+  }
+
+  private mapToVacationResponse(vacation: Vacation) {
+    const sortedDates = [...(vacation.vacationDates || [])].sort(
+      (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    );
+
+    const fromDate = sortedDates[0]?.date;
+    const toDate = sortedDates[sortedDates.length - 1]?.date;
+
+    const vacationDates = (vacation.vacationDates || []).map((vd) => ({
+      id: vd.id,
+      date: vd.date,
+      status: (vd as any).status || 'pending',
+      created_at: vd.created_at,
+      updated_at: vd.updated_at,
+      deleted_at: vd.deleted_at,
+    }));
+
+    const totalDates = vacationDates.length;
+    const approvedDates = vacationDates.filter(d => d.status === 'approved').length;
+    const pendingDates = vacationDates.filter(d => d.status === 'pending').length;
+    const rejectedDates = vacationDates.filter(d => d.status === 'rejected').length;
+
+    const userName = vacation.user?.name || vacation.user?.username || '';
+    const branchName = vacation.branch?.name || '';
+    const city = vacation.branch?.city?.name || '';
+
+    return {
+      id: vacation.id,
+      userId: vacation.user?.id,
+      userName: userName,
+      promoterName: userName,
+      branchId: vacation.branch?.id,
+      branchName: branchName,
+      city: city,
+      reason: vacation.reason,
+      username: vacation.user?.username,
+      imageUrl: vacation.image_url,
+      overallStatus: vacation.overall_status,
+      overall_status: vacation.overall_status, // Keep for backward compatibility
+      status: vacation.overall_status,          // Keep for backward compatibility
+      createdAt: vacation.created_at,
+      created_at: vacation.created_at,          // Keep for backward compatibility
+      updatedAt: vacation.updated_at,
+      updated_at: vacation.updated_at,          // Keep for backward compatibility
+      fromDate: fromDate,
+      toDate: toDate,
+      vecationName: vacation.reason,            // Keep for backward compatibility
+      dates: vacationDates.map(d => ({
+        date: d.date,
+        status: d.status
+      })),
+      vacationDates: vacationDates,             // Keep full data
+      totalDates,
+      approvedDates,
+      pendingDates,
+      rejectedDates,
+      user: {
+        id: vacation.user?.id,
+        name: vacation.user?.name,
+        username: vacation.user?.username,
+        mobile: vacation.user?.mobile,
+        avatar: vacation.user?.avatar_url,
+        avatar_url: vacation.user?.avatar_url,
+        department: null,
+        created_at: vacation.user?.created_at,
+      },
+      branch: vacation.branch
+        ? {
+            id: vacation.branch.id,
+            name: vacation.branch.name,
+            city: vacation.branch.city
+              ? {
+                  id: vacation.branch.city.id,
+                  name: vacation.branch.city.name,
+                }
+              : null,
+          }
+        : null,
+      employee: {
+        name: userName,
+        avatar: vacation.user?.avatar_url,
+        department: null,
+      },
+    };
   }
 }
