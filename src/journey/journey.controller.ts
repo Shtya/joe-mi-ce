@@ -632,14 +632,14 @@ async getAllPlansWithPagination(
         shiftName: plan.shift?.name,
         days: plan.days,
         isActiveForToday: isActiveForDate, 
-        attendanceStatus: finalJourneyStatus,
-        attendanceStatusEn:journeyStatusEn, // internal for filtering
+        attendanceStatus: finalAttendanceStatus,
+        attendanceStatusEn, // internal for filtering
         checkInDocument: journey?.checkin?.checkInDocument,
         checkOutDocument: journey?.checkin?.checkOutDocument,
         checkInTime: toLocalISOString(checkInTime),
         checkOutTime: toLocalISOString(checkOutTime),
-        shiftStartTime:  toLocalISOString(checkInTime),
-        shiftEndTime:  toLocalISOString(checkOutTime),
+        shiftStartTime: toLocalISOString(shiftStart.toDate()),
+        shiftEndTime: toLocalISOString(shiftEnd.toDate()),
         noteIn: journey?.checkin?.noteIn,
         noteOut: journey?.checkin?.noteOut,
         isWithinRadius: journey?.checkin?.isWithinRadius,
