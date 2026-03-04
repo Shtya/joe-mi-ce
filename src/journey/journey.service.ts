@@ -21,6 +21,21 @@ import { toLocalISOString } from 'common/date.util';
 
 @Injectable()
 export class JourneyService {
+  private readonly messages = {
+    journeyNotFound: {
+      en: 'Journey not found',
+      ar: 'الرحلة غير موجودة',
+    },
+    tooFar: {
+      en: 'You are too far from the location',
+      ar: 'أنت بعيد جدا عن الموقع',
+    },
+    checkedOutSuccess: {
+      en: 'Checked out successfully',
+      ar: 'تم تسجيل الخروج بنجاح',
+    },
+  };
+
   constructor(
     @InjectRepository(JourneyPlan)
     public journeyPlanRepo: Repository<JourneyPlan>,
@@ -510,9 +525,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       where: { id: dto.journeyId },
       relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain'],
     });
-
+ 
     if (!journey) {
-      throw new NotFoundException('Journey not found');
+      throw new NotFoundException(this.messages.journeyNotFound[lang] || this.messages.journeyNotFound.en);
     }
 
 
@@ -564,7 +579,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     } catch { /* geo logging is non-critical, never block the main flow */ }
 
     if(!isWithinGeofence){
-      throw new BadRequestException('You are too far from the location');
+      throw new BadRequestException(this.messages.tooFar[lang] || this.messages.tooFar.en);
     }
     if (checkIn) {
       if (dto.checkInTime) {
