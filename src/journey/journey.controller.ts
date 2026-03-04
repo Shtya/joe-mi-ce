@@ -278,6 +278,10 @@ async getOptimizedPlans(
     [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
     [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
     [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
+    // Calculated statuses mapping
+    'late check-in': { en: 'Late Check-in', ar: 'تسجيل دخول متأخر' },
+    'early check-out': { en: 'Early Check-out', ar: 'تسجيل خروج مبكر' },
+    'not checked out': { en: 'Not Checked Out', ar: 'لم يتم تسجيل الخروج' },
   };
 
   // Transform and optimize the return
@@ -451,10 +455,7 @@ async getAllPlansWithPagination(
     [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
     [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
     [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
-    // Calculated statuses mapping (using lowercase keys for consistency)
-    'late check-in': { en: 'Late Check-in', ar: 'تسجيل دخول متأخر' },
-    'early check-out': { en: 'Early Check-out', ar: 'تسجيل خروج مبكر' },
-    'not checked out': { en: 'Not Checked Out', ar: 'لم يتم تسجيل الخروج' },
+
   };
 
   const getTranslatedStatus = (status: string, language: string) => {
@@ -559,96 +560,107 @@ async getAllPlansWithPagination(
     extraWhere
   );
 
-  // Transform using the effective filter date or today
-  const effectiveDay = parsedFrom?.isValid() ? parsedFrom : dayjs();
-  const effectiveDayStr = effectiveDay.format('YYYY-MM-DD');
-  const effectiveDayOfWeek = effectiveDay.format('dddd').toLowerCase();
+  // Generate matching dates in the range
+  const startDate = parsedFrom?.isValid() ? parsedFrom : dayjs();
+  const endDate = parsedTo?.isValid() ? parsedTo : startDate;
+  
+  const datesInRange: string[] = [];
+  let current = startDate.clone();
+  while (current.isBefore(endDate) || current.isSame(endDate, 'day')) {
+    datesInRange.push(current.format('YYYY-MM-DD'));
+    current = current.add(1, 'day');
+    if (datesInRange.length > 31) break; // Safety limit
+  }
 
-  const transformedPlans = plans.records.map((plan: any) => {
-    const isActiveForDate = plan.days.includes(effectiveDayOfWeek);
+  const transformedData: any[] = [];
+  plans.records.forEach((plan: any) => {
+    datesInRange.forEach(dateStr => {
+      const d = dayjs(dateStr);
+      const dayOfWeek = d.format('dddd').toLowerCase();
+      const isActiveForDate = plan.days.includes(dayOfWeek);
+      const journey = plan.journeys?.find((j: any) => j.date === dateStr);
+      
+      // If not active for today and no journey exists, skip this date row
+      if (!isActiveForDate && !journey) return;
 
-    const journey = plan.journeys?.find((j: any) => j.date === effectiveDayStr);
+      const checkin = journey?.checkin;
+      const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
+      const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
 
-    const checkin = journey?.checkin;
-    const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
-    const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
+      // Planned shift times for this date
+      const shiftStart = d.clone().startOf('day');
+      const shiftEnd = d.clone().startOf('day');
+      const [startH, startM, startS] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
+      const [endH, endM, endS] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
+      shiftStart.set('hour', startH).set('minute', startM).set('second', startS);
+      shiftEnd.set('hour', endH).set('minute', endM).set('second', endS);
+      if (endH < startH) shiftEnd.add(1, 'day');
 
-    // Shift times for the effective day
-    const shiftStart = effectiveDay.clone().startOf('day');
-    const shiftEnd = effectiveDay.clone().startOf('day');
-    const [startH, startM, startS] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
-    const [endH, endM, endS] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
-
-    shiftStart.set('hour', startH).set('minute', startM).set('second', startS);
-    shiftEnd.set('hour', endH).set('minute', endM).set('second', endS);
-
-    if (endH < startH) {
-      shiftEnd.add(1, 'day');
-    }
-
-    let attendanceStatus = 'Absent';
-    if (journey) {
-      if (journey.status === 'present') {
-        attendanceStatus = 'Present';
-      } else if (journey.status === 'absent') {
-        attendanceStatus = 'Absent';
-      } else if (checkInTime && !checkOutTime) {
-        attendanceStatus = 'Not Checked Out';
-      } else if (checkInTime && checkOutTime) {
-        if (dayjs(checkInTime).isAfter(shiftStart)) {
-          attendanceStatus = 'Late Check-in';
-        } else if (dayjs(checkOutTime).isBefore(shiftEnd)) {
-          attendanceStatus = 'Early Check-out';
-        } else {
+      // Calculate attendance status
+      let attendanceStatus = 'Absent';
+      if (journey) {
+        if (journey.status === 'present') {
           attendanceStatus = 'Present';
+        } else if (journey.status === 'absent') {
+          attendanceStatus = 'Absent';
+        } else if (checkInTime && !checkOutTime) {
+          attendanceStatus = 'Not Checked Out';
+        } else if (checkInTime && checkOutTime) {
+          if (dayjs(checkInTime).isAfter(shiftStart)) {
+            attendanceStatus = 'Late Check-in';
+          } else if (dayjs(checkOutTime).isBefore(shiftEnd)) {
+            attendanceStatus = 'Early Check-out';
+          } else {
+            attendanceStatus = 'Present';
+          }
         }
       }
-    }
 
-    const attendanceStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : getTranslatedStatus(attendanceStatus, 'en');
-    const journeyStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : null;
+      const attendanceStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : getTranslatedStatus(attendanceStatus, 'en');
+      const journeyStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : null;
 
-    const finalAttendanceStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : getTranslatedStatus(attendanceStatus, lang);
-    const finalJourneyStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : null;
+      const finalAttendanceStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : getTranslatedStatus(attendanceStatus, lang);
+      const finalJourneyStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : null;
 
-    return {
-      planId: plan.id,
-      branchName: plan.branch?.name,
-      city: plan.branch?.city?.name,
-      region: plan.branch?.city?.region?.name,
-      promoterName: plan.user?.name,
-      promoterId: plan.user?.id,
-      shiftName: plan.shift?.name,
-      days: plan.days,
-      isActiveForToday: isActiveForDate, 
-      attendanceStatus: finalJourneyStatus,
-      attendanceStatusEn, // internal for filtering
-      checkInDocument: journey?.checkin?.checkInDocument,
-      checkOutDocument: journey?.checkin?.checkOutDocument,
-      checkInTime: toLocalISOString(checkInTime),
-      checkOutTime: toLocalISOString(checkOutTime),
-      shiftStartTime: toLocalISOString(checkInTime),
-      shiftEndTime: toLocalISOString(checkOutTime),
-      noteIn: journey?.checkin?.noteIn,
-      noteOut: journey?.checkin?.noteOut,
-      isWithinRadius: journey?.checkin?.isWithinRadius,
-      journeyId: journey?.id,
-      journeyStatus: finalJourneyStatus,
-      journeyStatusEn, // internal for filtering
-      journeyDate: journey?.date || (journey?.createdAt ? dayjs(journey.createdAt).format('YYYY-MM-DD') : null),
-      createdAt: plan.createdAt,
-      updatedAt: plan.updatedAt,
-      isActive: plan.isActive, 
-      totalJourneys: plan.journeys?.length || 0,
-    };
+      transformedData.push({
+        planId: plan.id,
+        branchName: plan.branch?.name,
+        city: plan.branch?.city?.name,
+        region: plan.branch?.city?.region?.name,
+        promoterName: plan.user?.name,
+        promoterId: plan.user?.id,
+        shiftName: plan.shift?.name,
+        days: plan.days,
+        isActiveForToday: isActiveForDate, 
+        attendanceStatus: finalJourneyStatus,
+        attendanceStatusEn:journeyStatusEn, // internal for filtering
+        checkInDocument: journey?.checkin?.checkInDocument,
+        checkOutDocument: journey?.checkin?.checkOutDocument,
+        checkInTime: toLocalISOString(checkInTime),
+        checkOutTime: toLocalISOString(checkOutTime),
+        shiftStartTime:  toLocalISOString(checkInTime),
+        shiftEndTime:  toLocalISOString(checkOutTime),
+        noteIn: journey?.checkin?.noteIn,
+        noteOut: journey?.checkin?.noteOut,
+        isWithinRadius: journey?.checkin?.isWithinRadius,
+        journeyId: journey?.id,
+        journeyStatus: finalJourneyStatus,
+        journeyStatusEn, // internal for filtering
+        journeyDate: journey?.date || (journey?.createdAt ? dayjs(journey.createdAt).format('YYYY-MM-DD') : dateStr),
+        createdAt: plan.createdAt,
+        updatedAt: plan.updatedAt,
+        isActive: plan.isActive, 
+        totalJourneys: plan.journeys?.length || 0,
+      });
+    });
   });
 
-  let optimizedPlans = transformedPlans;
+  let optimizedPlans = transformedData;
 
   // Apply status filter if provided (compare against English values for consistency)
   if (status) {
     const normalizedStatus = status.toLowerCase();
-    optimizedPlans = transformedPlans.filter(plan => 
+    optimizedPlans = transformedData.filter(plan => 
       plan.attendanceStatusEn.toLowerCase() === normalizedStatus || 
       plan.journeyStatusEn?.toLowerCase() === normalizedStatus
     );
