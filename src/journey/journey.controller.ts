@@ -722,11 +722,13 @@ async getAllPlansWithPagination(
 
   // Apply status filter if provided (compare against English values for consistency)
   if (status) {
-    const normalizedStatus = status.toLowerCase();
-    optimizedPlans = transformedData.filter(plan => 
-      plan.attendanceStatusEn.toLowerCase() === normalizedStatus || 
-      plan.journeyStatusEn?.toLowerCase() === normalizedStatus
-    );
+    const normalizedTarget = status.toLowerCase().replace(/[\s-]/g, '_');
+    optimizedPlans = transformedData.filter(plan => {
+      const statusEn = plan.attendanceStatusEn?.toLowerCase().replace(/[\s-]/g, '_');
+      const journeyStatusEn = plan.journeyStatusEn?.toLowerCase().replace(/[\s-]/g, '_');
+      
+      return statusEn === normalizedTarget || journeyStatusEn === normalizedTarget;
+    });
   }
 
   // Clean up internal fields before returning

@@ -37,7 +37,6 @@ export class SaleService {
     const stock = await this.stockRepo.findOne({
       where: { product: { id: product.id }, branch: { id: branch.id } }
     });
-    if (!stock) throw new NotFoundException('Stock not found for this branch');
 
     if(!dto.isFromOrigin){
       if (stock.quantity < dto.quantity) {
