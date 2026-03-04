@@ -236,21 +236,20 @@ async getOptimizedPlans(
   // Determine date range
   let targetDates: string[] = [];
 
-  if (fromDateParam && toDateParam) {
-    // Date range filtering
-    const fromDate = new Date(fromDateParam);
-    const toDate = new Date(toDateParam);
+  const startStr = fromDateParam || dateParam;
+  const endStr = toDateParam || dateParam;
 
-    // Generate all dates in the range
+  if (startStr || endStr) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const fromDate = new Date(startStr || endStr);
+    const toDate = new Date(endStr || todayStr);
+
     const currentDate = new Date(fromDate);
     while (currentDate <= toDate) {
       targetDates.push(currentDate.toISOString().split('T')[0]);
       currentDate.setDate(currentDate.getDate() + 1);
+      if (targetDates.length > 31) break; // Safety limit
     }
-  } else if (dateParam) {
-    // Single date filtering (backward compatibility)
-    const targetDate = new Date(dateParam);
-    targetDates.push(targetDate.toISOString().split('T')[0]);
   } else {
     // Default to today
     const today = new Date();
@@ -425,6 +424,10 @@ async getAllPlansWithPagination(
   @Query('page') page: number = 1,
   @Query('limit') limit: number = 10,
   @Query('userId') userId?: string,
+  @Query('branchId') branchId?: string,
+  @Query('status') status?: string,
+  @Query('fromDate') fromDate?: string,
+  @Query('toDate') toDate?: string,
   @Query('search') search?: string,
 ) {
     const user = await this.usersService.resolveUserWithProject(
@@ -458,6 +461,22 @@ async getAllPlansWithPagination(
     ...(user.role.name !== ERole.SUPERVISOR && user.role.name !== ERole.PROMOTER && user.branch ? { branch: { ...query.filters?.branch, id: user.branch.id } } : {}),
     ...(user.role.name === ERole.PROMOTER ? { user: { ...query.filters?.user, id: user.id } } : {}),
   };
+
+  if (userId) {
+    filters.user = { ...filters.user, id: userId };
+  }
+
+  if (branchId) {
+    filters.branch = { ...filters.branch, id: branchId };
+  }
+
+  if (fromDate) {
+    filters.journeys = { ...filters.journeys, date_from: fromDate };
+  }
+
+  if (toDate) {
+    filters.journeys = { ...filters.journeys, date_to: toDate };
+  }
 
   if (filters.role) {
     filters.user = { ...filters.user, role: filters.role };
@@ -577,7 +596,7 @@ async getAllPlansWithPagination(
       noteOut: todayJourney?.checkin?.noteOut,
       isWithinRadius: todayJourney?.checkin?.isWithinRadius,
       journeyId: todayJourney?.id,
-      journeyStatus: todayJourney?.status,
+      journeyStatus: todayJourney?.status ? todayJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : null,
       journeyDate: todayJourney?.date,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
@@ -586,13 +605,23 @@ async getAllPlansWithPagination(
     };
   });
 
+  let optimizedPlans = transformedPlans;
+
+  // Apply status filter if provided
+  if (status) {
+    const normalizedStatus = status.toLowerCase();
+    optimizedPlans = transformedPlans.filter(plan => 
+      plan.attendanceStatus.toLowerCase() === normalizedStatus || 
+      plan.journeyStatus?.toLowerCase() === normalizedStatus
+    );
+  }
 
   return {
-    data: transformedPlans,
-    total: plans.total_records,
+    data: optimizedPlans,
+    total: status ? optimizedPlans.length : plans.total_records,
     page: plans.current_page,
     limit: plans.per_page,
-    totalPages: Math.ceil(plans.total_records / plans.per_page),
+    totalPages: Math.ceil((status ? optimizedPlans.length : plans.total_records) / plans.per_page),
   };
 }
   @Get('plans/:id')

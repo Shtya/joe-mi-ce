@@ -478,8 +478,13 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
     if (date) {
       qb.andWhere('j.date = :date', { date });
-    } else if (fromDate && toDate) {
-      qb.andWhere('j.date BETWEEN :from AND :to', { from: fromDate, to: toDate });
+    } else {
+      if (fromDate) {
+        qb.andWhere('j.date >= :fromDate', { fromDate });
+      }
+      if (toDate) {
+        qb.andWhere('j.date <= :toDate', { toDate });
+      }
     }
 
     const total = await qb.getCount();
@@ -871,8 +876,13 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
     if (userId) where.user = { id: userId };
     if (date) where.journey = { date };
+    
     if (fromDate && toDate) {
-      where.journey = { date: Between(fromDate, toDate) };
+      where.journey = { ...where.journey, date: Between(fromDate, toDate) };
+    } else if (fromDate) {
+      where.journey = { ...where.journey, date: MoreThanOrEqual(fromDate) };
+    } else if (toDate) {
+      where.journey = { ...where.journey, date: LessThanOrEqual(toDate) };
     }
     if (projectId) {
       where.journey = {

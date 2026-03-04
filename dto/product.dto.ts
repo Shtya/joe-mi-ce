@@ -7,11 +7,6 @@ export class StockDto {
   @IsUUID()
   branch_id?: string;
 
-  @IsNumber()
-  @Min(0)
-  @IsPositive()
-  @IsOptional()
-  quantity?: number;
 
   @IsOptional()
   all_branches?: boolean;
