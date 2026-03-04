@@ -585,7 +585,7 @@ async getAllPlansWithPagination(
       shiftName: plan.shift?.name,
       days: plan.days,
       isActiveForToday, // Whether the plan is scheduled for today
-      attendanceStatus, // Status field similar to first function
+      attendanceStatus: todayJourney?.status ? todayJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : null, // Status field similar to first function
       checkInDocument: todayJourney?.checkin?.checkInDocument,
       checkOutDocument: todayJourney?.checkin?.checkOutDocument,
       checkInTime: toLocalISOString(checkInTime),
