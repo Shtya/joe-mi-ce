@@ -64,7 +64,8 @@ export class VacationController {
       if(!dto.branchId){
 
       }
-      return await this.vacationService.createVacation(dto, imagePath);
+      const lang = res.headers?.['accept-language'] || res.headers?.['lang'] || 'en';
+      return await this.vacationService.createVacation(dto, imagePath, lang);
     } catch (error) {
       throw new BadRequestException(`Failed to create vacation: ${error.message}`);
     }

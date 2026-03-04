@@ -43,30 +43,42 @@ export class VacationService {
     public readonly journeyRepo: Repository<Journey>,
   ) {}
 
+  private readonly vacationMessages = {
+    noUser: { en: 'User is required', ar: 'المستخدم مطلوب' },
+    userNotFound: { en: 'User not found', ar: 'المستخدم غير موجود' },
+    noBranch: { en: 'The user has no assigned branch', ar: 'المستخدم ليس لديه فرع مخصص' },
+    branchNotFound: { en: 'Branch not found', ar: 'الفرع غير موجود' },
+    failedCreate: { en: 'Failed to create vacation request', ar: 'فشل إنشاء طلب الإجازة' },
+  };
+
+  private t(msg: { en: string; ar: string }, lang: string) {
+    return msg[lang] ?? msg.en;
+  }
+
   // Create a new vacation request
-  async createVacation(dto: CreateVacationDto, imagePath: string | null = null) {
+  async createVacation(dto: CreateVacationDto, imagePath: string | null = null, lang: string = 'en') {
     try {
       if(!dto.userId){
-        throw new NotFoundException("there are not user")
+        throw new NotFoundException(this.t(this.vacationMessages.noUser, lang));
       }
       const user = await this.userRepo.findOne({
         where: { id: dto.userId  }, relations :['branch' ,'journeys','journeys.branch']
       });
       if (!user) {
-        throw new NotFoundException(`User with id ${dto.userId} not found`);
+        throw new NotFoundException(this.t(this.vacationMessages.userNotFound, lang));
       }
       if(!dto.branchId){
         const branchId = user.branch?.id || user.journeys?.[0]?.branch?.id;
         if (!branchId) {
-          throw new NotFoundException('the user is without branch');
-          }
+          throw new NotFoundException(this.t(this.vacationMessages.noBranch, lang));
+        }
         dto.branchId = branchId;
       }
       const branch = await this.branchRepo.findOne({
         where: { id: dto.branchId }
       });
       if (!branch) {
-        throw new NotFoundException(`Branch with id ${dto.branchId} not found`);
+        throw new NotFoundException(this.t(this.vacationMessages.branchNotFound, lang));
       }
 
       const formattedDates = this.transformAndValidateDates(dto.dates);
@@ -99,7 +111,7 @@ export class VacationService {
           error instanceof BadRequestException) {
         throw error;
       }
-      throw new InternalServerErrorException('Failed to create vacation request');
+      throw new InternalServerErrorException(this.t(this.vacationMessages.failedCreate, lang));
     }
   }
 
