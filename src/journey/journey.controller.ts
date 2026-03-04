@@ -455,11 +455,15 @@ async getAllPlansWithPagination(
     [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
     [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
     [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
-
+    // Calculated statuses
+    'late check-in': { en: 'Late Check-in', ar: 'تسجيل دخول متأخر' },
+    'early check-out': { en: 'Early Check-out', ar: 'تسجيل خروج مبكر' },
+    'not checked out': { en: 'Not Checked Out', ar: 'لم يتم تسجيل الخروج' },
   };
 
   const getTranslatedStatus = (status: string, language: string) => {
-    const normalized = status?.toLowerCase();
+    if (!status) return '';
+    const normalized = status.toLowerCase();
     if (statusTranslations[normalized]) {
       return statusTranslations[normalized][language] || statusTranslations[normalized]['en'];
     }
@@ -564,6 +568,18 @@ async getAllPlansWithPagination(
     if (datesInRange.length > 31) break; // Safety limit
   }
 
+  // Fetch Unplanned Journeys (not linked to plans)
+  const unplannedJourneys = await this.journeyService.journeyRepo.find({
+    where: {
+      projectId,
+      type: JourneyType.UNPLANNED,
+      date: In(datesInRange),
+      ...(user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0 ? { branch: { id: In(supervisorBranchIds) } } : {}),
+      ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
+    },
+    relations: ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin']
+  });
+
   const transformedData: any[] = [];
   plans.records.forEach((plan: any) => {
     datesInRange.forEach(dateStr => {
@@ -644,6 +660,61 @@ async getAllPlansWithPagination(
         isActive: plan.isActive, 
         totalJourneys: plan.journeys?.length || 0,
       });
+    });
+  });
+
+  // Merge unplanned journeys
+  unplannedJourneys.forEach(journey => {
+    const checkin = journey.checkin;
+    const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
+    const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
+
+    const d = dayjs(journey.date);
+    const shiftStart = journey.shift ? d.clone().set('hour', Number(journey.shift.startTime.split(':')[0])).set('minute', Number(journey.shift.startTime.split(':')[1])) : null;
+    const shiftEnd = journey.shift ? d.clone().set('hour', Number(journey.shift.endTime.split(':')[0])).set('minute', Number(journey.shift.endTime.split(':')[1])) : null;
+    if (shiftStart && shiftEnd && shiftEnd.isBefore(shiftStart)) shiftEnd.add(1, 'day');
+
+    let attendanceStatus = 'Present';
+    if (journey.status === 'absent' || journey.status === JourneyStatus.UNPLANNED_ABSENT) {
+      attendanceStatus = 'Absent';
+    } else if (checkInTime && !checkOutTime) {
+      attendanceStatus = 'Not Checked Out';
+    }
+
+    const attendanceStatusEn = getTranslatedStatus(attendanceStatus, 'en');
+    const finalAttendanceStatus = getTranslatedStatus(attendanceStatus, lang);
+    const journeyStatusEn = getTranslatedStatus(journey.status, 'en');
+    const finalJourneyStatus = getTranslatedStatus(journey.status, lang);
+
+    transformedData.push({
+      planId: null,
+      branchName: journey.branch?.name,
+      city: journey.branch?.city?.name,
+      region: journey.branch?.city?.region?.name,
+      promoterName: journey.user?.name,
+      promoterId: journey.user?.id,
+      shiftName: journey.shift?.name,
+      days: [],
+      isActiveForToday: true, 
+      attendanceStatus: finalAttendanceStatus,
+      attendanceStatusEn,
+      checkInDocument: journey.checkin?.checkInDocument,
+      checkOutDocument: journey.checkin?.checkOutDocument,
+      checkInTime: toLocalISOString(checkInTime),
+      checkOutTime: toLocalISOString(checkOutTime),
+      shiftStartTime: shiftStart ? toLocalISOString(shiftStart.toDate()) : null,
+      shiftEndTime: shiftEnd ? toLocalISOString(shiftEnd.toDate()) : null,
+      noteIn: journey.checkin?.noteIn,
+      noteOut: journey.checkin?.noteOut,
+      isWithinRadius: journey.checkin?.isWithinRadius,
+      journeyId: journey.id,
+      journeyStatus: finalJourneyStatus,
+      journeyStatusEn,
+      journeyDate: journey.date,
+      createdAt: journey.created_at,
+      updatedAt: journey.updated_at,
+      isActive: true, 
+      totalJourneys: 1,
     });
   });
 
