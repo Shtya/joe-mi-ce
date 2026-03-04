@@ -17,6 +17,8 @@ import { Raw, In, Brackets } from 'typeorm';
 import { UsersService } from 'src/users/users.service';
 import { ERole } from 'enums/Role.enum';
 import { toLocalISOString } from 'common/date.util';
+import * as dayjs from 'dayjs';
+@UseInterceptors(LoggingInterceptor)
 @UseGuards(AuthGuard)
 @Controller('journeys')
 export class JourneyController {
@@ -429,6 +431,7 @@ async getAllPlansWithPagination(
   @Query('fromDate') fromDate?: string,
   @Query('toDate') toDate?: string,
   @Query('search') search?: string,
+  @Headers('lang') lang: string = 'en',
 ) {
     const user = await this.usersService.resolveUserWithProject(
     req.user.id,
@@ -440,6 +443,29 @@ async getAllPlansWithPagination(
     throw new NotFoundException("the project is not assign to this user")
   }
   
+  const statusTranslations: any = {
+    [JourneyStatus.ABSENT]: { en: 'Absent', ar: 'غائب' },
+    [JourneyStatus.PRESENT]: { en: 'Present', ar: 'حاضر' },
+    [JourneyStatus.CLOSED]: { en: 'Closed', ar: 'مغلق' },
+    [JourneyStatus.VACATION]: { en: 'Vacation', ar: 'إجازة' },
+    [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
+    [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
+    [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
+    // Calculated statuses mapping (using lowercase keys for consistency)
+    'late check-in': { en: 'Late Check-in', ar: 'تسجيل دخول متأخر' },
+    'early check-out': { en: 'Early Check-out', ar: 'تسجيل خروج مبكر' },
+    'not checked out': { en: 'Not Checked Out', ar: 'لم يتم تسجيل الخروج' },
+  };
+
+  const getTranslatedStatus = (status: string, language: string) => {
+    const normalized = status?.toLowerCase();
+    if (statusTranslations[normalized]) {
+      return statusTranslations[normalized][language] || statusTranslations[normalized]['en'];
+    }
+    // Fallback: capitalize and return
+    return status.split(/[_\s-]/).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
+  };
+
   let supervisorBranchIds: string[] = [];
   if (user.role.name === ERole.SUPERVISOR) {
     const branches = await this.journeyService.getSupervisorBranches(user.id);
@@ -454,6 +480,20 @@ async getAllPlansWithPagination(
     }
     supervisorBranchIds = branches.map(b => b.id);
   }
+
+  // Parse dates robustly using dayjs
+  const parseDate = (d?: string) => {
+    if (!d) return null;
+    // Try DD-MM-YYYY first then fallback to default parsing (ISO)
+    const parsed = dayjs(d, ['DD-MM-YYYY', 'YYYY-MM-DD', 'D-M-YYYY'], true);
+    return parsed.isValid() ? parsed : dayjs(d);
+  };
+
+  const parsedFrom = parseDate(fromDate);
+  const parsedTo = parseDate(toDate);
+  
+  const fromDateStr = parsedFrom?.format('YYYY-MM-DD');
+  const toDateStr = parsedTo?.format('YYYY-MM-DD');
 
   const filters: any = {
     projectId,
@@ -470,12 +510,12 @@ async getAllPlansWithPagination(
     filters.branch = { ...filters.branch, id: branchId };
   }
 
-  if (fromDate) {
-    filters.journeys = { ...filters.journeys, date_from: fromDate };
+  if (fromDateStr) {
+    filters.journeys = { ...filters.journeys, date_from: fromDateStr };
   }
 
-  if (toDate) {
-    filters.journeys = { ...filters.journeys, date_to: toDate };
+  if (toDateStr) {
+    filters.journeys = { ...filters.journeys, date_to: toDateStr };
   }
 
   if (filters.role) {
@@ -490,7 +530,6 @@ async getAllPlansWithPagination(
   const extraWhere = (qb: any) => {
     if (user.role.name === ERole.SUPERVISOR) {
       qb.andWhere('plan.userId != :excludedId', { excludedId: user.id });
-      // Only show plans for PROMOTERS
       qb.andWhere('plan_user_role.name = :promoterRole', { promoterRole: ERole.PROMOTER });
       
       if (supervisorBranchIds.length > 0) {
@@ -501,7 +540,6 @@ async getAllPlansWithPagination(
           })
         );
       } else {
-         // Should have been handled by early return, but safe fallback
          qb.andWhere('1=0'); 
       }
     }
@@ -513,7 +551,7 @@ async getAllPlansWithPagination(
     search,
     page,
     limit,
-    '', // Sort by creation date
+    '', 
     'DESC',
     ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
     ['plan_user.name', 'plan_branch.name'],
@@ -521,58 +559,57 @@ async getAllPlansWithPagination(
     extraWhere
   );
 
-  // Transform using the filtered date (or today if no filter)
-  const effectiveDate = fromDate ? new Date(fromDate) : (toDate ? new Date(toDate) : new Date());
-  const effectiveDateStr = effectiveDate.toISOString().split('T')[0];
-  const effectiveDayOfWeek = effectiveDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+  // Transform using the effective filter date or today
+  const effectiveDay = parsedFrom?.isValid() ? parsedFrom : dayjs();
+  const effectiveDayStr = effectiveDay.format('YYYY-MM-DD');
+  const effectiveDayOfWeek = effectiveDay.format('dddd').toLowerCase();
 
   const transformedPlans = plans.records.map((plan: any) => {
-    // Check if plan is active for the effective date
-    const isActiveForEffectiveDate = plan.days.includes(effectiveDayOfWeek);
+    const isActiveForDate = plan.days.includes(effectiveDayOfWeek);
 
-    // Find journey for the effective date
-    const targetJourney = plan.journeys?.find((journey: any) =>
-      journey.date === effectiveDateStr
-    );
+    const journey = plan.journeys?.find((j: any) => j.date === effectiveDayStr);
 
-    const checkin = targetJourney?.checkin;
+    const checkin = journey?.checkin;
     const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
     const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
 
-    // Calculate planned shift times for the effective date
-    const shiftStart = new Date(effectiveDateStr);
-    const shiftEnd = new Date(effectiveDateStr);
-    const [startHours, startMinutes, startSeconds] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
-    const [endHours, endMinutes, endSeconds] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
+    // Shift times for the effective day
+    const shiftStart = effectiveDay.clone().startOf('day');
+    const shiftEnd = effectiveDay.clone().startOf('day');
+    const [startH, startM, startS] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
+    const [endH, endM, endS] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
 
-    shiftStart.setHours(startHours, startMinutes, startSeconds, 0);
-    shiftEnd.setHours(endHours, endMinutes, endSeconds, 0);
+    shiftStart.set('hour', startH).set('minute', startM).set('second', startS);
+    shiftEnd.set('hour', endH).set('minute', endM).set('second', endS);
 
-    // Handle shifts that cross midnight
-    if (endHours < startHours) {
-      shiftEnd.setDate(shiftEnd.getDate() + 1);
+    if (endH < startH) {
+      shiftEnd.add(1, 'day');
     }
 
     let attendanceStatus = 'Absent';
-
-    if (targetJourney) {
-      if (targetJourney.status === 'present') {
+    if (journey) {
+      if (journey.status === 'present') {
         attendanceStatus = 'Present';
-      } else if (targetJourney.status === 'absent') {
+      } else if (journey.status === 'absent') {
         attendanceStatus = 'Absent';
       } else if (checkInTime && !checkOutTime) {
         attendanceStatus = 'Not Checked Out';
       } else if (checkInTime && checkOutTime) {
-        // Check for late check-in or early check-out
-        if (checkInTime > shiftStart) {
+        if (dayjs(checkInTime).isAfter(shiftStart)) {
           attendanceStatus = 'Late Check-in';
-        } else if (checkOutTime < shiftEnd) {
+        } else if (dayjs(checkOutTime).isBefore(shiftEnd)) {
           attendanceStatus = 'Early Check-out';
         } else {
           attendanceStatus = 'Present';
         }
       }
     }
+
+    const attendanceStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : getTranslatedStatus(attendanceStatus, 'en');
+    const journeyStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : null;
+
+    const finalAttendanceStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : getTranslatedStatus(attendanceStatus, lang);
+    const finalJourneyStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : null;
 
     return {
       planId: plan.id,
@@ -583,20 +620,22 @@ async getAllPlansWithPagination(
       promoterId: plan.user?.id,
       shiftName: plan.shift?.name,
       days: plan.days,
-      isActiveForToday: isActiveForEffectiveDate, // Whether the plan is scheduled for the filtered date
-      attendanceStatus: targetJourney?.status ? targetJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : attendanceStatus,
-      checkInDocument: targetJourney?.checkin?.checkInDocument,
-      checkOutDocument: targetJourney?.checkin?.checkOutDocument,
+      isActiveForToday: isActiveForDate, 
+      attendanceStatus: finalJourneyStatus,
+      attendanceStatusEn, // internal for filtering
+      checkInDocument: journey?.checkin?.checkInDocument,
+      checkOutDocument: journey?.checkin?.checkOutDocument,
       checkInTime: toLocalISOString(checkInTime),
       checkOutTime: toLocalISOString(checkOutTime),
-      shiftStartTime:  toLocalISOString(shiftStart),
-      shiftEndTime: toLocalISOString(shiftEnd),
-      noteIn: targetJourney?.checkin?.noteIn,
-      noteOut: targetJourney?.checkin?.noteOut,
-      isWithinRadius: targetJourney?.checkin?.isWithinRadius,
-      journeyId: targetJourney?.id,
-      journeyStatus: targetJourney?.status ? targetJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : null,
-      journeyDate: targetJourney?.date,
+      shiftStartTime: toLocalISOString(checkInTime),
+      shiftEndTime: toLocalISOString(checkOutTime),
+      noteIn: journey?.checkin?.noteIn,
+      noteOut: journey?.checkin?.noteOut,
+      isWithinRadius: journey?.checkin?.isWithinRadius,
+      journeyId: journey?.id,
+      journeyStatus: finalJourneyStatus,
+      journeyStatusEn, // internal for filtering
+      journeyDate: journey?.date || (journey?.createdAt ? dayjs(journey.createdAt).format('YYYY-MM-DD') : null),
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
       isActive: plan.isActive, 
@@ -606,17 +645,20 @@ async getAllPlansWithPagination(
 
   let optimizedPlans = transformedPlans;
 
-  // Apply status filter if provided
+  // Apply status filter if provided (compare against English values for consistency)
   if (status) {
     const normalizedStatus = status.toLowerCase();
     optimizedPlans = transformedPlans.filter(plan => 
-      plan.attendanceStatus.toLowerCase() === normalizedStatus || 
-      plan.journeyStatus?.toLowerCase() === normalizedStatus
+      plan.attendanceStatusEn.toLowerCase() === normalizedStatus || 
+      plan.journeyStatusEn?.toLowerCase() === normalizedStatus
     );
   }
 
+  // Clean up internal fields before returning
+  const finalData = optimizedPlans.map(({ attendanceStatusEn, journeyStatusEn, ...rest }) => rest);
+
   return {
-    data: optimizedPlans,
+    data: finalData,
     total: status ? optimizedPlans.length : plans.total_records,
     page: plans.current_page,
     limit: plans.per_page,
