@@ -511,14 +511,6 @@ async getAllPlansWithPagination(
     filters.branch = { ...filters.branch, id: branchId };
   }
 
-  if (fromDateStr) {
-    filters.journeys = { ...filters.journeys, date_from: fromDateStr };
-  }
-
-  if (toDateStr) {
-    filters.journeys = { ...filters.journeys, date_to: toDateStr };
-  }
-
   if (filters.role) {
     filters.user = { ...filters.user, role: filters.role };
     delete filters.role;
@@ -632,14 +624,14 @@ async getAllPlansWithPagination(
         shiftName: plan.shift?.name,
         days: plan.days,
         isActiveForToday: isActiveForDate, 
-        attendanceStatus: finalAttendanceStatus,
+        attendanceStatus: finalJourneyStatus,
         attendanceStatusEn, // internal for filtering
         checkInDocument: journey?.checkin?.checkInDocument,
         checkOutDocument: journey?.checkin?.checkOutDocument,
         checkInTime: toLocalISOString(checkInTime),
         checkOutTime: toLocalISOString(checkOutTime),
-        shiftStartTime: toLocalISOString(shiftStart.toDate()),
-        shiftEndTime: toLocalISOString(shiftEnd.toDate()),
+        shiftStartTime: toLocalISOString(checkInTime),
+        shiftEndTime: toLocalISOString(checkOutTime),
         noteIn: journey?.checkin?.noteIn,
         noteOut: journey?.checkin?.noteOut,
         isWithinRadius: journey?.checkin?.isWithinRadius,
