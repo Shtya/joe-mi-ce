@@ -91,7 +91,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     }
 
     const stock = await this.stockRepo.findOne({
-      where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
+      where: { product: { id: sale.product.id } },
     });
 
     if (!stock) {
@@ -201,7 +201,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     }
 
     const stock = await this.stockRepo.findOne({
-      where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
+      where: { product: { id: sale.product.id },},
     });
 
     if (!stock) {
@@ -270,7 +270,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     }
 
     const stock = await this.stockRepo.findOne({
-      where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
+      where: { product: { id: sale.product.id } },
     });
 
     if (!stock) {
@@ -305,7 +305,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     }
 
     const stock = await this.stockRepo.findOne({
-      where: { product: { id: sale.product.id }, branch: { id: sale.branch.id } },
+      where: { product: { id: sale.product.id } },
     });
 
     if (!stock) {
