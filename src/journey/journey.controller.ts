@@ -696,7 +696,7 @@ async getAllPlansWithPagination(
       shiftName: journey.shift?.name,
       days: [],
       isActiveForToday: true, 
-      attendanceStatus: finalAttendanceStatus,
+      attendanceStatus: finalJourneyStatus,
       attendanceStatusEn,
       checkInDocument: journey.checkin?.checkInDocument,
       checkOutDocument: journey.checkin?.checkOutDocument,
