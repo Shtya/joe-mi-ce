@@ -521,28 +521,27 @@ async getAllPlansWithPagination(
     extraWhere
   );
 
-  // Transform without filtering by specific date
+  // Transform using the filtered date (or today if no filter)
+  const effectiveDate = fromDate ? new Date(fromDate) : (toDate ? new Date(toDate) : new Date());
+  const effectiveDateStr = effectiveDate.toISOString().split('T')[0];
+  const effectiveDayOfWeek = effectiveDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
   const transformedPlans = plans.records.map((plan: any) => {
-    // Get today's date to calculate current status
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const todayDayOfWeek = today.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    // Check if plan is active for the effective date
+    const isActiveForEffectiveDate = plan.days.includes(effectiveDayOfWeek);
 
-    // Check if plan is active for today
-    const isActiveForToday = plan.days.includes(todayDayOfWeek);
-
-    // Find today's journey
-    const todayJourney = plan.journeys?.find((journey: any) =>
-      journey.date === todayStr
+    // Find journey for the effective date
+    const targetJourney = plan.journeys?.find((journey: any) =>
+      journey.date === effectiveDateStr
     );
 
-    const checkin = todayJourney?.checkin;
+    const checkin = targetJourney?.checkin;
     const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
     const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
 
-    // Calculate shift times for today
-    const shiftStart = new Date(todayStr);
-    const shiftEnd = new Date(todayStr);
+    // Calculate planned shift times for the effective date
+    const shiftStart = new Date(effectiveDateStr);
+    const shiftEnd = new Date(effectiveDateStr);
     const [startHours, startMinutes, startSeconds] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
     const [endHours, endMinutes, endSeconds] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
 
@@ -556,10 +555,10 @@ async getAllPlansWithPagination(
 
     let attendanceStatus = 'Absent';
 
-    if (todayJourney) {
-      if (todayJourney.status === 'present') {
+    if (targetJourney) {
+      if (targetJourney.status === 'present') {
         attendanceStatus = 'Present';
-      } else if (todayJourney.status === 'absent') {
+      } else if (targetJourney.status === 'absent') {
         attendanceStatus = 'Absent';
       } else if (checkInTime && !checkOutTime) {
         attendanceStatus = 'Not Checked Out';
@@ -584,24 +583,24 @@ async getAllPlansWithPagination(
       promoterId: plan.user?.id,
       shiftName: plan.shift?.name,
       days: plan.days,
-      isActiveForToday, // Whether the plan is scheduled for today
-      attendanceStatus: todayJourney?.status ? todayJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : null, // Status field similar to first function
-      checkInDocument: todayJourney?.checkin?.checkInDocument,
-      checkOutDocument: todayJourney?.checkin?.checkOutDocument,
+      isActiveForToday: isActiveForEffectiveDate, // Whether the plan is scheduled for the filtered date
+      attendanceStatus: targetJourney?.status ? targetJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : attendanceStatus,
+      checkInDocument: targetJourney?.checkin?.checkInDocument,
+      checkOutDocument: targetJourney?.checkin?.checkOutDocument,
       checkInTime: toLocalISOString(checkInTime),
       checkOutTime: toLocalISOString(checkOutTime),
-      shiftStartTime:  toLocalISOString(checkInTime),
-      shiftEndTime: toLocalISOString(checkOutTime),
-      noteIn: todayJourney?.checkin?.noteIn,
-      noteOut: todayJourney?.checkin?.noteOut,
-      isWithinRadius: todayJourney?.checkin?.isWithinRadius,
-      journeyId: todayJourney?.id,
-      journeyStatus: todayJourney?.status ? todayJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : null,
-      journeyDate: todayJourney?.date,
+      shiftStartTime:  toLocalISOString(shiftStart),
+      shiftEndTime: toLocalISOString(shiftEnd),
+      noteIn: targetJourney?.checkin?.noteIn,
+      noteOut: targetJourney?.checkin?.noteOut,
+      isWithinRadius: targetJourney?.checkin?.isWithinRadius,
+      journeyId: targetJourney?.id,
+      journeyStatus: targetJourney?.status ? targetJourney.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ') : null,
+      journeyDate: targetJourney?.date,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
-      isActive: plan.isActive, // If you have an active field
-      totalJourneys: plan.journeys?.length || 0, // Total number of journeys
+      isActive: plan.isActive, 
+      totalJourneys: plan.journeys?.length || 0,
     };
   });
 
