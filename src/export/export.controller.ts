@@ -29,7 +29,7 @@ export class ExportController {
     @Res() res: Response,
     @Headers('authorization') authHeader: string,
   ) {
-    const { url, fileName, ...allQueryParams } = query;
+    const { url, fileName, module: moduleOverride, ...allQueryParams } = query;
   
     if (!url) {
       throw new BadRequestException('URL parameter is required');
@@ -101,7 +101,8 @@ export class ExportController {
       fullUrl, 
       res, 
       fileName, 
-      authHeader
+      authHeader,
+      moduleOverride || existingParamsObj.module
     );
   }
 

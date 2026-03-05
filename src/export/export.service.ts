@@ -396,6 +396,12 @@ export class ExportService {
     return data.map(item => {
       const flattened = this.flattenObjectWithEntityPrefixes(item, mainEntity);
       
+      const isActuallyUnplanned = mainEntityLower.includes('unplanned') || 
+                                 (item.unplanned !== undefined) ||
+                                 (item.module === 'unplanned');
+      
+      const effectiveEntityLower = isActuallyUnplanned ? 'unplanned' : mainEntityLower;
+      
       // Helper to split DateTime into Date and Time columns
       const splitDateTime = (date: any, dateKey: string, timeKey: string) => {
         const { date: d, time: t } = splitLocalDateTime(date);
@@ -649,7 +655,7 @@ export class ExportService {
 
       // --- Unplanned: keep ONLY the requested columns in the exact order ---
       // This is moved to the end to ensure it captures all post-processed fields
-      if (mainEntityLower.includes('unplanned')) {
+      if (effectiveEntityLower.includes('unplanned')) {
         const unplannedAllowedKeys = [
           'user name',
           'user username',
@@ -1218,6 +1224,7 @@ export class ExportService {
     res: any, 
     fileName?: string, 
     authHeader?: any,
+    moduleOverride?: string,
   ) {
     try {
       if (!url) {
@@ -1227,8 +1234,8 @@ export class ExportService {
       const rawData = await this.fetchDataFromUrl(url, authHeader);
       const data = this.extractDataFromResponse(rawData);
       
-      // Extract main entity from URL
-      const mainEntity = this.extractMainEntityFromUrl(url);
+      // Extract main entity from URL, allowing override from query param
+      const mainEntity = moduleOverride || this.extractMainEntityFromUrl(url);
       
       console.log(`[DEBUG] Extracted mainEntity: ${mainEntity} from URL: ${url}`);
       console.log(`[DEBUG] Processing ${data.length} ${mainEntity} records for export`);
