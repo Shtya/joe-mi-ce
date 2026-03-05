@@ -496,8 +496,7 @@ export class ExportService {
         
         flattened['Check in image'] = formatImageUrl(checkInDoc);
         flattened['Check out image'] = formatImageUrl(checkOutDoc);
-        flattened['Check in document'] = formatImageUrl(checkInDoc);
-        flattened['Check out document'] = formatImageUrl(checkOutDoc);
+
 
         // Normalize Branch Name (Handle flat 'branchName' vs nested 'branch name')
         if (flattened['branchName']) {
@@ -512,26 +511,24 @@ export class ExportService {
 
         // Define preferred column order based on user request
         const preferredOrder = [
-          'Status Code',
-          'status',
           'branch name', // Assuming flattened key logic produces this or similar
           'chain name',
           'date',
           'user name',
           'promoterName', // Special case for optimized plans
           'name',
-          'Check in date',
           'Check in time',
-          'Check out date',
+          'date',
           'Check out time',
           'city name',
           'shift name',
           'shift starttime',
           'shift endtime',
           'Duration',
-          'Late Time',
           'Check in image',
-          'Check out image'
+          'Check out image',
+          'status',
+          'Status Code'
         ];
 
         // Reconstruct the object with ordered keys first, then any remaining keys
@@ -571,33 +568,48 @@ export class ExportService {
         }
       }
 
-      // --- Aggressive Cleanup for Journeys, Unplanned, and Sales ---
-      const entitiesToClean = ['journey', 'unplanned', 'sale'];
-      if (entitiesToClean.some(e => mainEntityLower.includes(e))) {
-        const keysToRemove = [
+      // --- Aggressive Cleanup for Journeys and Unplanned ---
+      if (mainEntityLower.includes('journey') || mainEntityLower.includes('unplanned')) {
+        const journeyKeysToRemove = [
           'user active', 'user is active', 'checkin geo', 'checkin iswithinradius', 'checkin id', 
           'checkin checkindocument', 'checkin checkoutdocument',
           'checkin checkintime', 'checkin checkouttime',
           'checkin image', 'checkin notein', 'checkin noteout',
           'user password', 'user token', 'user secret', 'user id',
-          'iswithinradius', 'geo', 'sale_date', 'created_at',
-          'branch id', 'chain id', 'product id'
+          'iswithinradius', 'geo', 'branch id', 'chain id', 'product id', 
+          'check in document', 'check out document',
+          'user mobile', 'user avatar_url', 'user is_active', 'role name', 'role description',
+          'branch lat', 'branch lng', 'branch image_url', 'branch salestargettype',
+          'branch autocreatesalestargets', 'branch defaultsaletargetamount',
+          'chain logourl', 'type'
         ];
 
         Object.keys(flattened).forEach(key => {
           const keyLower = key.toLowerCase();
-          
-          // Remove if matches any key in keysToRemove exactly or as a prefix
-          const shouldRemove = keysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '));
+          const shouldRemove = journeyKeysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '));
           
           if (shouldRemove || keyLower.includes('iswithinradius') || keyLower.includes('geo')) {
             delete flattened[key];
           }
           
-          // Remove lowercase versions if capitalized versions exist, BUT don't delete the capitalized version itself
           if (keyLower === 'branch' && flattened['Branch'] && key !== 'Branch') delete flattened[key];
           if (keyLower === 'chain' && flattened['Chain'] && key !== 'Chain') delete flattened[key];
-          if (keyLower === 'user active' || keyLower === 'user is active') delete flattened[key];
+        });
+      }
+
+      // --- Aggressive Cleanup for Sales ---
+      if (mainEntityLower.includes('sale')) {
+        const saleKeysToRemove = [
+          'sale_date', 'created_at', 'product id'
+        ];
+
+        Object.keys(flattened).forEach(key => {
+          const keyLower = key.toLowerCase();
+          const shouldRemove = saleKeysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '));
+          
+          if (shouldRemove) {
+            delete flattened[key];
+          }
         });
       }
       
@@ -649,10 +661,10 @@ export class ExportService {
           'date',
           'Check in image',
           'Check out image',
+          'status',
           'shift startTime',
           'shift endTime',
           'Duration',
-          'status',
           'Status Code',
         ];
 

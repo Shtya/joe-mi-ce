@@ -78,10 +78,10 @@ describe('ExportService', () => {
         'date',
         'Check in image',
         'Check out image',
+        'status',
         'shift startTime',
         'shift endTime',
         'Duration',
-        'status',
         'Status Code',
       ];
 
@@ -97,6 +97,70 @@ describe('ExportService', () => {
       expect(cleaned['status']).toBe('UNPLANNED_CLOSED');
       expect(cleaned['Status Code']).toBe(1);
       expect(cleaned['Duration']).toBeDefined();
+    });
+  });
+
+  describe('cleanDataForExport - General Journey and Sale Cleanup', () => {
+    it('should aggressively clean metadata fields for journeys', () => {
+      const sampleData = [
+        {
+          id: 'j1',
+          'user mobile': '0123456789',
+          'user avatar_url': 'http://avatar.com/1.png',
+          'user password': 'secret_password',
+          'role name': 'Promoter',
+          'role description': 'Promoter role',
+          'branch lat': 30.01,
+          'branch lng': 31.02,
+          'branch salesTargetType': 'amount',
+          'chain logoUrl': 'http://logo.com/c1.png',
+          type: 'planned',
+          status: 'COMPLETED',
+          date: '2026-03-05',
+          'user name': 'John Doe',
+        },
+      ];
+
+      const result = (service as any).cleanDataForExport(sampleData, 'journey');
+      const cleaned = result[0];
+
+      // Fields that should be removed
+      expect(cleaned['user mobile']).toBeUndefined();
+      expect(cleaned['user avatar_url']).toBeUndefined();
+      expect(cleaned['user password']).toBeUndefined();
+      expect(cleaned['role name']).toBeUndefined();
+      expect(cleaned['branch lat']).toBeUndefined();
+      expect(cleaned['chain logoUrl']).toBeUndefined();
+      expect(cleaned['type']).toBeUndefined();
+
+      // Fields that should remain
+      expect(cleaned['user name']).toBe('John Doe');
+      expect(cleaned['status']).toBe('COMPLETED');
+    });
+
+    it('should separate sale cleanup from journey cleanup', () => {
+      const sampleSaleData = [
+        {
+          id: 's1',
+          sale_date: '2026-03-05',
+          created_at: '2026-03-05T10:00:00Z',
+          'product id': 'p1',
+          'role name': 'Distributor', // Should NOT be removed from sale unless specified in saleKeysToRemove
+          amount: 100,
+        },
+      ];
+
+      const result = (service as any).cleanDataForExport(sampleSaleData, 'sale');
+      const cleaned = result[0];
+
+      // Fields that should be removed for sale
+      expect(cleaned['sale_date']).toBeUndefined();
+      expect(cleaned['created_at']).toBeUndefined();
+      expect(cleaned['product id']).toBeUndefined();
+
+      // Fields that should REMAIN for sale (because they are only in journeyKeysToRemove)
+      expect(cleaned['role name']).toBe('Distributor');
+      expect(cleaned['amount']).toBe(100);
     });
   });
 });
