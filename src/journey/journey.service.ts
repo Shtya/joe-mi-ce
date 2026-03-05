@@ -28,7 +28,7 @@ export class JourneyService {
     },
     tooFar: {
       en: 'You are too far from the location',
-      ar: 'أنت بعيد جدا عن الموقع',
+      ar: 'أنت بعيد  عن الموقع',
     },
     checkedOutSuccess: {
       en: 'Checked out successfully',

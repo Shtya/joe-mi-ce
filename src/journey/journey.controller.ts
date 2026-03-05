@@ -74,7 +74,7 @@ export class JourneyController {
     @UploadedFile() file?: Express.Multer.File
   ) {
     if (file) {
-      const filePath = `tmp/checkins/${file.filename}`;
+      const filePath = `/tmp/checkins/${file.filename}`;
       if (dto.checkOutTime && !dto.checkInTime) {
         dto.checkOutDocument = filePath;
       } else {
@@ -372,8 +372,8 @@ async getOptimizedPlans(
         isActiveForDate,
         statusKey: statusKey, // The filter key: 'present', 'absent', 'unplanned_present', etc.
         attendanceStatusText: translatedStatus, // Translated text based on lang parameter
-        checkInDocument: journey?.checkin?.checkInDocument,
-        checkOutDocument: journey?.checkin?.checkOutDocument,
+        checkInDocument: journey?.checkin?.checkInDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkInDocument : journey?.checkin?.checkInDocument,
+        checkOutDocument: journey?.checkin?.checkOutDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkOutDocument : journey?.checkin?.checkOutDocument,
         checkInTime: toLocalISOString(checkInTime),
         checkOutTime: toLocalISOString(checkOutTime),
         shiftStartTime: shiftStart.toISOString(),
@@ -642,8 +642,8 @@ async getAllPlansWithPagination(
         isActiveForToday: isActiveForDate, 
         attendanceStatus: finalJourneyStatus,
         attendanceStatusEn, // internal for filtering
-        checkInDocument: journey?.checkin?.checkInDocument,
-        checkOutDocument: journey?.checkin?.checkOutDocument,
+        checkInDocument: journey?.checkin?.checkInDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkInDocument : journey?.checkin?.checkInDocument,
+        checkOutDocument: journey?.checkin?.checkOutDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkOutDocument : journey?.checkin?.checkOutDocument,
         checkInTime: toLocalISOString(checkInTime),
         checkOutTime: toLocalISOString(checkOutTime),
         shiftStartTime: toLocalISOString(checkInTime),
@@ -698,8 +698,8 @@ async getAllPlansWithPagination(
       isActiveForToday: true, 
       attendanceStatus: finalJourneyStatus,
       attendanceStatusEn,
-      checkInDocument: journey.checkin?.checkInDocument,
-      checkOutDocument: journey.checkin?.checkOutDocument,
+      checkInDocument: journey.checkin?.checkInDocument?.startsWith('tmp/') ? '/' + journey.checkin?.checkInDocument : journey.checkin?.checkInDocument,
+      checkOutDocument: journey.checkin?.checkOutDocument?.startsWith('tmp/') ? '/' + journey.checkin?.checkOutDocument : journey.checkin?.checkOutDocument,
       checkInTime: toLocalISOString(checkInTime),
       checkOutTime: toLocalISOString(checkOutTime),
       shiftStartTime: shiftStart ? toLocalISOString(shiftStart.toDate()) : null,
@@ -846,7 +846,7 @@ async getAllPlansWithPagination(
         }
       : undefined;
 
-    return CRUD.findAllRelation(
+    const result = await CRUD.findAllRelation(
       this.journeyService.journeyRepo,
       'journey',
       search,
@@ -860,6 +860,20 @@ async getAllPlansWithPagination(
       extraWhere
     );
 
+    // FIX: Ensure image paths have a leading slash if they start with tmp/
+    result.records = result.records.map(journey => {
+      if (journey.checkin) {
+        if (journey.checkin.checkInDocument && journey.checkin.checkInDocument.startsWith('tmp/')) {
+          journey.checkin.checkInDocument = '/' + journey.checkin.checkInDocument;
+        }
+        if (journey.checkin.checkOutDocument && journey.checkin.checkOutDocument.startsWith('tmp/')) {
+          journey.checkin.checkOutDocument = '/' + journey.checkin.checkOutDocument;
+        }
+      }
+      return journey;
+    });
+
+    return result;
   }
 
   @Get('supervisor/checkins')
