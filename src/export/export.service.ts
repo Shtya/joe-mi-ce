@@ -1097,17 +1097,18 @@ export class ExportService {
     let worksheetColumns: any[] = [];
     let groupedColumns: { header: string; key: string; width?: number; entity?: string }[] = [];
     
-    // Check if this is a Journey/Unplanned export based on multiple factors
-    const isJourneyOrUnplanned = 
+    // Check if this is a Journey/Unplanned/Sale export based on multiple factors
+    const isJourneyOrUnplannedOrSale = 
       (mainEntity || '').toLowerCase().includes('journey') || 
       (mainEntity || '').toLowerCase().includes('unplanned') ||
+      (mainEntity || '').toLowerCase().includes('sale') ||
       (options.fileName || '').toLowerCase().includes('unplanned') ||
       (cleanedData.length > 0 && (
         cleanedData[0]['Status Code'] !== undefined && 
         cleanedData[0]['Duration'] !== undefined
       ));
 
-    if (isJourneyOrUnplanned && cleanedData.length > 0) {
+    if (isJourneyOrUnplannedOrSale && cleanedData.length > 0) {
       // Use keys from the first row directly as they are already ordered
       const firstRow = finalData[0];
       groupedColumns = Object.keys(firstRow).map(key => ({
