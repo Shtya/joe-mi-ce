@@ -555,6 +555,41 @@ export class ExportService {
         // Replace flattened object with the ordered one
         Object.keys(orderedFlattened).forEach(key => delete flattened[key]); // Clear original
         Object.assign(flattened, orderedFlattened); // Fills with new order (JavaScript object property order is generally preserved for non-integer keys)
+
+        // --- Unplanned: keep ONLY the requested columns in the exact order ---
+        if (mainEntityLower.includes('unplanned')) {
+          const unplannedAllowedKeys = [
+            'user name',
+            'user username',
+            'city name',
+            'Chain',
+            'branch name',
+            'Check in time',
+            'Check out time',
+            'date',
+            'Check in image',
+            'Check out image',
+            'status',
+            'shift startTime',
+            'shift endTime',
+            'Duration',
+          ];
+
+          const unplannedFiltered: any = {};
+          unplannedAllowedKeys.forEach(allowed => {
+            // Case-insensitive lookup
+            const match = Object.keys(flattened).find(
+              k => k.toLowerCase() === allowed.toLowerCase(),
+            );
+            if (match !== undefined) {
+              unplannedFiltered[allowed] = flattened[match];
+            }
+          });
+
+          // Replace flattened content with the filtered set
+          Object.keys(flattened).forEach(k => delete flattened[k]);
+          Object.assign(flattened, unplannedFiltered);
+        }
       }
 
       // Special handling for Sale entity
