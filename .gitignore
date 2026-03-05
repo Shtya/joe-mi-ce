@@ -59,3 +59,5 @@ src/firebase/venuat-6f346-firebase-adminsdk-fbsvc-b2ce39bdcd.json
 
 .vercel
 /uploads
+/tmp
+package-lock.json
