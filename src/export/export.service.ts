@@ -578,6 +578,42 @@ export class ExportService {
       if (mainEntityLower === 'sale' || mainEntityLower === 'sales') {
         const saleDate = item.sale_date || item.created_at;
         splitDateTime(saleDate, 'Date of sale', 'Time of sale');
+
+        // Explicitly extract User fields from nested user object
+        if (item.user) {
+          flattened['user name'] = item.user.name || item.user.fullName || '-';
+          flattened['user username'] = item.user.username || item.user.email || '-';
+          flattened['user mobile'] = item.user.mobile || item.user.phone || '-';
+        }
+
+        // Explicitly extract Branch, Chain, City
+        if (item.branch) {
+          flattened['branch'] = item.branch.name || '-';
+          if (item.branch.chain) {
+            flattened['chain'] = item.branch.chain.name || '-';
+          }
+          if (item.branch.city) {
+            flattened['city name'] = item.branch.city.name || '-';
+          }
+        }
+
+        // Explicitly extract Product fields
+        if (item.product) {
+          // brand is a relation: item.product.brand is a Brand object with .name
+          flattened['brand'] = (typeof item.product.brand === 'object' ? item.product.brand?.name : item.product.brand) || '-';
+          // category is a relation: item.product.category is a Category object with .name
+          flattened['categories'] = (typeof item.product.category === 'object' ? item.product.category?.name : item.product.category) || '-';
+          flattened['product model'] = item.product.model || item.product.name || '-';
+        }
+
+        // Price comes from the Sale itself, not from the Product
+        flattened['price'] = item.price ?? '-';
+        // Total amount and quantity come from the Sale
+        flattened['total amount'] = item.total_amount ?? item.totalAmount ?? '-';
+        flattened['quantity'] = item.quantity ?? '-';
+
+        // ID of the sale
+        flattened['id'] = item.id || '-';
       }
 
       // Add branch and chain explicitly if they are not picked up correctly for any entity
@@ -617,20 +653,45 @@ export class ExportService {
         });
       }
 
-      // --- Aggressive Cleanup for Sales ---
+      // --- Strict Whitelist for Sales ---
       if (mainEntityLower.includes('sale')) {
-        const saleKeysToRemove = [
-          'sale_date', 'created_at', 'product id'
+        // Only keep these specific fields in this exact order
+        const saleColumnOrder = [
+          'user name',
+          'city name',
+          'user username',
+          'id',
+          'user mobile',
+          'chain',
+          'branch',
+          'brand',
+          'categories',
+          'product model',
+          'price',
+          'total amount',
+          'quantity',
+          'date of sale',
+          'time of sale',
         ];
 
+        // Re-map all normalized keys so we can find matches regardless of casing
+        const normalizedFlattened: Record<string, string> = {};
         Object.keys(flattened).forEach(key => {
-          const keyLower = key.toLowerCase();
-          const shouldRemove = saleKeysToRemove.some(k => keyLower === k || keyLower.startsWith(k + ' '));
-          
-          if (shouldRemove) {
-            delete flattened[key];
-          }
+          normalizedFlattened[key.toLowerCase()] = key;
         });
+
+        // Build a fresh ordered object with only the allowed columns
+        const saleOrdered: Record<string, any> = {};
+        for (const col of saleColumnOrder) {
+          const originalKey = normalizedFlattened[col];
+          if (originalKey !== undefined) {
+            saleOrdered[originalKey] = flattened[originalKey];
+          }
+        }
+
+        // Replace flattened with saleOrdered
+        Object.keys(flattened).forEach(key => delete flattened[key]);
+        Object.assign(flattened, saleOrdered);
       }
       
       // Also ensure ANY field that is a date string is formatted correctly

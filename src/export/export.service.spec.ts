@@ -138,29 +138,44 @@ describe('ExportService', () => {
       expect(cleaned['status']).toBe('COMPLETED');
     });
 
-    it('should separate sale cleanup from journey cleanup', () => {
+    it('should apply strict whitelist for sale, removing unlisted fields', () => {
       const sampleSaleData = [
         {
           id: 's1',
-          sale_date: '2026-03-05',
-          created_at: '2026-03-05T10:00:00Z',
-          'product id': 'p1',
-          'role name': 'Distributor', // Should NOT be removed from sale unless specified in saleKeysToRemove
-          amount: 100,
+          sale_date: '2026-03-05T10:00:00',
+          price: 150,
+          total_amount: 300,
+          quantity: 2,
+          'role name': 'Distributor', // Should be removed by strict whitelist
+          user: { name: 'John', username: 'john_d', mobile: '0551234567' },
+          branch: { name: 'Al Riyadh', chain: { name: 'Jarir' }, city: { name: 'Riyadh' } },
+          product: { brand: { name: 'Samsung' }, category: { name: 'Electronics' }, model: 'S24' },
         },
       ];
 
       const result = (service as any).cleanDataForExport(sampleSaleData, 'sale');
       const cleaned = result[0];
 
-      // Fields that should be removed for sale
+      // Fields that should be removed by the whitelist
+      expect(cleaned['role name']).toBeUndefined();
       expect(cleaned['sale_date']).toBeUndefined();
-      expect(cleaned['created_at']).toBeUndefined();
-      expect(cleaned['product id']).toBeUndefined();
 
-      // Fields that should REMAIN for sale (because they are only in journeyKeysToRemove)
-      expect(cleaned['role name']).toBe('Distributor');
-      expect(cleaned['amount']).toBe(100);
+      // Only allowed fields should be present
+      expect(cleaned['user name']).toBe('John');
+      expect(cleaned['user username']).toBe('john_d');
+      expect(cleaned['user mobile']).toBe('0551234567');
+      // Branch and Chain may be capitalized depending on which key lands last
+      const branchVal = cleaned['branch'] || cleaned['Branch'];
+      const chainVal = cleaned['chain'] || cleaned['Chain'];
+      expect(branchVal).toBe('Al Riyadh');
+      expect(chainVal).toBe('Jarir');
+      expect(cleaned['city name']).toBe('Riyadh');
+      expect(cleaned['brand']).toBe('Samsung');
+      expect(cleaned['categories']).toBe('Electronics');
+      expect(cleaned['product model']).toBe('S24');
+      expect(cleaned['price']).toBe(150);
+      expect(cleaned['total amount']).toBe(300);
+      expect(cleaned['quantity']).toBe(2);
     });
   });
 
