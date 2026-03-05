@@ -163,4 +163,51 @@ describe('ExportService', () => {
       expect(cleaned['amount']).toBe(100);
     });
   });
+
+  describe('Duration and Late Time - Detailed Scenarios', () => {
+    it('should calculate correct duration for standard 9-hour shift', () => {
+      const data = [{
+        checkInTime: '2026-03-05 08:00:00',
+        checkOutTime: '2026-03-05 17:00:00',
+      }];
+      const result = (service as any).cleanDataForExport(data, 'journey');
+      expect(result[0]['Duration']).toBe('9h 0m');
+    });
+
+    it('should calculate correct duration spanning across days', () => {
+      const data = [{
+        checkInTime: '2026-03-05 22:00:00',
+        checkOutTime: '2026-03-06 02:30:00',
+      }];
+      const result = (service as any).cleanDataForExport(data, 'journey');
+      expect(result[0]['Duration']).toBe('4h 30m');
+    });
+
+    it('should handle negative duration where checkout is before checkin', () => {
+      const data = [{
+        checkInTime: '2026-03-05 10:00:00',
+        checkOutTime: '2026-03-05 09:00:00',
+      }];
+      const result = (service as any).cleanDataForExport(data, 'journey');
+      expect(result[0]['Duration']).toBe('Invalid (Out before In)');
+    });
+
+    it('should calculate late time correctly against HH:mm:ss shift start', () => {
+      const data = [{
+        checkInTime: '2026-03-05 08:15:00',
+        shift: { startTime: '08:00:00' }
+      }];
+      const result = (service as any).cleanDataForExport(data, 'journey');
+      expect(result[0]['Late Time']).toBe('15 mins');
+    });
+
+    it('should report "On time" if checked in exactly at or before shift start', () => {
+      const data = [{
+        checkInTime: '2026-03-05 07:55:00',
+        shift: { startTime: '08:00:00' }
+      }];
+      const result = (service as any).cleanDataForExport(data, 'journey');
+      expect(result[0]['Late Time']).toBe('On time');
+    });
+  });
 });

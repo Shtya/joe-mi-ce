@@ -2,6 +2,7 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { splitLocalDateTime } from 'common/date.util';
 import * as ExcelJS from 'exceljs';
+import * as dayjs from 'dayjs';
 import { Branch } from 'entities/branch.entity';
 import { Product } from 'entities/products/product.entity';
 import { Sale } from 'entities/products/sale.entity';
@@ -445,39 +446,52 @@ export class ExportService {
              shiftStartTimeStr = item.shift.startTime; // From nested shift (HH:mm:ss)
         }
         
-        // Calculate Duration
+        // Calculate Duration using dayjs for robustness
         if (checkInTimeStr && checkOutTimeStr) {
-          const start = new Date(checkInTimeStr);
-          const end = new Date(checkOutTimeStr);
-          const diffMs = end.getTime() - start.getTime();
-          const diffHrs = Math.floor(diffMs / 3600000);
-          const diffMins = Math.floor((diffMs % 3600000) / 60000);
-          flattened['Duration'] = `${diffHrs}h ${diffMins}m`;
+          const start = dayjs(checkInTimeStr);
+          const end = dayjs(checkOutTimeStr);
+          
+          if (start.isValid() && end.isValid()) {
+            const diffMins = end.diff(start, 'minute');
+            
+            if (diffMins < 0) {
+              flattened['Duration'] = 'Invalid (Out before In)';
+            } else {
+              const hrs = Math.floor(diffMins / 60);
+              const mins = diffMins % 60;
+              
+              // If duration is extremely long (e.g. > 24h), it might be a forgotten checkout
+              // but we still show it as requested by the user's screenshot showing 555h
+              flattened['Duration'] = `${hrs}h ${mins}m`;
+            }
+          } else {
+            flattened['Duration'] = '-';
+          }
         } else {
           flattened['Duration'] = '-';
         }
         
-        // Calculate Late Time
+        // Calculate Late Time using dayjs
         if (checkInTimeStr && shiftStartTimeStr) {
-          const checkInDate = new Date(checkInTimeStr);
-          let shiftStartDate: Date;
+          const checkInDate = dayjs(checkInTimeStr);
+          let shiftStartDate: dayjs.Dayjs;
 
           // If shiftStartTimeStr is full ISO/Date string
           if (shiftStartTimeStr.includes('T') || shiftStartTimeStr.includes('-')) {
-             shiftStartDate = new Date(shiftStartTimeStr);
+             shiftStartDate = dayjs(shiftStartTimeStr);
           } else {
              // Assume HH:mm:ss and use checkInDate's date part
              const [sHrs, sMins] = shiftStartTimeStr.split(':').map(Number);
-             shiftStartDate = new Date(checkInDate);
-             shiftStartDate.setHours(sHrs, sMins, 0, 0);
+             shiftStartDate = dayjs(checkInDate).hour(sHrs).minute(sMins).second(0).millisecond(0);
           }
           
-          if (!isNaN(checkInDate.getTime()) && !isNaN(shiftStartDate.getTime()) && checkInDate > shiftStartDate) {
-            const lateMs = checkInDate.getTime() - shiftStartDate.getTime();
-            const lateMins = Math.floor(lateMs / 60000);
+          if (checkInDate.isValid() && shiftStartDate.isValid() && checkInDate.isAfter(shiftStartDate)) {
+            const lateMins = checkInDate.diff(shiftStartDate, 'minute');
             flattened['Late Time'] = `${lateMins} mins`;
-          } else {
+          } else if (checkInDate.isValid() && shiftStartDate.isValid()) {
             flattened['Late Time'] = 'On time';
+          } else {
+            flattened['Late Time'] = '-';
           }
         } else {
           flattened['Late Time'] = '-';
