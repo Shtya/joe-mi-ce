@@ -82,27 +82,36 @@ export class ProductService {
       throw new NotFoundException(`Project with ID ${dto.project_id} not found`);
     }
 
-    // Check for existing product name in this project
-    const existingProduct = await this.productRepository.findOne({
+    // Check for existing product name in this project (including soft-deleted)
+    let product = await this.productRepository.findOne({
       where: {
         name: dto.name,
         project: { id: project.id },
       },
+      withDeleted: true,
     });
 
-    if (existingProduct) {
-      throw new ConflictException(
-        `Product name "${dto.name}" already exists in this project`
-      );
+    if (product) {
+      if (!product.deleted_at) {
+        throw new ConflictException(
+          `Product name "${dto.name}" already exists in this project`
+        );
+      }
+      // Restore soft-deleted product
+      product.deleted_at = null;
+      this.productRepository.merge(product, dto);
+      product.brand = brand;
+      product.category = category;
+      product.project = project;
+    } else {
+      // Create new product
+      product = this.productRepository.create({
+        ...dto,
+        brand,
+        category,
+        project,
+      });
     }
-
-    // Create product
-    const product = this.productRepository.create({
-      ...dto,
-      brand,
-      category,
-      project,
-    });
 
     const savedProduct = await this.productRepository.save(product);
 
@@ -906,13 +915,14 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
 
     let product = null;
 
-    // Try to find by SKUs first
+    // Try to find by SKUs first (including soft-deleted)
     if (finalSku) {
       product = await this.productRepository.findOne({
         where: {
           sku: finalSku,
           project: { id: project.id }
-        }
+        },
+        withDeleted: true
       });
     }
 
@@ -922,7 +932,8 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
         where: {
           name: productDisplayName,
           project: { id: project.id }
-        }
+        },
+        withDeleted: true
       });
     }
 
@@ -932,7 +943,8 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
         where: {
           name: name,
           project: { id: project.id }
-        }
+        },
+        withDeleted: true
       });
     }
 
@@ -967,6 +979,7 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
         is_high_priority: isHighPriority !== undefined ? isHighPriority : product.is_high_priority,
         category,
         brand,
+        deleted_at: null, // RESTORE if soft-deleted
       };
 
       // Only update image if we successfully downloaded a new one
