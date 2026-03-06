@@ -394,6 +394,36 @@ export class ExportService {
     const baseUrl = 'https://ce-api.joe-mi.com';
     const mainEntityLower = mainEntity.toLowerCase();
     
+    // First pass: Pre-calculate total late time per user for the given dataset
+    const userTotalLateMins: Record<string, number> = {};
+    if (mainEntityLower.includes('journey') || mainEntityLower.includes('unplanned') || mainEntityLower.includes('journeyplan')) {
+      data.forEach(item => {
+        const userId = item.user?.id || item.userId || item.user_id;
+        if (!userId) return;
+
+        const checkInTimeStr = item.checkInTime || item.checkin?.checkInTime;
+        let shiftStartTimeStr = item.shiftStartTime; 
+        if (!shiftStartTimeStr && item.shift?.startTime) {
+             shiftStartTimeStr = item.shift.startTime; 
+        }
+
+        if (checkInTimeStr && shiftStartTimeStr) {
+          const checkInDate = dayjs(checkInTimeStr);
+          let shiftStartDate: dayjs.Dayjs;
+          if (shiftStartTimeStr.includes('T') || shiftStartTimeStr.includes('-')) {
+             shiftStartDate = dayjs(shiftStartTimeStr);
+          } else {
+             const [sHrs, sMins] = shiftStartTimeStr.split(':').map(Number);
+             shiftStartDate = dayjs(checkInDate).hour(sHrs).minute(sMins).second(0).millisecond(0);
+          }
+          if (checkInDate.isValid() && shiftStartDate.isValid() && checkInDate.isAfter(shiftStartDate)) {
+            const lateMins = checkInDate.diff(shiftStartDate, 'minute');
+            userTotalLateMins[userId] = (userTotalLateMins[userId] || 0) + lateMins;
+          }
+        }
+      });
+    }
+
     return data.map(item => {
       const flattened = this.flattenObjectWithEntityPrefixes(item, mainEntity);
       
@@ -495,6 +525,16 @@ export class ExportService {
           }
         } else {
           flattened['Late Time'] = '-';
+        }
+        
+        const userId = item.user?.id || item.userId || item.user_id;
+        if (userId && userTotalLateMins[userId]) {
+          const tMins = userTotalLateMins[userId];
+          const hrs = Math.floor(tMins / 60);
+          const mins = tMins % 60;
+          flattened['Total Late Time'] = hrs > 0 ? `${hrs}h ${mins}m` : `${mins} mins`;
+        } else {
+          flattened['Total Late Time'] = '-';
         }
         
         // Add Check in/out times and images (Split into Date and Time)
@@ -658,10 +698,9 @@ export class ExportService {
         // Only keep these specific fields in this exact order
         const saleColumnOrder = [
           'user name',
-          'city name',
-          'user username',
-          'id',
+          'user username', 
           'user mobile',
+          'city name',
           'chain',
           'branch',
           'brand',
@@ -746,6 +785,8 @@ export class ExportService {
           'shift startTime',
           'shift endTime',
           'Duration',
+          'Late Time',
+          'Total Late Time',
           'Status Code',
         ];
 
