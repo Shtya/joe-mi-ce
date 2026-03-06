@@ -188,9 +188,20 @@ export class ProductService {
         product_id: product.id,
         branch_id: In(branchIds),
       });
-      // Insert new stock
-      const stockEntities = this.stockRepository.create(stockToInsert as any[]);
-      await this.stockRepository.save(stockEntities);
+      // Insert with raw SQL to guarantee IDs are propagated
+      for (const s of stockToInsert) {
+        await this.stockRepository
+          .createQueryBuilder()
+          .insert()
+          .into(Stock)
+          .values({
+            product_id: (s as any).product_id,
+            branch_id: (s as any).branch_id,
+            quantity: s.quantity,
+          })
+          .orIgnore()
+          .execute();
+      }
     }
   }
 
@@ -542,9 +553,20 @@ private async assignStock(product: Product, project: Project, productData: any) 
       product_id: product.id,
       branch_id: In(branchIds),
     });
-    // Insert new stock
-    const stockEntities = this.stockRepository.create(stockToInsert as any[]);
-    await this.stockRepository.save(stockEntities);
+    // Insert with raw SQL to guarantee IDs are propagated
+    for (const s of stockToInsert) {
+      await this.stockRepository
+        .createQueryBuilder()
+        .insert()
+        .into(Stock)
+        .values({
+          product_id: (s as any).product_id,
+          branch_id: (s as any).branch_id,
+          quantity: (s as any).quantity,
+        })
+        .orIgnore()
+        .execute();
+    }
   }
 }
 
@@ -1083,9 +1105,20 @@ private async assignStockWithBranches(
       product_id: product.id,
       branch_id: In(branchIds),
     });
-    // Insert new stock
-    const stockEntities = this.stockRepository.create(stockToInsert as any[]);
-    await this.stockRepository.save(stockEntities);
+    // Insert with raw SQL to guarantee IDs are propagated
+    for (const s of stockToInsert) {
+      await this.stockRepository
+        .createQueryBuilder()
+        .insert()
+        .into(Stock)
+        .values({
+          product_id: (s as any).product_id,
+          branch_id: (s as any).branch_id,
+          quantity: (s as any).quantity,
+        })
+        .orIgnore()
+        .execute();
+    }
   }
 }
 
