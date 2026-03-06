@@ -183,10 +183,14 @@ export class ProductService {
     // Bulk insert all stock records
     if (stockToInsert.length > 0) {
       // Remove old stock for these branches
-      const branchIds = stockToInsert.map(s => s.branch.id);
-      await this.stockRepository.delete({ product: { id: product.id }, branch: { id: In(branchIds) } });
+      const branchIds = stockToInsert.map((s: any) => s.branch_id);
+      await this.stockRepository.delete({
+        product_id: product.id,
+        branch_id: In(branchIds),
+      });
       // Insert new stock
-      await this.stockRepository.save(stockToInsert);
+      const stockEntities = this.stockRepository.create(stockToInsert as any[]);
+      await this.stockRepository.save(stockEntities);
     }
   }
 
@@ -493,8 +497,8 @@ export class ProductService {
    * Assign stock to branches
    */
 private async assignStock(product: Product, project: Project, productData: any) {
-  const quantity = parseInt(productData.quantity || '0');
-  if (quantity <= 0) return;
+  let quantity = parseInt(productData.quantity || '1');
+  if (isNaN(quantity) || quantity <= 0) quantity = 1;
 
   const stockToInsert: Partial<Stock>[] = [];
   const availableBranches = project.branches || [];
@@ -532,12 +536,15 @@ private async assignStock(product: Product, project: Project, productData: any) 
   }
 
   if (stockToInsert.length > 0) {
-    // Remove old stock for this product in these branches
-    const branchIds = stockToInsert.map(s => s.branch.id);
-    await this.stockRepository.delete({ product: { id: product.id }, branch: { id: In(branchIds) } });
-
+    // Remove old stock for these branches
+    const branchIds = stockToInsert.map((s: any) => s.branch_id);
+    await this.stockRepository.delete({
+      product_id: product.id,
+      branch_id: In(branchIds),
+    });
     // Insert new stock
-    await this.stockRepository.save(stockToInsert);
+    const stockEntities = this.stockRepository.create(stockToInsert as any[]);
+    await this.stockRepository.save(stockEntities);
   }
 }
 
@@ -710,42 +717,56 @@ private async processImportRow(
   }
 
   /**
-   * 3️⃣ Prevent duplicate product
+   * 3️⃣ Prevent duplicate product (including soft-deleted)
    */
-  const exists = await this.productRepository.findOne({
+  let product = await this.productRepository.findOne({
     where: {
       name: productData.name,
       project: { id: project.id }
-    }
+    },
+    withDeleted: true
   });
 
-  if (exists) {
+  const isUpdate = !!product;
+  if (product && !product.deleted_at) {
     throw new ConflictException(
       `Product "${productData.name}" already exists`
     );
   }
 
   /**
-   * 4️⃣ Create product (FULL MAPPING)
+   * 4️⃣ Create or Restore product
    */
-  const product = this.productRepository.create({
-    // Excel → Product
-    name: productData.name,                  // Product Name
-    model: productData.device_name,           // Device Name
-    sku: productData.sku,                     // SKU/Reference
-    description: productData.description,     // Device Description
-    price: productData.price,                 // Device Price
-    is_high_priority: productData.product_priority || false,
-    image_url: productData.image_url,         // Device Image URL
-
-    discount: 0,
-    is_active: true,
-
-    // Relations
-    project,
-    category,
-    brand
-  });
+  if (!product) {
+    product = this.productRepository.create({
+      // Excel → Product
+      name: productData.name,                  // Product Name
+      model: productData.device_name,           // Device Name
+      sku: productData.sku,                     // SKU/Reference
+      description: productData.description,     // Device Description
+      price: productData.price,                 // Device Price
+      is_high_priority: productData.product_priority || false,
+      image_url: productData.image_url,         // Device Image URL
+      discount: 0,
+      is_active: true,
+      project,
+      category,
+      brand
+    });
+  } else {
+    // Restore soft-deleted product
+    product.deleted_at = null;
+    this.productRepository.merge(product, {
+      model: productData.device_name,
+      sku: productData.sku,
+      description: productData.description,
+      price: productData.price,
+      is_high_priority: productData.product_priority || false,
+      image_url: productData.image_url,
+      category,
+      brand
+    });
+  }
 
   const savedProduct = await this.productRepository.save(product);
 
@@ -876,7 +897,7 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
     const name = map(['name', 'product_name'])?.toString().trim() || map(['name', 'product_name_2',"product_name2"])?.toString().trim();
     const description = map(['description', 'device_description'])?.toString().trim();
     const price = parseFloat(map(['price', 'device_price'], '0'));
-    const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '0'));
+    const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '1'));
     const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
     const extraSku = map(['Extra sku', 'extra_sku', 'sku'])?.toString().trim();
     const sacoSku = map(['Saco SKU', 'saco_sku'])?.toString().trim();
@@ -1009,10 +1030,8 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       console.log(`Updated product: ${productDisplayName}`);
     }
 
-    // Assign stock if quantity is provided
-    if (quantity > 0) {
-      await this.assignStockWithBranches(product, project, quantity, allBranches, branchNames);
-    }
+    // Assign stock (will default to 1 if quantity is 0 or missing)
+    await this.assignStockWithBranches(product, project, quantity > 0 ? quantity : 1, allBranches, branchNames);
 
     return isUpdate;
   }
@@ -1025,7 +1044,8 @@ private async assignStockWithBranches(
   allBranches: boolean,
   branchNames: string[]
 ) {
-  if (quantity <= 0) return;
+  let finalQuantity = quantity;
+  if (isNaN(finalQuantity) || finalQuantity <= 0) finalQuantity = 1;
 
   const stockToInsert: Partial<Stock>[] = [];
   const availableBranches = project.branches || [];
@@ -1037,7 +1057,7 @@ private async assignStockWithBranches(
         product, 
         branch_id: branch.id,
         product_id: product.id,
-        quantity 
+        quantity: finalQuantity 
       });
     }
   } else if (branchNames.length > 0) {
@@ -1051,17 +1071,21 @@ private async assignStockWithBranches(
         product, 
         branch_id: branch.id,
         product_id: product.id,
-        quantity 
+        quantity: finalQuantity 
       });
     }
   }
 
   if (stockToInsert.length > 0) {
     // Remove old stock for these branches
-    const branchIds = stockToInsert.map(s => s.branch.id);
-    await this.stockRepository.delete({ product: { id: product.id }, branch: { id: In(branchIds) } });
+    const branchIds = stockToInsert.map((s: any) => s.branch_id);
+    await this.stockRepository.delete({
+      product_id: product.id,
+      branch_id: In(branchIds),
+    });
     // Insert new stock
-    await this.stockRepository.save(stockToInsert);
+    const stockEntities = this.stockRepository.create(stockToInsert as any[]);
+    await this.stockRepository.save(stockEntities);
   }
 }
 
@@ -1262,14 +1286,15 @@ private async downloadWithHttpModule(url: string): Promise<string> {
       brand = await this.findOrCreateBrand(productData.brand_name, category, project);
     }
 
-    const exists = await this.productRepository.findOne({
+    let product = await this.productRepository.findOne({
       where: {
         name: productData.name,
         project: { id: project.id }
-      }
+      },
+      withDeleted: true
     });
 
-    if (exists) {
+    if (product && !product.deleted_at) {
       throw new ConflictException(`Product "${productData.name}" already exists`);
     }
 
@@ -1279,20 +1304,35 @@ private async downloadWithHttpModule(url: string): Promise<string> {
       savedImagePath = await this.downloadAndSaveImage(productData.image_url);
     }
 
-    const product = this.productRepository.create({
-      name: productData.name,
-      model: productData.device_name,
-      sku: productData.sku,
-      description: productData.description,
-      price: productData.price,
-      is_high_priority: productData.product_priority || false,
-      image_url: savedImagePath, // Save local path instead of external URL
-      discount: 0,
-      is_active: true,
-      project,
-      category,
-      brand
-    });
+    if (!product) {
+      product = this.productRepository.create({
+        name: productData.name,
+        model: productData.device_name,
+        sku: productData.sku,
+        description: productData.description,
+        price: productData.price,
+        is_high_priority: productData.product_priority || false,
+        image_url: savedImagePath, // Save local path instead of external URL
+        discount: 0,
+        is_active: true,
+        project,
+        category,
+        brand
+      });
+    } else {
+      // Restore soft-deleted product
+      product.deleted_at = null;
+      this.productRepository.merge(product, {
+        model: productData.device_name,
+        sku: productData.sku,
+        description: productData.description,
+        price: productData.price,
+        is_high_priority: productData.product_priority || false,
+        image_url: savedImagePath,
+        category,
+        brand
+      });
+    }
 
     const savedProduct = await this.productRepository.save(product);
     await this.assignStock(savedProduct, project, productData);
