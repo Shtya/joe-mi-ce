@@ -147,6 +147,8 @@ export class ProductService {
           stockToInsert.push({
             branch,
             product,
+            branch_id: branch.id,
+            product_id: product.id,
             quantity: 1,
           });
         }
@@ -171,6 +173,8 @@ export class ProductService {
         stockToInsert.push({
           branch,
           product,
+          branch_id: branch.id,
+          product_id: product.id,
           quantity: 1,
         });
       }
@@ -498,7 +502,13 @@ private async assignStock(product: Product, project: Project, productData: any) 
   if (productData.all_branches || ['true','1','yes'].includes((productData.all_branches+'').toLowerCase())) {
     // All branches
     for (const branch of availableBranches) {
-      stockToInsert.push({ branch, product, quantity });
+      stockToInsert.push({ 
+        branch, 
+        product, 
+        branch_id: branch.id,
+        product_id: product.id,
+        quantity 
+      });
     }
   } else if (productData.branches) {
     const branchNames = productData.branches
@@ -511,7 +521,13 @@ private async assignStock(product: Product, project: Project, productData: any) 
         b => b.name.toLowerCase() === branchName.toLowerCase()
       );
       if (!branch) throw new NotFoundException(`Branch "${branchName}" not found`);
-      stockToInsert.push({ branch, product, quantity });
+      stockToInsert.push({ 
+        branch, 
+        product, 
+        branch_id: branch.id,
+        product_id: product.id,
+        quantity 
+      });
     }
   }
 
@@ -966,7 +982,7 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
         is_active: true,
       });
 
-      await this.productRepository.save(product);
+      product = await this.productRepository.save(product);
       console.log(`Created product: ${productDisplayName} ${savedImagePath ? '(with image)' : '(no image)'}`);
     } else {
       // UPDATE existing product
@@ -989,7 +1005,7 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       }
 
       this.productRepository.merge(product, updateData);
-      await this.productRepository.save(product);
+      product = await this.productRepository.save(product);
       console.log(`Updated product: ${productDisplayName}`);
     }
 
@@ -1016,7 +1032,13 @@ private async assignStockWithBranches(
 
   if (allBranches) {
     for (const branch of availableBranches) {
-      stockToInsert.push({ branch, product, quantity });
+      stockToInsert.push({ 
+        branch, 
+        product, 
+        branch_id: branch.id,
+        product_id: product.id,
+        quantity 
+      });
     }
   } else if (branchNames.length > 0) {
     for (const branchName of branchNames) {
@@ -1024,7 +1046,13 @@ private async assignStockWithBranches(
         b => b.name.toLowerCase() === branchName.toLowerCase()
       );
       if (!branch) throw new NotFoundException(`Branch "${branchName}" not found`);
-      stockToInsert.push({ branch, product, quantity });
+      stockToInsert.push({ 
+        branch, 
+        product, 
+        branch_id: branch.id,
+        product_id: product.id,
+        quantity 
+      });
     }
   }
 
