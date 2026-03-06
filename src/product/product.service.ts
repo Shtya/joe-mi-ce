@@ -99,14 +99,16 @@ export class ProductService {
       }
       // Restore soft-deleted product
       product.deleted_at = null;
-      this.productRepository.merge(product, dto);
+      const { stock, ...productData } = dto;
+      this.productRepository.merge(product, productData);
       product.brand = brand;
       product.category = category;
       product.project = project;
     } else {
       // Create new product
+      const { stock, ...productData } = dto;
       product = this.productRepository.create({
-        ...dto,
+        ...productData,
         brand,
         category,
         project,
