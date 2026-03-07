@@ -314,8 +314,8 @@ async outOfStockSmart(
 
   const filters: Record<string, any> = filtersQuery && typeof filtersQuery === 'object' ? { ...filtersQuery } : {};
 
-  const qb = this.stockService.stockRepo.createQueryBuilder('stock')
-    .leftJoinAndSelect('stock.product', 'product')
+  const qb = this.stockService.productRepo.createQueryBuilder('product')
+    .leftJoinAndSelect('product.stock', 'stock', filters.branch?.id ? 'stock.branch_id = :branchId' : undefined, { branchId: filters.branch?.id })
     .leftJoinAndSelect('product.category', 'category')
     .leftJoinAndSelect('product.brand', 'brand')
     .leftJoinAndSelect('product.project', 'project')
@@ -365,11 +365,12 @@ async outOfStockSmart(
 
   // Quantity threshold filter
   if (safeThr >= 0) {
-    qb.andWhere('stock.quantity <= :threshold', { threshold: safeThr });
+    qb.andWhere('COALESCE(stock.quantity, 0) <= :threshold', { threshold: safeThr });
   }
 
   // Sorting
-  qb.orderBy(sortBy.startsWith('product.') || sortBy.startsWith('stock.') ? sortBy : `stock.${sortBy}`, sortOrder);
+  const safeSortBy = sortBy.startsWith('product.') || sortBy.startsWith('stock.') ? sortBy : `product.${sortBy}`;
+  qb.orderBy(safeSortBy, sortOrder);
 
   // Pagination
   const pageNum = Math.max(1, Number(page));
@@ -379,22 +380,29 @@ async outOfStockSmart(
   const [records, total] = await qb.getManyAndCount();
 
   // Flatten for response or export
-  const flatItems = records.map(stock => ({
-    product_id: stock.product?.id ?? null,
-    product_name: stock.product?.name ?? null,
-    sku: stock.product?.sku ?? null,
-    model: stock.product?.model ?? null,
-    price: stock.product?.price ?? null,
-    is_active: stock.product?.is_active ?? null,
-    project: stock.product?.project ?? null,
-    project_id:stock.product?.project.id ?? null,
-    category_name: stock.product?.category?.name ?? null,
-    brand_name: stock.product?.brand?.name ?? null,
-    branch_id: stock.branch?.id ?? null,
-    branch_name: stock.branch?.name ?? null,
-    quantity: stock.quantity,
-    created_at: stock.created_at,
-  }));
+  const flatItems = records.map(product => {
+     // If we have multiple stock records because no branch was specified, 
+     // we take the first one that passed the filter or null.
+     // However, getManyAndCount on a 1-to-many join returns distinct products.
+     const stock = product.stock && product.stock.length > 0 ? product.stock[0] : null;
+     
+     return {
+      product_id: product.id ?? null,
+      product_name: product.name ?? null,
+      sku: product.sku ?? null,
+      model: product.model ?? null,
+      price: product.price ?? null,
+      is_active: product.is_active ?? null,
+      project: product.project ?? null,
+      project_id: product.project?.id ?? null,
+      category_name: product.category?.name ?? null,
+      brand_name: product.brand?.name || null, // Fixed: was using product.brand?.name in some places and cat in others
+      branch_id: stock?.branch?.id ?? null,
+      branch_name: stock?.branch?.name ?? null,
+      quantity: stock ? stock.quantity : 0,
+      created_at: stock ? stock.created_at : product.created_at,
+    };
+  });
 
   const shouldExport = ['true', '1', 'yes'].includes((exportFlag || '').toLowerCase());
   if (shouldExport) {

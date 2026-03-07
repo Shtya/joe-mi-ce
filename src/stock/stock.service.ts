@@ -337,8 +337,7 @@ async getOutOfStockAggregated(
 
   const qb = this.productRepo
     .createQueryBuilder('product')
-    .leftJoin('product.stock', 'stock')
-    .leftJoin('stock.branch', 'branch')
+    .leftJoin('product.stock', 'stock', branchId ? 'stock.branch_id = :branchId' : undefined, { branchId })
     .where('product.project_id = :projectId', { projectId }) // 🔐 PROJECT ENFORCED
     .select('product.id', 'product_id')
     .addSelect('product.name', 'product_name')
@@ -347,10 +346,6 @@ async getOutOfStockAggregated(
     .addGroupBy('product.name')
     .having('COALESCE(SUM(stock.quantity), 0) <= :thr', { thr: threshold })
     .orderBy('total_qty', 'ASC');
-
-  if (branchId) {
-    qb.andWhere('branch.id = :branchId', { branchId });
-  }
 
   const rows = await qb.getRawMany(); // [{ product_id, product_name, total_qty }]
 
@@ -1057,20 +1052,21 @@ async getOutOfStockByUserBranchMobile(
 
 
   // Create query builder for out-of-stock items
-  const qb = this.stockRepo.createQueryBuilder('stock')
-    .leftJoinAndSelect('stock.product', 'product')
+  // 🚀 FIX: Start from Product to include items with NO stock record (0 quantity)
+  const qb = this.productRepo.createQueryBuilder('product')
+    .leftJoinAndSelect('product.stock', 'stock', 'stock.branch_id = :branchId', { branchId })
     .leftJoinAndSelect('product.brand', 'brand')
     .leftJoinAndSelect('product.category', 'category')
     .leftJoinAndSelect('stock.branch', 'branch')
     .select([
-      'stock.id',
-      'stock.quantity',
-      'stock.created_at',
       'product.id',
       'product.name',
       'product.sku',
       'product.price',
       'product.discount',
+      'stock.id',
+      'stock.quantity',
+      'stock.created_at',
       'brand.id',
       'brand.name',
       'category.id',
@@ -1079,8 +1075,8 @@ async getOutOfStockByUserBranchMobile(
       'branch.name',
       'branch.city'
     ])
-    .where('branch.id = :branchId', { branchId })
-    .andWhere('stock.quantity <= :threshold', { threshold })
+    .where('product.project_id = :projectId', { projectId: user.project_id || user.project?.id })
+    .andWhere('COALESCE(stock.quantity, 0) <= :threshold', { threshold })
     .skip(skip)
     .take(limitNumber);
 
@@ -1106,40 +1102,46 @@ async getOutOfStockByUserBranchMobile(
             [key.replace('.', '_')]: value
           });
         } else {
-          qb.andWhere(`stock.${key} = :${key}`, { [key]: value });
+          // If it's a product field, use product prefix
+          const prefix = ['name', 'sku', 'price', 'model'].includes(key) ? 'product' : 'stock';
+          qb.andWhere(`${prefix}.${key} = :${key}`, { [key]: value });
         }
       }
     });
   }
 
   // Apply sorting
-  const sortField = sortBy || 'stock.quantity';
+  const sortField = sortBy ? (sortBy.includes('.') ? sortBy : `product.${sortBy}`) : 'product.name';
   qb.orderBy(sortField, sortOrder);
 
   const [records, total_records] = await qb.getManyAndCount();
 
   // Transform the data to match optimized structure
-  const optimizedRecords = records.map(stock => {
-    const productPrice = stock.product?.price || 0;
-    const discount = stock.product?.discount || 0;
+  const optimizedRecords = records.map(p => {
+    // Map from Product-first structure back to Stock-like structure
+    const stock = p.stock && p.stock.length > 0 ? p.stock[0] : null;
+    const quantity = stock ? stock.quantity : 0;
+    
+    const productPrice = p.price || 0;
+    const discount = p.discount || 0;
 
     return {
-      id: stock.id,
-      quantity: stock.quantity,
-      created_at: stock.created_at,
-      is_out_of_stock: stock.quantity <= threshold,
+      id: stock?.id || `virtual-${p.id}`,
+      quantity: quantity,
+      created_at: stock?.created_at || p.created_at,
+      is_out_of_stock: quantity <= threshold,
       threshold: threshold,
       product: {
-        id: stock.product?.id || null,
-        name: stock.product?.name || null,
-        sku: stock.product?.sku || null,
+        id: p.id || null,
+        name: p.name || null,
+        sku: p.sku || null,
         price: productPrice,
         discount: discount,
         unit_amount: productPrice,
-        total_amount: productPrice * stock.quantity,
-        discounted_amount: (productPrice - discount) * stock.quantity,
-        brand_name: stock.product?.brand?.name || null,
-        category_name: stock.product?.category?.name || null
+        total_amount: productPrice * quantity,
+        discounted_amount: (productPrice - discount) * quantity,
+        brand_name: p.brand?.name || null,
+        category_name: p.category?.name || null
       }
     };
   });
