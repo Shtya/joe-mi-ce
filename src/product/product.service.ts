@@ -239,8 +239,19 @@ export class ProductService {
         throw new ConflictException(`Another product with name "${dto.name}" exists in your project`);
     }
 
-    this.productRepository.merge(product, dto);
-    return this.productRepository.save(product);
+    const { stock, ...productData } = dto;
+    this.productRepository.merge(product, productData);
+    const savedProduct = await this.productRepository.save(product);
+
+    if (stock) {
+      const project = await this.projectRepository.findOne({
+        where: { id: product.project.id },
+        relations: ['branches']
+      });
+      await this.assignStockToBranches(savedProduct, project, stock);
+    }
+
+    return this.findOne(id, user);
   }
   async remove(id: string, user: any): Promise<void> {
     const product = await this.findOne(id, user);
