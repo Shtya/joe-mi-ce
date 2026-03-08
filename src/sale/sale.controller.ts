@@ -108,9 +108,16 @@ export class SaleController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query() query: any
   ) {
-    const today = new Date();
-    const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    // Default to today's date in Saudi Arabia timezone (UTC+3)
+    const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Riyadh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+
+    const startDate = new Date(`${saudiDateStr}T00:00:00.000Z`);
+    const endDate = new Date(`${saudiDateStr}T23:59:59.999Z`);
 
     const filters = { ...query.filters };
     if (query.filters?.fromDate) delete filters.fromDate;
@@ -274,9 +281,16 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
       endDate.setHours(23, 59, 59, 999);
     }
   } else {
-    const today = new Date();
-    startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    // Default to today's date in Saudi Arabia timezone (UTC+3)
+    const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Riyadh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date()); // Returns "YYYY-MM-DD"
+
+    startDate = new Date(`${saudiDateStr}T00:00:00.000Z`);
+    endDate = new Date(`${saudiDateStr}T23:59:59.999Z`);
   }
 
   const filters = { ...query.filters };

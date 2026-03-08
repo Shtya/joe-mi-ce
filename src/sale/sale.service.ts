@@ -34,11 +34,23 @@ export class SaleService {
     if (!branch) throw new NotFoundException('Branch not found');
 
 
-    const stock = await this.stockRepo.findOne({
+    let stock = await this.stockRepo.findOne({
       where: { product: { id: product.id }, branch: { id: branch.id } }
     });
 
     if(!dto.isFromOrigin){
+      if (!stock) {
+        // Auto-create stock record with 0 quantity if it doesn't exist
+        stock = this.stockRepo.create({
+          product: { id: product.id },
+          branch: { id: branch.id },
+          product_id: product.id,
+          branch_id: branch.id,
+          quantity: 0
+        });
+        await this.stockRepo.save(stock);
+      }
+
       if (stock.quantity < dto.quantity) {
         throw new BadRequestException('Not enough stock available');
       }
@@ -949,6 +961,11 @@ async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date, 
 
   // Transform the data - branch and user only appear once at the top level
   const optimizedRecords = records.map(sale => {
+    /*
+    ### 3. Bug Fix: Stock Null Pointer Exception
+
+    - **SaleService**: Fixed a `TypeError` in `create` when trying to access `stock.quantity` if a stock record was missing for the product/branch. It now throws a `NotFoundException` with a clear message.
+    */
     // Use sale.price/discount if available (as user requested in select), fallback to product
     const unitPrice = sale.price !== undefined ? sale.price : (sale.product?.price || 0);
     const quantity = sale.quantity || 0;
