@@ -42,7 +42,7 @@ export class ReportsService {
     const startOfMonth = now.startOf('month');
     
     // The report should include data only up to yesterday
-    let endOfReportingPeriod = now.subtract(1, 'day').endOf('day');
+    let endOfReportingPeriod = now.endOf('day'); // Up to today
     
     // If today is the 1st of the month, we have no days to report yet for *this* month.
     // In a real scenario, running on the 1st usually means reporting on the *previous* month.
@@ -53,7 +53,7 @@ export class ReportsService {
       endOfReportingPeriod = now.endOf('day');
     }
 
-    const daysInMonth = now.daysInMonth();
+    const daysInMonth = (now.month() === dayjs().month() && now.year() === dayjs().year()) ? now.date() : now.daysInMonth();
     const monthName = now.format('MMMM'); // e.g., "February"
     const currentMonthPrefix = now.format('YYYY-MM');
 
@@ -62,8 +62,7 @@ export class ReportsService {
     workbook.created = new Date();
 
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
-    const tab1Sheet = workbook.addWorksheet(`Daily Values and Total`);
-    const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
+        const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const tab3Sheet = workbook.addWorksheet(`Check-in - Check-out`);
 
     // Define columns
@@ -90,7 +89,6 @@ export class ReportsService {
     }
 
     attendanceSheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'ttl_attendance', width: 15 }];
-    tab1Sheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'tll_days_tab1', width: 15 }];
     tab2Sheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'tll_days_tab2', width: 15 }];
     
     // Tab 3 will have a 2-row header for merging.
@@ -100,13 +98,15 @@ export class ReportsService {
 
     // Fetch data
     // Fetch all active users with their relations (Role, Branch, etc.)
-    const users = await this.userRepository.find({
+    let users = await this.userRepository.find({
       where: { 
         is_active: true,
         ...(projectId && { project_id: projectId })
       },
       relations: ['role', 'branch', 'branch.city', 'branch.chain'],
     });
+    // Post-filter to ensure only promoters are included
+    users = users.filter(u => u.role?.name?.toLowerCase() === 'promoter');
 
     // Fetch Journeys (Attendance & Checkins) for the current month up to yesterday
     const journeys = await this.journeyRepository.find({
@@ -154,15 +154,15 @@ export class ReportsService {
         brand: projectName,
       };
 
-      const attendanceRowData = { ...baseRowData };
-      const tab1RowData = { ...baseRowData };
+            const attendanceRow1 = { ...baseRowData }; // For Attendance (1/0)
+      const attendanceRow2 = { ...baseRowData }; // For Daily Values (Quantity)
       const tab2RowData = { ...baseRowData };
       const tab3RowData = { ...baseRowData };
 
-      let ttlDays = 0; // Present/Closed count for Tab 3 and Attendance tab
-      let ttlAttendance = 0; // Specifically for Attendance tab
-      let totalSales = 0;
-      let totalQuantity = 0;
+      let ttlDays = 0; // Checkin
+      let ttlAttendance = 0; // Attendance sum
+      let totalSales = 0; // SAR sales
+      let totalQuantity = 0; // Daily quantities
 
       for (let i = 1; i <= daysInMonth; i++) {
         const currentDateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
@@ -172,7 +172,8 @@ export class ReportsService {
         
         // Only process data up to the reporting end date
         if (dayjs(currentDateStr).isAfter(endOfReportingPeriod, 'day')) {
-           tab1RowData[dayKey] = 0;
+           attendanceRow1[dayKey] = '';
+           attendanceRow2[dayKey] = 0;
            tab2RowData[dayKey] = 'SAR -';
            tab3RowData[dayInKey] = '';
            tab3RowData[dayOutKey] = '';
@@ -181,19 +182,19 @@ export class ReportsService {
 
         const dayJourney = userJourneys.find(j => j.date === currentDateStr);
         
-        // Attendance Logic (Tab 1)
+        // Attendance Logic (Row 1)
         if (dayJourney) {
             if ([JourneyStatus.PRESENT, JourneyStatus.CLOSED, JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED].includes(dayJourney.status as any)) {
-                attendanceRowData[dayKey] = 1;
+                attendanceRow1[dayKey] = 1;
                 ttlAttendance += 1;
                 ttlDays += 1;
             } else if ([JourneyStatus.ABSENT, JourneyStatus.UNPLANNED_ABSENT].includes(dayJourney.status as any)) {
-                attendanceRowData[dayKey] = 0;
+                attendanceRow1[dayKey] = 0;
             } else {
-                attendanceRowData[dayKey] = ''; 
+                attendanceRow1[dayKey] = ''; 
             }
         } else {
-            attendanceRowData[dayKey] = '';
+            attendanceRow1[dayKey] = '';
         }
 
         const dayCheckin = dayJourney?.checkin;
@@ -212,20 +213,24 @@ export class ReportsService {
         const dailyQuantityTotal = daySales.reduce((sum, sale) => sum + Number(sale.quantity || 0), 0);
         const dailySalesTotal = daySales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
         
-        tab1RowData[dayKey] = dailyQuantityTotal > 0 ? dailyQuantityTotal : 0;
+        // Attendance Logic (Row 2 - Daily Values)
+        attendanceRow2[dayKey] = dailyQuantityTotal > 0 ? dailyQuantityTotal : 0;
+        
+        // SAR Entries
         tab2RowData[dayKey] = dailySalesTotal > 0 ? `SAR ${dailySalesTotal}` : 'SAR -';
         
         totalSales += dailySalesTotal;
         totalQuantity += dailyQuantityTotal;
       }
 
-      attendanceRowData['ttl_attendance'] = ttlAttendance;
-      tab1RowData['tll_days_tab1'] = totalQuantity; // Total quantity for the month
+      attendanceRow1['ttl_attendance'] = ttlAttendance;
+      attendanceRow2['ttl_attendance'] = totalQuantity; // Second row gets the total quantity
+      
       tab2RowData['tll_days_tab2'] = totalSales > 0 ? `SAR ${totalSales}` : 'SAR -';
-      tab3RowData['tll_days_tab3'] = ttlDays; // Total days present
+      tab3RowData['tll_days_tab3'] = ttlDays; 
 
-      attendanceSheet.addRow(attendanceRowData);
-      tab1Sheet.addRow(tab1RowData);
+      attendanceSheet.addRow(attendanceRow1);
+      attendanceSheet.addRow(attendanceRow2);
       tab2Sheet.addRow(tab2RowData);
       tab3Sheet.addRow(tab3RowData);
     }
@@ -270,10 +275,55 @@ export class ReportsService {
         row.alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    // Styling
-    [attendanceSheet, tab1Sheet, tab2Sheet, tab3Sheet].forEach(sheet => {
-      sheet.getRow(1).font = { bold: true };
-      sheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        // Styling (Advanced Design & Filters)
+    const headerStyle = {
+      font: { bold: true, color: { argb: 'FFFFFFFF' } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } },
+      alignment: { vertical: 'middle', horizontal: 'center' },
+      border: {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' }
+      }
+    };
+
+    const cellBorder = {
+        top: { style: 'thin' },
+        left: { style: 'thin' },
+        bottom: { style: 'thin' },
+        right: { style: 'thin' },
+        color: { argb: 'FFBFBFBF' } 
+    };
+
+    [attendanceSheet, tab2Sheet, tab3Sheet].forEach(sheet => {
+      // Auto-filter
+      const rowCount = sheet.rowCount;
+      const colCount = sheet.columnCount;
+      if (rowCount > 0 && colCount > 0) {
+        // Tab 3 uses a 2 row header, others use 1 row header
+        const isTab3 = sheet.name === 'Check-in - Check-out';
+        const startRow = isTab3 ? 2 : 1; 
+        sheet.autoFilter = {
+             from: { row: startRow, column: 1 },
+             to: { row: rowCount, column: colCount }
+        };
+      }
+
+      sheet.eachRow((row, rowNumber) => {
+        // Apply header styling to row 1 (and 2 for tab 3)
+        const isTab3 = sheet.name === 'Check-in - Check-out';
+        const isHeader = isTab3 ? (rowNumber <= 2) : (rowNumber === 1);
+
+        row.eachCell((cell) => {
+          if (isHeader) {
+            cell.font = headerStyle.font;
+            cell.fill = headerStyle.fill as exceljs.Fill;
+            cell.alignment = headerStyle.alignment as any;
+          }
+          cell.border = cellBorder as Partial<exceljs.Borders>;
+        });
+      });
     });
 
     // Save to temp file
