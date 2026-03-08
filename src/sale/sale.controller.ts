@@ -270,6 +270,7 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
   }
   if (query.filters?.toDate) {
     endDate = new Date(query.filters.toDate);
+    endDate.setHours(23, 59, 59, 999);
   }
 
   const filters = { ...query.filters };
