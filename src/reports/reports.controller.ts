@@ -1,8 +1,11 @@
-import { Controller, Get, Res, Injectable } from '@nestjs/common';
+import { Controller, Get, Res, UseGuards, Req } from '@nestjs/common';
 import { ReportsService } from './reports.service';
 import { Response } from 'express';
+import { AuthGuard } from '../auth/auth.guard';
+import * as path from 'path';
 
 @Controller('reports')
+@UseGuards(AuthGuard)
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
@@ -19,6 +22,25 @@ export class ReportsController {
       return res.status(500).json({
         success: false,
         message: 'Failed to generate report',
+        error: error.message,
+      });
+    }
+  }
+
+  @Get('download')
+  async downloadReport(@Res() res: Response) {
+    try {
+      const filePath = await this.reportsService.generateMonthlyReport();
+      const fileName = path.basename(filePath);
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+      
+      return res.download(filePath, fileName);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to download report',
         error: error.message,
       });
     }
