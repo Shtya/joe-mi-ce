@@ -1,0 +1,42 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { ReportsService } from './reports.service';
+import { MailService } from '../mail/mail.service';
+import * as path from 'path';
+
+@Injectable()
+export class ReportsCron {
+  private readonly logger = new Logger(ReportsCron.name);
+
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly mailService: MailService,
+  ) {}
+
+  @Cron('0 7 * * *')
+  async handleDailyReport() {
+    this.logger.log('Starting daily monthly report cron job');
+
+    try {
+      const filePath = await this.reportsService.generateMonthlyReport();
+      this.logger.log(`Excel report generated successfully at: ${filePath}`);
+
+      const filename = path.basename(filePath);
+      const emailSent = await this.mailService.sendReportEmail(filePath, filename);
+
+      if (emailSent) {
+        this.logger.log('Daily report email sent successfully.');
+      } else {
+        this.logger.warn('Daily report generation succeeded, but email sending failed.');
+      }
+    } catch (error) {
+      this.logger.error('Error occurred during daily report cron job execution');
+      this.logger.error(error.message);
+      if (error.stack) {
+        this.logger.error(error.stack);
+      }
+    }
+
+    this.logger.log('Finished daily monthly report cron job');
+  }
+}

@@ -37,6 +37,8 @@ import { SalesTargetModule } from './sales-target/sales-target.module';
 import { StaticPagesModule } from './static-pages/static-pages.module';
 import { ContactUs } from 'entities/contact-us.entity';
 import { ContactUsModule } from './contact-us/contact-us.module';
+import { ReportsModule } from './reports/reports.module';
+import { MailModule } from './mail/mail.module';
 import { DocumentbuilderModule } from './documentbuilder/documentbuilder.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { FirebaseModule } from './firebase/firebase.module';
@@ -107,6 +109,8 @@ import { EntranceLetterModule } from './entrance-letter/entrance-letter.module';
     SalesTargetModule,
     StaticPagesModule,
     ContactUsModule,
+    ReportsModule,
+    MailModule,
     DocumentbuilderModule,
     AppVersionModule,
     FirebaseModule,

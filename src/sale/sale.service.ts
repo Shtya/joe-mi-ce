@@ -533,6 +533,54 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
   return formattedResults;
 }
+
+async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date) {
+  const query = this.saleRepo
+    .createQueryBuilder('sale')
+    .leftJoinAndSelect('sale.product', 'product')
+    .leftJoinAndSelect('product.brand', 'brand')
+    .leftJoinAndSelect('product.category', 'category')
+    .where('sale.userId = :userId', { userId })
+    .andWhere('sale.status != :status', { status: 'cancelled' });
+
+  if (startDate && endDate) {
+    query.andWhere('sale.createdAt BETWEEN :startDate AND :endDate', {
+      startDate,
+      endDate,
+    });
+  }
+
+  const results = await query
+    .select([
+      'product.id as productId',
+      'product.name as productName',
+      'product.sku as productSku',
+      'brand.name as brandName',
+      'category.name as categoryName',
+      'SUM(sale.quantity) as totalQuantity',
+      'SUM(sale.total_amount) as totalRevenue',
+      'AVG(sale.price) as averagePrice',
+      'COUNT(sale.id) as totalSales',
+    ])
+    .groupBy('product.id, product.name, product.sku, brand.name, category.name')
+    .orderBy('totalRevenue', 'DESC')
+    .getRawMany();
+
+  // Format the response with null handling
+  const formattedResults = results.map(item => ({
+    product_id: item.productid,
+    product_name: item.productname,
+    product_sku: item.productsku,
+    brand_name: item.brandname || null,
+    category_name: item.categoryname || null,
+    total_quantity: Number(item.totalquantity) || 0,
+    total_revenue: Number(item.totalrevenue) || 0,
+    average_price: Number(item.averageprice) || 0,
+    total_sales: Number(item.totalsales) || 0,
+  }));
+
+  return formattedResults;
+}
   async findSalesWithBrand(
     entityName: string,
     search?: string,
