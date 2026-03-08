@@ -265,12 +265,18 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
   let startDate: Date | undefined;
   let endDate: Date | undefined;
 
-  if (query.filters?.fromDate) {
-    startDate = new Date(query.filters.fromDate);
-  }
-  if (query.filters?.toDate) {
-    endDate = new Date(query.filters.toDate);
-    endDate.setHours(23, 59, 59, 999);
+  if (query.filters?.fromDate || query.filters?.toDate) {
+    if (query.filters?.fromDate) {
+      startDate = new Date(query.filters.fromDate);
+    }
+    if (query.filters?.toDate) {
+      endDate = new Date(query.filters.toDate);
+      endDate.setHours(23, 59, 59, 999);
+    }
+  } else {
+    const today = new Date();
+    startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
   }
 
   const filters = { ...query.filters };
