@@ -51,38 +51,28 @@ export class TrainingController {
   }
 
   @Post()
-  async create(@Req() req: any, @Body() dto: CreateTrainingDto) {
+  @UseInterceptors(FileInterceptor('file', trainingPdfUploadOptions))
+  async create(
+    @Req() req: any,
+    @Body() dto: CreateTrainingDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
     const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
-    return this.service.create(projectId, dto);
+    return this.service.create(projectId, dto, file?.filename);
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() dto: UpdateTrainingDto) {
-    return this.service.update(id, dto);
+  @UseInterceptors(FileInterceptor('file', trainingPdfUploadOptions))
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateTrainingDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.service.update(id, dto, file?.filename);
   }
 
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.service.delete(id);
-  }
-
-  @Post('upload/my-info/:id')
-  @UseInterceptors(FileInterceptor('file', trainingPdfUploadOptions))
-  async uploadMyPdf(
-    @Param('id') id: string,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    if (!file) throw new BadRequestException('File is required');
-    return this.service.savePdf(id, file.filename);
-  }
-
-  @Post('upload/:id')
-  @UseInterceptors(FileInterceptor('file', trainingPdfUploadOptions))
-  async uploadPdf(
-    @Param('id') id: string,
-    @UploadedFile() file: Express.Multer.File,
-  ) {
-    if (!file) throw new BadRequestException('File is required');
-    return this.service.savePdf(id, file.filename);
   }
 }

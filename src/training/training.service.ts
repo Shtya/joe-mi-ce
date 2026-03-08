@@ -26,17 +26,21 @@ export class TrainingService {
     return training;
   }
 
-  async create(projectId: string, dto: CreateTrainingDto): Promise<Training> {
+  async create(projectId: string, dto: CreateTrainingDto, filename?: string): Promise<Training> {
     const training = this.trainingRepo.create({
       ...dto,
       projectId,
+      ...(filename && { pdf_url: `/uploads/training/${filename}` }),
     });
     return await this.trainingRepo.save(training);
   }
 
-  async update(id: string, dto: UpdateTrainingDto): Promise<Training> {
+  async update(id: string, dto: UpdateTrainingDto, filename?: string): Promise<Training> {
     const training = await this.findOne(id);
     Object.assign(training, dto);
+    if (filename) {
+      training.pdf_url = `/uploads/training/${filename}`;
+    }
     return await this.trainingRepo.save(training);
   }
 
@@ -46,11 +50,6 @@ export class TrainingService {
     return { success: true };
   }
 
-  async savePdf(id: string, filename: string): Promise<Training> {
-    const training = await this.findOne(id);
-    training.pdf_url = `/uploads/training/${filename}`;
-    return await this.trainingRepo.save(training);
-  }
 
   async findAll() {
       return await this.trainingRepo.find();
