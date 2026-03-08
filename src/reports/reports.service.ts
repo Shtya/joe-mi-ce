@@ -9,7 +9,6 @@ import * as path from 'path';
 import { User } from 'entities/user.entity';
 import { Journey, JourneyStatus } from 'entities/all_plans.entity';
 import { Sale } from 'entities/products/sale.entity';
-
 import { Project } from 'entities/project.entity';
 
 @Injectable()
@@ -41,36 +40,25 @@ export class ReportsService {
     const now = dayjs();
     const startOfMonth = now.startOf('month');
     
-    // The report should include data only up to yesterday
-    let endOfReportingPeriod = now.endOf('day'); // Up to today
-    
-    // If today is the 1st of the month, we have no days to report yet for *this* month.
-    // In a real scenario, running on the 1st usually means reporting on the *previous* month.
-    // For this exact requirement: "generate the Excel report dynamically based on the current month",
-    // if today is the 1st, the period is technically empty or just reporting the 1st.
-    // We'll cap it: if yesterday is before the start of the month, we just use today.
+    let endOfReportingPeriod = now.endOf('day');
     if (endOfReportingPeriod.isBefore(startOfMonth)) {
       endOfReportingPeriod = now.endOf('day');
     }
 
     const daysInMonth = (now.month() === dayjs().month() && now.year() === dayjs().year()) ? now.date() : now.daysInMonth();
-    const monthName = now.format('MMMM'); // e.g., "February"
     const currentMonthPrefix = now.format('YYYY-MM');
 
     const workbook = new exceljs.Workbook();
     workbook.creator = 'System Cron';
-    workbook.created = new Date();
 
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
-        const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
+    const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const tab3Sheet = workbook.addWorksheet(`Check-in - Check-out`);
 
-    // Define columns
     const baseColumns = [
       { header: 'JOE M.I. USER', key: 'joe_user_1', width: 15 },
       { header: 'No', key: 'no', width: 5 },
       { header: 'Name', key: 'name', width: 25 },
-      { header: 'Name EN', key: 'name_en', width: 25 },
       { header: 'JOE M.I. USER', key: 'joe_user_2', width: 15 },
       { header: 'ID', key: 'id', width: 15 },
       { header: 'City', key: 'city', width: 15 },
@@ -84,20 +72,19 @@ export class ReportsService {
     for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
         dateColumns.push({ header: dateStr, key: `day_${i}`, width: 15 });
-        checkinDateColumns.push({ header: `${dateStr} Check-in`, key: `day_in_${i}`, width: 15 });
-        checkinDateColumns.push({ header: `${dateStr} Check-out`, key: `day_out_${i}`, width: 15 });
+        checkinDateColumns.push({ header: `${dateStr} Check-in`, width: 15 });
+        checkinDateColumns.push({ header: `${dateStr} Check-out`, width: 15 });
     }
 
     attendanceSheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'ttl_attendance', width: 15 }];
     tab2Sheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'tll_days_tab2', width: 15 }];
-    
-    // Tab 3 will have a 2-row header for merging.
-    // We override columns entirely for Tab 3 to manage the layout manually.
-    const tab3ColKeys = [...baseColumns.map(c => c.key), ...checkinDateColumns.map(c => c.key), 'tll_days_tab3'];
-    tab3Sheet.columns = tab3ColKeys.map(key => ({ key, width: 15 }));
 
-    // Fetch data
-    // Fetch all active users with their relations (Role, Branch, etc.)
+    // Set widths for Tab 3
+    const tab3TotalCols = baseColumns.length + checkinDateColumns.length + 1;
+    for(let i=1; i<=tab3TotalCols; i++) {
+      tab3Sheet.getColumn(i).width = 15;
+    }
+
     let users = await this.userRepository.find({
       where: { 
         is_active: true,
@@ -105,10 +92,8 @@ export class ReportsService {
       },
       relations: ['role', 'branch', 'branch.city', 'branch.chain'],
     });
-    // Post-filter to ensure only promoters are included
     users = users.filter(u => u.role?.name?.toLowerCase() === 'promoter');
 
-    // Fetch Journeys (Attendance & Checkins) for the current month up to yesterday
     const journeys = await this.journeyRepository.find({
       where: {
         date: Between(startOfMonth.format('YYYY-MM-DD'), endOfReportingPeriod.format('YYYY-MM-DD')),
@@ -117,7 +102,6 @@ export class ReportsService {
       relations: ['user', 'checkin'],
     });
 
-    // Fetch Sales for the current month up to yesterday
     const sales = await this.saleRepository.find({
       where: {
         sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
@@ -126,13 +110,20 @@ export class ReportsService {
       relations: ['user'],
     });
 
-    // Process data per user
+    const dailyAttendanceTotals: Record<string, number> = {};
+    for (let i = 1; i <= daysInMonth; i++) {
+      dailyAttendanceTotals[`day_${i}`] = 0;
+    }
+
+    const attendanceRows: any[] = [];
+    const tab2Rows: any[] = [];
+    const tab3Rows: any[] = [];
+
     let rowNo = 1;
     for (const user of users) {
       const userJourneys = journeys.filter(j => j.user?.id === user.id);
       const userSales = sales.filter(s => s.user?.id === user.id);
 
-      // Dynamic Store Lookup Logic
       let effectiveBranch = user.branch;
       if (!effectiveBranch && userJourneys.length > 0) {
           const sorted = [...userJourneys].sort((a, b) => b.date.localeCompare(a.date));
@@ -154,179 +145,170 @@ export class ReportsService {
         brand: projectName,
       };
 
-            const attendanceRow1 = { ...baseRowData }; // For Attendance (1/0)
-      const attendanceRow2 = { ...baseRowData }; // For Daily Values (Quantity)
-      const tab2RowData = { ...baseRowData };
-      const tab3RowData = { ...baseRowData };
+      const attRow = { ...baseRowData };
+      const t2Row = { ...baseRowData };
+      const t3RowArr = [
+         baseRowData.joe_user_1, baseRowData.no, baseRowData.name, baseRowData.joe_user_2, 
+         baseRowData.id, baseRowData.city, baseRowData.channel, baseRowData.store, baseRowData.brand
+      ];
 
-      let ttlDays = 0; // Checkin
-      let ttlAttendance = 0; // Attendance sum
-      let totalSales = 0; // SAR sales
-      let totalQuantity = 0; // Daily quantities
+      let ttlDays = 0;
+      let ttlAttendance = 0;
+      let totalSales = 0;
 
       for (let i = 1; i <= daysInMonth; i++) {
         const currentDateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
         const dayKey = `day_${i}`;
-        const dayInKey = `day_in_${i}`;
-        const dayOutKey = `day_out_${i}`;
         
-        // Only process data up to the reporting end date
         if (dayjs(currentDateStr).isAfter(endOfReportingPeriod, 'day')) {
-           attendanceRow1[dayKey] = '';
-           attendanceRow2[dayKey] = 0;
-           tab2RowData[dayKey] = 'SAR -';
-           tab3RowData[dayInKey] = '';
-           tab3RowData[dayOutKey] = '';
+           attRow[dayKey] = '';
+           t2Row[dayKey] = 'SAR -';
+           t3RowArr.push('');
+           t3RowArr.push('');
            continue;
         }
 
         const dayJourney = userJourneys.find(j => j.date === currentDateStr);
         
-        // Attendance Logic (Row 1)
         if (dayJourney) {
             if ([JourneyStatus.PRESENT, JourneyStatus.CLOSED, JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED].includes(dayJourney.status as any)) {
-                attendanceRow1[dayKey] = 1;
+                attRow[dayKey] = 1;
+                dailyAttendanceTotals[dayKey] += 1;
                 ttlAttendance += 1;
                 ttlDays += 1;
             } else if ([JourneyStatus.ABSENT, JourneyStatus.UNPLANNED_ABSENT].includes(dayJourney.status as any)) {
-                attendanceRow1[dayKey] = 0;
+                attRow[dayKey] = 0;
             } else {
-                attendanceRow1[dayKey] = ''; 
+                attRow[dayKey] = ''; 
             }
         } else {
-            attendanceRow1[dayKey] = '';
+            attRow[dayKey] = '';
         }
 
         const dayCheckin = dayJourney?.checkin;
         if (dayCheckin) {
             const inTime = dayCheckin.checkInTime ? dayjs(dayCheckin.checkInTime).format('HH:mm') : '--:--';
             const outTime = dayCheckin.checkOutTime ? dayjs(dayCheckin.checkOutTime).format('HH:mm') : '--:--';
-            tab3RowData[dayInKey] = inTime;
-            tab3RowData[dayOutKey] = outTime;
+            t3RowArr.push(inTime);
+            t3RowArr.push(outTime);
         } else {
-            tab3RowData[dayInKey] = '';
-            tab3RowData[dayOutKey] = '';
+            t3RowArr.push('');
+            t3RowArr.push('');
         }
 
-        // Sales Logic
         const daySales = userSales.filter(s => dayjs(s.sale_date).format('YYYY-MM-DD') === currentDateStr);
-        const dailyQuantityTotal = daySales.reduce((sum, sale) => sum + Number(sale.quantity || 0), 0);
         const dailySalesTotal = daySales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
         
-        // Attendance Logic (Row 2 - Daily Values)
-        attendanceRow2[dayKey] = dailyQuantityTotal > 0 ? dailyQuantityTotal : 0;
-        
-        // SAR Entries
-        tab2RowData[dayKey] = dailySalesTotal > 0 ? `SAR ${dailySalesTotal}` : 'SAR -';
-        
+        t2Row[dayKey] = dailySalesTotal > 0 ? `SAR ${dailySalesTotal}` : 'SAR -';
         totalSales += dailySalesTotal;
-        totalQuantity += dailyQuantityTotal;
       }
 
-      attendanceRow1['ttl_attendance'] = ttlAttendance;
-      attendanceRow2['ttl_attendance'] = totalQuantity; // Second row gets the total quantity
-      
-      tab2RowData['tll_days_tab2'] = totalSales > 0 ? `SAR ${totalSales}` : 'SAR -';
-      tab3RowData['tll_days_tab3'] = ttlDays; 
+      attRow['ttl_attendance'] = ttlAttendance;
+      t2Row['tll_days_tab2'] = totalSales > 0 ? `SAR ${totalSales}` : 'SAR -';
+      t3RowArr.push(ttlDays); 
 
-      attendanceSheet.addRow(attendanceRow1);
-      attendanceSheet.addRow(attendanceRow2);
-      tab2Sheet.addRow(tab2RowData);
-      tab3Sheet.addRow(tab3RowData);
+      attendanceRows.push(attRow);
+      tab2Rows.push(t2Row);
+      tab3Rows.push(t3RowArr);
     }
 
-    // Tab 3: Custom Header Merging (2 rows)
-    tab3Sheet.insertRow(1, []); // Insert a new row at the top for Tab 3
+    const totalsRowData: Record<string, any> = { brand: 'Total' }; 
+    let totalOfTotals = 0;
+    for (let i = 1; i <= daysInMonth; i++) {
+       const key = `day_${i}`;
+       totalsRowData[key] = dailyAttendanceTotals[key];
+       totalOfTotals += dailyAttendanceTotals[key];
+    }
+    totalsRowData['ttl_attendance'] = totalOfTotals;
+
+    attendanceSheet.addRow(totalsRowData);
+    attendanceRows.forEach(r => attendanceSheet.addRow(r));
+
+    tab2Rows.forEach(r => tab2Sheet.addRow(r));
+
     const headerRow1 = tab3Sheet.getRow(1);
     const headerRow2 = tab3Sheet.getRow(2);
 
-    // Set row 2 headers for base columns
     baseColumns.forEach((col, index) => {
         const cell = headerRow1.getCell(index + 1);
         cell.value = col.header;
-        tab3Sheet.mergeCells(1, index + 1, 2, index + 1); // Merge vertically
+        tab3Sheet.mergeCells(1, index + 1, 2, index + 1);
     });
 
-    // Dates and Check-in/out
     let currentColIndex = baseColumns.length + 1;
     for (let i = 1; i <= daysInMonth; i++) {
         const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
         
-        // Header Row 1: Date
         const dateCell = headerRow1.getCell(currentColIndex);
         dateCell.value = dateStr;
-        tab3Sheet.mergeCells(1, currentColIndex, 1, currentColIndex + 1); // Merge horizontally
+        tab3Sheet.mergeCells(1, currentColIndex, 1, currentColIndex + 1);
         
-        // Header Row 2: Check-in / Check-out
         headerRow2.getCell(currentColIndex).value = 'Check-in';
         headerRow2.getCell(currentColIndex + 1).value = 'Check-out';
-        
         currentColIndex += 2;
     }
 
-    // TLL DAYS at the end
     const tllDaysCell = headerRow1.getCell(currentColIndex);
     tllDaysCell.value = 'TLL DAYS';
     tab3Sheet.mergeCells(1, currentColIndex, 2, currentColIndex);
 
-    // Apply styles to headers
-    [headerRow1, headerRow2].forEach(row => {
-        row.font = { bold: true };
-        row.alignment = { vertical: 'middle', horizontal: 'center' };
+    tab3Rows.forEach(r => {
+        tab3Sheet.addRow(r);
     });
 
-        // Styling (Advanced Design & Filters)
-    const headerStyle = {
-      font: { bold: true, color: { argb: 'FFFFFFFF' } },
-      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4F81BD' } },
-      alignment: { vertical: 'middle', horizontal: 'center' },
-      border: {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-      }
-    };
+    // Formatting 
+    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF1DE' } }; 
+    const headerDateFont = { bold: true, color: { argb: 'FFFF0000' } }; 
+    const standardHeaderFont = { bold: true, color: { argb: 'FF000000' } }; 
 
     const cellBorder = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' },
-        color: { argb: 'FFBFBFBF' } 
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+    };
+    
+    const thickBottomBorder = {
+        ...cellBorder,
+        bottom: { style: 'thick', color: { argb: 'FF000000' } }
     };
 
     [attendanceSheet, tab2Sheet, tab3Sheet].forEach(sheet => {
-      // Auto-filter
-      const rowCount = sheet.rowCount;
-      const colCount = sheet.columnCount;
-      if (rowCount > 0 && colCount > 0) {
-        // Tab 3 uses a 2 row header, others use 1 row header
-        const isTab3 = sheet.name === 'Check-in - Check-out';
-        const startRow = isTab3 ? 2 : 1; 
+      const isTab3 = sheet.name === 'Check-in - Check-out';
+      const startRow = isTab3 ? 2 : 1; 
+
+      if (sheet.rowCount > startRow && sheet.columnCount > 0) {
         sheet.autoFilter = {
              from: { row: startRow, column: 1 },
-             to: { row: rowCount, column: colCount }
+             to: { row: sheet.rowCount, column: sheet.columnCount }
         };
       }
 
       sheet.eachRow((row, rowNumber) => {
-        // Apply header styling to row 1 (and 2 for tab 3)
-        const isTab3 = sheet.name === 'Check-in - Check-out';
         const isHeader = isTab3 ? (rowNumber <= 2) : (rowNumber === 1);
+        const isTotalRow = sheet.name === 'Attendance' && rowNumber === 2;
 
-        row.eachCell((cell) => {
+        row.eachCell((cell, colNumber) => {
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+
           if (isHeader) {
-            cell.font = headerStyle.font;
-            cell.fill = headerStyle.fill as exceljs.Fill;
-            cell.alignment = headerStyle.alignment as any;
+             if (colNumber > baseColumns.length && colNumber < sheet.columnCount) {
+                 cell.font = headerDateFont;
+             } else {
+                 cell.font = standardHeaderFont;
+             }
+             cell.fill = headerFill as exceljs.Fill;
+             cell.border = cellBorder as Partial<exceljs.Borders>;
+          } else if (isTotalRow) {
+             cell.font = { bold: true };
+             cell.border = thickBottomBorder as Partial<exceljs.Borders>;
+          } else {
+             cell.border = cellBorder as Partial<exceljs.Borders>;
           }
-          cell.border = cellBorder as Partial<exceljs.Borders>;
         });
       });
     });
 
-    // Save to temp file
     const executionDateStr = now.format('YYYY_MM_DD');
     const filename = `monthly_report_${executionDateStr}.xlsx`;
     const tempFilePath = path.join(os.tmpdir(), filename);
