@@ -21,9 +21,9 @@ export class TrainingService {
     return training;
   }
 
-  async createOrUpdate(dto: CreateTrainingDto) {
+  async createOrUpdate(projectId:string,dto: CreateTrainingDto) {
     let training = await this.trainingRepo.findOne({
-      where: { projectId: dto.projectId },
+      where: { projectId },
     });
 
     if (training) {

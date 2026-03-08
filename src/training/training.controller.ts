@@ -44,8 +44,9 @@ export class TrainingController {
   }
 
   @Post()
-  async createOrUpdate(@Body() dto: CreateTrainingDto) {
-    return this.service.createOrUpdate(dto);
+  async createOrUpdate(@Req() req: any,@Body() dto: CreateTrainingDto) {
+    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
+    return this.service.createOrUpdate(projectId,dto);
   }
 
   @Post('upload/my-info')
