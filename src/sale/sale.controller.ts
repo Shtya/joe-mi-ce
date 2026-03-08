@@ -134,11 +134,12 @@ export class SaleController {
   getInvoiceSummary(
     @Req() req: any,
     @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
+    @Query('endDate') endDate?: string,
+    @Query('groupBy') groupBy: 'product' | 'category' = 'category'
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end);
+    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end, groupBy);
   }
 
   @Get('my-sales')
@@ -261,9 +262,15 @@ export class SaleController {
 @Get('by-user/:userId')
 @Permissions(EPermission.SALE_READ)
 findByUser(@Param('userId') userId: string, @Query() query: any) {
-  const today = new Date();
-  const startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+  let startDate: Date | undefined;
+  let endDate: Date | undefined;
+
+  if (query.filters?.fromDate) {
+    startDate = new Date(query.filters.fromDate);
+  }
+  if (query.filters?.toDate) {
+    endDate = new Date(query.filters.toDate);
+  }
 
   const filters = { ...query.filters };
   delete filters.fromDate;

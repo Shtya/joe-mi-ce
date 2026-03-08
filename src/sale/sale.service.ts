@@ -534,7 +534,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   return formattedResults;
 }
 
-async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date) {
+async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date, groupBy: 'product' | 'category' = 'product') {
   const query = this.saleRepo
     .createQueryBuilder('sale')
     .leftJoinAndSelect('sale.product', 'product')
@@ -548,6 +548,28 @@ async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date) 
       startDate,
       endDate,
     });
+  }
+
+  if (groupBy === 'category') {
+    const results = await query
+      .select([
+        'category.id as categoryId',
+        'category.name as categoryName',
+        'SUM(sale.quantity) as totalQuantity',
+        'SUM(sale.total_amount) as totalRevenue',
+        'COUNT(sale.id) as totalSales',
+      ])
+      .groupBy('category.id, category.name')
+      .orderBy('totalRevenue', 'DESC')
+      .getRawMany();
+
+    return results.map(item => ({
+      category_id: item.categoryid,
+      category_name: item.categoryname || null,
+      total_quantity: Number(item.totalquantity) || 0,
+      total_revenue: Number(item.totalrevenue) || 0,
+      total_sales: Number(item.totalsales) || 0,
+    }));
   }
 
   const results = await query
@@ -1114,17 +1136,55 @@ async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date) 
     total_price: parseFloat(item.total_price) || 0
   }));
 
+  // --- Additional Totals (All-time, Monthly, Quarterly) ---
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  
+  const currentQuarter = Math.floor(now.getMonth() / 3);
+  const quarterStart = new Date(now.getFullYear(), currentQuarter * 3, 1);
+  const quarterEnd = new Date(now.getFullYear(), currentQuarter * 3 + 3, 0, 23, 59, 59, 999);
+
+  const allTimeTotalQb = this.saleRepo.createQueryBuilder('sale')
+    .select('SUM(sale.total_amount)', 'total')
+    .where('sale.status != :status', { status: 'cancelled' });
+  
+  const monthlyTotalQb = this.saleRepo.createQueryBuilder('sale')
+    .select('SUM(sale.total_amount)', 'total')
+    .where('sale.status != :status', { status: 'cancelled' })
+    .andWhere('sale.created_at BETWEEN :start AND :end', { start: monthStart, end: monthEnd });
+
+  const quarterlyTotalQb = this.saleRepo.createQueryBuilder('sale')
+    .select('SUM(sale.total_amount)', 'total')
+    .where('sale.status != :status', { status: 'cancelled' })
+    .andWhere('sale.created_at BETWEEN :start AND :end', { start: quarterStart, end: quarterEnd });
+
+  if (userId) {
+    allTimeTotalQb.andWhere('sale.userId = :userId', { userId });
+    monthlyTotalQb.andWhere('sale.userId = :userId', { userId });
+    quarterlyTotalQb.andWhere('sale.userId = :userId', { userId });
+  }
+
+  const [allTimeRes, monthlyRes, quarterlyRes] = await Promise.all([
+    allTimeTotalQb.getRawOne(),
+    monthlyTotalQb.getRawOne(),
+    quarterlyTotalQb.getRawOne()
+  ]);
+
   return {
     total_records,
     total_quantity,
-    total_sales,
+    total_sales, // This is the filtered total
+    all_time_total_sales: parseFloat(allTimeRes?.total) || 0,
+    monthly_total_sales: parseFloat(monthlyRes?.total) || 0,
+    quarterly_total_sales: parseFloat(quarterlyRes?.total) || 0,
     last_journey_totals,
-    category_summaries, // New Field
+    category_summaries,
     current_page: pageNumber,
     per_page: limitNumber,
-    branch: branchInfo, // Branch appears only once here
-    user: userInfo,     // User appears only once here
-    target_performance: targetPerformance, // New Field
+    branch: branchInfo,
+    user: userInfo,
+    target_performance: targetPerformance,
     records: optimizedRecords
   };
 }
