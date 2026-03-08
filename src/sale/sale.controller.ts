@@ -308,7 +308,6 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
   }
 
   @Get('invoice-summary')
-  @Permissions(EPermission.SALE_READ)
   getInvoiceSummary(
     @Req() req: any,
     @Query('startDate') startDate?: string,
