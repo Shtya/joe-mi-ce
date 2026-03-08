@@ -90,7 +90,11 @@ export class ReportsService {
 
     tab1Sheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'tll_days_tab1', width: 15 }];
     tab2Sheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'tll_days_tab2', width: 15 }];
-    tab3Sheet.columns = [...baseColumns, ...checkinDateColumns, { header: 'TLL DAYS', key: 'tll_days_tab3', width: 15 }];
+    
+    // Tab 3 will have a 2-row header for merging.
+    // We override columns entirely for Tab 3 to manage the layout manually.
+    const tab3ColKeys = [...baseColumns.map(c => c.key), ...checkinDateColumns.map(c => c.key), 'tll_days_tab3'];
+    tab3Sheet.columns = tab3ColKeys.map(key => ({ key, width: 15 }));
 
     // Fetch data
     // Fetch all active users with their relations (Role, Branch, etc.)
@@ -114,7 +118,7 @@ export class ReportsService {
     // Fetch Sales for the current month up to yesterday
     const sales = await this.saleRepository.find({
       where: {
-        created_at: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
+        sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
         ...(projectId && { projectId })
       },
       relations: ['user'],
@@ -144,6 +148,7 @@ export class ReportsService {
 
       let ttlDays = 0;
       let totalSales = 0;
+      let totalQuantity = 0;
 
       for (let i = 1; i <= daysInMonth; i++) {
         const currentDateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
@@ -174,29 +179,69 @@ export class ReportsService {
         }
 
         // Sales Logic
-        const daySales = userSales.filter(s => dayjs(s.created_at).format('YYYY-MM-DD') === currentDateStr);
-        // Using quantity or target for "Daily Values" is common. We will use total sales amount without SAR prefix for Tab 1, and with prefix for Tab 2.
-        // But his screenshot has 44, 51, 75, 90. So we will use sum of quantities. 
+        // Filter by sale_date
+        const daySales = userSales.filter(s => dayjs(s.sale_date).format('YYYY-MM-DD') === currentDateStr);
         const dailyQuantityTotal = daySales.reduce((sum, sale) => sum + Number(sale.quantity || 0), 0);
         const dailySalesTotal = daySales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
         
-        // Tab 1: Daily values (e.g. integer amounts like quantites or values without SAR)
-        tab1RowData[dayKey] = dailySalesTotal > 0 ? dailySalesTotal : 0;
+        // Tab 1: Daily values (Quantity as seen in user's image with value 44)
+        tab1RowData[dayKey] = dailyQuantityTotal > 0 ? dailyQuantityTotal : 0;
         
         // Tab 2: SAR formatted
         tab2RowData[dayKey] = dailySalesTotal > 0 ? `SAR ${dailySalesTotal}` : 'SAR -';
         
         totalSales += dailySalesTotal;
+        totalQuantity += dailyQuantityTotal;
       }
 
-      tab1RowData['tll_days_tab1'] = totalSales; // Sum of the daily values
+      tab1RowData['tll_days_tab1'] = totalQuantity; // Total quantity for the month
       tab2RowData['tll_days_tab2'] = totalSales > 0 ? `SAR ${totalSales}` : 'SAR -';
-      tab3RowData['tll_days_tab3'] = ttlDays; // Number of days checked in
+      tab3RowData['tll_days_tab3'] = ttlDays; // Total days present
 
       tab1Sheet.addRow(tab1RowData);
       tab2Sheet.addRow(tab2RowData);
       tab3Sheet.addRow(tab3RowData);
     }
+
+    // Tab 3: Custom Header Merging (2 rows)
+    tab3Sheet.insertRow(1, []); // Insert a new row at the top for Tab 3
+    const headerRow1 = tab3Sheet.getRow(1);
+    const headerRow2 = tab3Sheet.getRow(2);
+
+    // Set row 2 headers for base columns
+    baseColumns.forEach((col, index) => {
+        const cell = headerRow1.getCell(index + 1);
+        cell.value = col.header;
+        tab3Sheet.mergeCells(1, index + 1, 2, index + 1); // Merge vertically
+    });
+
+    // Dates and Check-in/out
+    let currentColIndex = baseColumns.length + 1;
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
+        
+        // Header Row 1: Date
+        const dateCell = headerRow1.getCell(currentColIndex);
+        dateCell.value = dateStr;
+        tab3Sheet.mergeCells(1, currentColIndex, 1, currentColIndex + 1); // Merge horizontally
+        
+        // Header Row 2: Check-in / Check-out
+        headerRow2.getCell(currentColIndex).value = 'Check-in';
+        headerRow2.getCell(currentColIndex + 1).value = 'Check-out';
+        
+        currentColIndex += 2;
+    }
+
+    // TLL DAYS at the end
+    const tllDaysCell = headerRow1.getCell(currentColIndex);
+    tllDaysCell.value = 'TLL DAYS';
+    tab3Sheet.mergeCells(1, currentColIndex, 2, currentColIndex);
+
+    // Apply styles to headers
+    [headerRow1, headerRow2].forEach(row => {
+        row.font = { bold: true };
+        row.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
 
     // Styling
     [tab1Sheet, tab2Sheet, tab3Sheet].forEach(sheet => {
