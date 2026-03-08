@@ -59,12 +59,9 @@ export class ReportsService {
       { header: 'JOE M.I. USER', key: 'joe_user_1', width: 15 },
       { header: 'No', key: 'no', width: 5 },
       { header: 'Name', key: 'name', width: 25 },
-      { header: 'JOE M.I. USER', key: 'joe_user_2', width: 15 },
-      { header: 'ID', key: 'id', width: 15 },
       { header: 'City', key: 'city', width: 15 },
       { header: 'Channel', key: 'channel', width: 15 },
       { header: 'Store', key: 'store', width: 20 },
-      { header: 'Brand', key: 'brand', width: 15 },
     ];
 
     const dateColumns = [];
@@ -137,19 +134,16 @@ export class ReportsService {
         joe_user_1: user.username,
         no: rowNo++,
         name: user.name,
-        joe_user_2: user.username,
-        id: user.national_id || user.id.substring(0, 8),
         city: effectiveBranch?.city?.name || 'N/A',
         channel: effectiveBranch?.chain?.name || 'N/A',
         store: effectiveBranch?.name || 'N/A',
-        brand: projectName,
       };
 
       const attRow = { ...baseRowData };
       const t2Row = { ...baseRowData };
       const t3RowArr = [
-         baseRowData.joe_user_1, baseRowData.no, baseRowData.name, baseRowData.joe_user_2, 
-         baseRowData.id, baseRowData.city, baseRowData.channel, baseRowData.store, baseRowData.brand
+         baseRowData.joe_user_1, baseRowData.no, baseRowData.name, 
+         baseRowData.city, baseRowData.channel, baseRowData.store
       ];
 
       let ttlDays = 0;
@@ -168,15 +162,18 @@ export class ReportsService {
            continue;
         }
 
-        const dayJourney = userJourneys.find(j => j.date === currentDateStr);
+        const dayJourneys = userJourneys.filter(j => j.date === currentDateStr);
         
-        if (dayJourney) {
-            if ([JourneyStatus.PRESENT, JourneyStatus.CLOSED, JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED].includes(dayJourney.status as any)) {
+        if (dayJourneys.length > 0) {
+            const hasPresent = dayJourneys.some(j => [JourneyStatus.PRESENT, JourneyStatus.CLOSED, JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED].includes(j.status as any));
+            const hasAbsent = dayJourneys.some(j => [JourneyStatus.ABSENT, JourneyStatus.UNPLANNED_ABSENT].includes(j.status as any));
+
+            if (hasPresent) {
                 attRow[dayKey] = 1;
                 dailyAttendanceTotals[dayKey] += 1;
                 ttlAttendance += 1;
                 ttlDays += 1;
-            } else if ([JourneyStatus.ABSENT, JourneyStatus.UNPLANNED_ABSENT].includes(dayJourney.status as any)) {
+            } else if (hasAbsent) {
                 attRow[dayKey] = 0;
             } else {
                 attRow[dayKey] = ''; 
@@ -185,12 +182,12 @@ export class ReportsService {
             attRow[dayKey] = '';
         }
 
-        const dayCheckin = dayJourney?.checkin;
-        if (dayCheckin) {
-            const inTime = dayCheckin.checkInTime ? dayjs(dayCheckin.checkInTime).format('HH:mm') : '--:--';
-            const outTime = dayCheckin.checkOutTime ? dayjs(dayCheckin.checkOutTime).format('HH:mm') : '--:--';
-            t3RowArr.push(inTime);
-            t3RowArr.push(outTime);
+        if (dayJourneys.length > 0) {
+            const inTimes = dayJourneys.map(j => j.checkin?.checkInTime ? dayjs(j.checkin.checkInTime).format('HH:mm') : '').filter(Boolean);
+            const outTimes = dayJourneys.map(j => j.checkin?.checkOutTime ? dayjs(j.checkin.checkOutTime).format('HH:mm') : '').filter(Boolean);
+            
+            t3RowArr.push(inTimes.length > 0 ? inTimes.join(' , ') : '--:--');
+            t3RowArr.push(outTimes.length > 0 ? outTimes.join(' , ') : '--:--');
         } else {
             t3RowArr.push('');
             t3RowArr.push('');
@@ -212,7 +209,7 @@ export class ReportsService {
       tab3Rows.push(t3RowArr);
     }
 
-    const totalsRowData: Record<string, any> = { brand: 'Total' }; 
+    const totalsRowData: Record<string, any> = { joe_user_1: 'Total', name: 'Total' }; 
     let totalOfTotals = 0;
     for (let i = 1; i <= daysInMonth; i++) {
        const key = `day_${i}`;
@@ -275,6 +272,7 @@ export class ReportsService {
 
     [attendanceSheet, tab2Sheet, tab3Sheet].forEach(sheet => {
       const isTab3 = sheet.name === 'Check-in - Check-out';
+      const isAttendance = sheet.name === 'Attendance';
       const startRow = isTab3 ? 2 : 1; 
 
       if (sheet.rowCount > startRow && sheet.columnCount > 0) {
@@ -284,9 +282,14 @@ export class ReportsService {
         };
       }
 
+      // Freeze headers (and totals row for Attendance)
+      sheet.views = [
+        { state: 'frozen', xSplit: 0, ySplit: isAttendance ? 2 : startRow }
+      ];
+
       sheet.eachRow((row, rowNumber) => {
         const isHeader = isTab3 ? (rowNumber <= 2) : (rowNumber === 1);
-        const isTotalRow = sheet.name === 'Attendance' && rowNumber === 2;
+        const isTotalRow = isAttendance && rowNumber === 2;
 
         row.eachCell((cell, colNumber) => {
           cell.alignment = { vertical: 'middle', horizontal: 'center' };
