@@ -2,8 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UploadedFile,
@@ -14,7 +16,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { TrainingService } from './training.service';
 import { trainingPdfUploadOptions } from './upload.config';
 import { AuthGuard } from 'src/auth/auth.guard';
-import { CreateTrainingDto } from 'dto/training.dto';
+import { CreateTrainingDto, UpdateTrainingDto } from 'dto/training.dto';
 import { TrainingTranslationInterceptor } from './training.interceptor';
 import { UsersService } from '../users/users.service';
 
@@ -43,30 +45,44 @@ export class TrainingController {
       return this.service.findAll();
   }
 
-  @Post()
-  async createOrUpdate(@Req() req: any,@Body() dto: CreateTrainingDto) {
-    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
-    return this.service.createOrUpdate(projectId,dto);
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
   }
 
-  @Post('upload/my-info')
+  @Post()
+  async create(@Req() req: any, @Body() dto: CreateTrainingDto) {
+    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
+    return this.service.create(projectId, dto);
+  }
+
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() dto: UpdateTrainingDto) {
+    return this.service.update(id, dto);
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    return this.service.delete(id);
+  }
+
+  @Post('upload/my-info/:id')
   @UseInterceptors(FileInterceptor('file', trainingPdfUploadOptions))
   async uploadMyPdf(
-    @Req() req: any,
+    @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('File is required');
-    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
-    return this.service.savePdf(projectId, file.filename);
+    return this.service.savePdf(id, file.filename);
   }
 
-  @Post('upload/:projectId')
+  @Post('upload/:id')
   @UseInterceptors(FileInterceptor('file', trainingPdfUploadOptions))
   async uploadPdf(
-    @Param('projectId') projectId: string,
+    @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
   ) {
     if (!file) throw new BadRequestException('File is required');
-    return this.service.savePdf(projectId, file.filename);
+    return this.service.savePdf(id, file.filename);
   }
 }

@@ -11,39 +11,43 @@ export class TrainingService {
     private readonly trainingRepo: Repository<Training>,
   ) {}
 
-  async getByProject(projectId: string) {
-    const training = await this.trainingRepo.findOne({
+  async getByProject(projectId: string): Promise<Training[]> {
+    return await this.trainingRepo.find({
       where: { projectId },
+      order: { created_at: 'DESC' },
     });
+  }
+
+  async findOne(id: string): Promise<Training> {
+    const training = await this.trainingRepo.findOne({ where: { id } });
     if (!training) {
-      throw new NotFoundException('Training material not found for this project');
+      throw new NotFoundException(`Training material with ID ${id} not found`);
     }
     return training;
   }
 
-  async createOrUpdate(projectId:string,dto: CreateTrainingDto) {
-    let training = await this.trainingRepo.findOne({
-      where: { projectId },
+  async create(projectId: string, dto: CreateTrainingDto): Promise<Training> {
+    const training = this.trainingRepo.create({
+      ...dto,
+      projectId,
     });
-
-    if (training) {
-      Object.assign(training, dto);
-    } else {
-      training = this.trainingRepo.create(dto);
-    }
-
     return await this.trainingRepo.save(training);
   }
 
-  async savePdf(projectId: string, filename: string) {
-    const training = await this.trainingRepo.findOne({
-      where: { projectId },
-    });
+  async update(id: string, dto: UpdateTrainingDto): Promise<Training> {
+    const training = await this.findOne(id);
+    Object.assign(training, dto);
+    return await this.trainingRepo.save(training);
+  }
 
-    if (!training) {
-      throw new NotFoundException('Training record not found. Please create it first.');
-    }
+  async delete(id: string): Promise<{ success: boolean }> {
+    const training = await this.findOne(id);
+    await this.trainingRepo.softRemove(training);
+    return { success: true };
+  }
 
+  async savePdf(id: string, filename: string): Promise<Training> {
+    const training = await this.findOne(id);
     training.pdf_url = `/uploads/training/${filename}`;
     return await this.trainingRepo.save(training);
   }
