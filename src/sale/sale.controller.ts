@@ -130,6 +130,17 @@ export class SaleController {
     );
   }
 
+  @Get('invoice-summary')
+  getInvoiceSummary(
+    @Req() req: any,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string
+  ) {
+    const start = startDate ? new Date(startDate) : undefined;
+    const end = endDate ? new Date(endDate) : undefined;
+    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end);
+  }
+
   @Get('my-sales')
   @Permissions(EPermission.SALE_READ)
   async getMySales(
@@ -305,17 +316,6 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
     return this.saleService.getSalesSummaryByProduct(branchId, start, end);
-  }
-
-  @Get('invoice-summary')
-  getInvoiceSummary(
-    @Req() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
-  ) {
-    const start = startDate ? new Date(startDate) : undefined;
-    const end = endDate ? new Date(endDate) : undefined;
-    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end);
   }
 
   // @Post('bulk')
