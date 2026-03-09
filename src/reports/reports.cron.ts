@@ -42,9 +42,9 @@ export class ReportsCron {
 
 
 
-  @Cron('0 8 * * *')
+  @Cron('0 9 * * *')
   async handleGatemeaReport() {
-    this.logger.log('Starting Gatemea report cron job');
+    this.logger.log('Starting Gatemea report cron job (Daily Yesterday)');
 
     try {
       const filePath = await this.reportsService.generateGatemeaReport();
@@ -55,12 +55,20 @@ export class ReportsCron {
       this.logger.log(`Gatemea report generated successfully at: ${filePath}`);
 
       const filename = path.basename(filePath);
-      const emailSent = await this.mailService.sendReportEmail(filePath, filename);
+      const recipient = 'abdullah.almeri@gatemea.com';
+      const subject = 'Gatemea Report Six Seven'; // "six seven" interpretation
+      const emailSent = await this.mailService.sendReportEmail(
+        filePath, 
+        filename, 
+        recipient, 
+        subject,
+        'Attached is the Gatemea report for yesterday.'
+      );
 
       if (emailSent) {
-        this.logger.log('Gatemea report email sent successfully.');
+        this.logger.log(`Gatemea report email sent successfully to ${recipient}.`);
       } else {
-        this.logger.warn('Gatemea report generation succeeded, but email sending failed.');
+        this.logger.warn(`Gatemea report generation succeeded, but email sending to ${recipient} failed.`);
       }
     } catch (error) {
       this.logger.error('Error occurred during Gatemea report cron job execution');
