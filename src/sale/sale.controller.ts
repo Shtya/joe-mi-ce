@@ -142,11 +142,12 @@ export class SaleController {
     @Req() req: any,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
-    @Query('groupBy') groupBy: 'product' | 'category' = 'category'
+    @Query('groupBy') groupBy: 'product' | 'category' = 'category',
+    @Query('brandId') brandId?: string
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
-    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end, groupBy);
+    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end, groupBy, brandId);
   }
 
   @Get('my-sales')

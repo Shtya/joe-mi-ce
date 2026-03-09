@@ -546,14 +546,18 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   return formattedResults;
 }
 
-async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date, groupBy: 'product' | 'category' = 'product') {
-  const query = this.saleRepo
-    .createQueryBuilder('sale')
-    .leftJoinAndSelect('sale.product', 'product')
-    .leftJoinAndSelect('product.brand', 'brand')
-    .leftJoinAndSelect('product.category', 'category')
-    .where('sale.userId = :userId', { userId })
-    .andWhere('sale.status != :status', { status: 'cancelled' });
+  async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date, groupBy: 'product' | 'category' = 'product', brandId?: string) {
+    const query = this.saleRepo
+      .createQueryBuilder('sale')
+      .leftJoinAndSelect('sale.product', 'product')
+      .leftJoinAndSelect('product.brand', 'brand')
+      .leftJoinAndSelect('product.category', 'category')
+      .where('sale.userId = :userId', { userId })
+      .andWhere('sale.status != :status', { status: 'cancelled' });
+
+    if (brandId) {
+      query.andWhere('brand.id = :brandId', { brandId });
+    }
 
   if (startDate && endDate) {
     query.andWhere('sale.createdAt BETWEEN :startDate AND :endDate', {
