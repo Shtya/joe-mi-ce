@@ -1029,14 +1029,13 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     }));
   }
 
+  // Apply precise datetime filtering to totals
   if (startDate && endDate) {
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-    totalsQb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', { startDate: startDateStr, endDate: endDateStr });
+    totalsQb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', { startDate, endDate });
   } else if (startDate) {
-    totalsQb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDate.toISOString().split('T')[0] });
+    totalsQb.andWhere('sale.created_at >= :startDate', { startDate });
   } else if (endDate) {
-    totalsQb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDate.toISOString().split('T')[0] });
+    totalsQb.andWhere('sale.created_at <= :endDate', { endDate });
   }
 
   if (filters) {
@@ -1072,7 +1071,10 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
         .addSelect('SUM(sale.total_amount)', 'totalSales')
         .where('sale.user.id = :userId', { userId })
         .andWhere('sale.branch.id = :branchId', { branchId: lastJourney.branch?.id })
-        .andWhere('DATE(sale.created_at) = :date', { date: lastJourney.date });
+        .andWhere('sale.created_at BETWEEN :start AND :end', { 
+            start: new Date(new Date(lastJourney.date).setHours(0, 0, 0, 0)), 
+            end: new Date(new Date(lastJourney.date).setHours(23 + 5, 59, 59, 999)) 
+        });
 
       if (brandId) {
         lastJourneyTotalsQb.leftJoin('sale.product', 'p').leftJoin('p.brand', 'b');
@@ -1114,14 +1116,13 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     categoryQb.andWhere('product.name ILIKE :search', { search: `%${search}%` });
   }
 
+  // Apply precise datetime filtering to categories
   if (startDate && endDate) {
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
-    categoryQb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', { startDate: startDateStr, endDate: endDateStr });
+    categoryQb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', { startDate, endDate });
   } else if (startDate) {
-    categoryQb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDate.toISOString().split('T')[0] });
+    categoryQb.andWhere('sale.created_at >= :startDate', { startDate });
   } else if (endDate) {
-    categoryQb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDate.toISOString().split('T')[0] });
+    categoryQb.andWhere('sale.created_at <= :endDate', { endDate });
   }
 
   if (filters) {
