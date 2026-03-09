@@ -16,22 +16,40 @@ export class ReportsController {
   @Get('test-email/:email')
   async sendTestEmailEndpoint(@Param('email') email: string, @Res() res: Response) {
     try {
-      const emailSent = await this.mailService.sendTestEmail(email);
+      const filePath = await this.reportsService.generateGatemeaReport();
+      if (!filePath) {
+        return res.status(404).json({
+          success: false,
+          message: 'Gatemea project not found or report generation failed',
+        });
+      }
+      const filename = path.basename(filePath);
+      const subject = 'Gatemea Report Six Seven (Test)';
+      const text = 'Attached is the test Gatemea report.';
+
+      const emailSent = await this.mailService.sendReportEmail(
+        filePath,
+        filename,
+        email,
+        subject,
+        text
+      );
+
       if (emailSent) {
         return res.status(200).json({
           success: true,
-          message: `Test email sent successfully to ${email}`,
+          message: `Test report email sent successfully to ${email}`,
         });
       } else {
         return res.status(500).json({
           success: false,
-          message: 'Failed to send test email. Check server logs.',
+          message: 'Failed to send test report email. Check server logs.',
         });
       }
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Error sending test email',
+        message: 'Error sending test report email',
         error: error.message,
       });
     }
