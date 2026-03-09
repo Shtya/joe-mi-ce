@@ -346,7 +346,16 @@ export class ReportsService {
 
     const reportSheet = workbook.addWorksheet(`Gatemea Report`);
 
-    // 1. Sales by Product (Rows) and Chain (Columns)
+    // Styling Tokens
+    const headFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as const;
+    const border = {
+      top: { style: 'thin' },
+      left: { style: 'thin' },
+      bottom: { style: 'thin' },
+      right: { style: 'thin' }
+    } as const;
+
+    // 1. Fetch Sales & Journeys
     const sales = await this.saleRepository.find({
       where: {
         sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
@@ -355,57 +364,6 @@ export class ReportsService {
       relations: ['product', 'branch', 'branch.chain'],
     });
 
-    const chains = project.chains || [];
-    const chainNames = chains.map(c => c.name).sort();
-    
-    // Group sales by Product and Chain
-    const salesMatrix: Record<string, Record<string, number>> = {};
-    const productNamesSet = new Set<string>();
-
-    sales.forEach(sale => {
-      const productName = sale.product?.name || 'Unknown Product';
-      const chainName = sale.branch?.chain?.name || 'Extra'; 
-      
-      productNamesSet.add(productName);
-      if (!salesMatrix[productName]) salesMatrix[productName] = {};
-      if (!salesMatrix[productName][chainName]) salesMatrix[productName][chainName] = 0;
-      
-      salesMatrix[productName][chainName] += Number(sale.quantity || 0);
-    });
-
-    const sortedProductNames = Array.from(productNamesSet).sort();
-
-    // Build Sales Table
-    reportSheet.addRow(['Sum of Quantity', 'Column Labels']);
-    const salesHeaderRow = ['Row Labels', ...chainNames, 'Grand Total'];
-    reportSheet.addRow(salesHeaderRow);
-
-    let totalSalesByChain: Record<string, number> = {};
-    chainNames.forEach(c => totalSalesByChain[c] = 0);
-    let absoluteGrandTotalSales = 0;
-
-    sortedProductNames.forEach(product => {
-      const row: any[] = [product];
-      let rowTotal = 0;
-      chainNames.forEach(chain => {
-        const qty = salesMatrix[product][chain] || 0;
-        row.push(qty || ''); 
-        rowTotal += qty;
-        totalSalesByChain[chain] += qty;
-      });
-      row.push(rowTotal);
-      absoluteGrandTotalSales += rowTotal;
-      reportSheet.addRow(row);
-    });
-
-    const salesTotalRow = ['Grand Total', ...chainNames.map(c => totalSalesByChain[c]), absoluteGrandTotalSales];
-    reportSheet.addRow(salesTotalRow);
-
-    // Add empty rows between tables
-    reportSheet.addRow([]);
-    reportSheet.addRow([]);
-
-    // 2. Attendance (Status Code) by Chain
     const journeys = await this.journeyRepository.find({
       where: {
         date: Between(startOfMonth.format('YYYY-MM-DD'), endOfReportingPeriod.format('YYYY-MM-DD')),
@@ -414,63 +372,125 @@ export class ReportsService {
       relations: ['user', 'user.role', 'branch', 'branch.chain'],
     });
 
-    // Filter for promoters only
-    const promoterJourneys = journeys.filter(j => j.user?.role?.name?.toLowerCase() === 'promoter');
+    const chains = project.chains || [];
+    const chainNames = chains.map(c => c.name).sort();
+    if (!chainNames.includes('Roaming')) chainNames.push('Roaming'); // Ensuring Roaming is visible if requested
+    
+    // 2. Data Processing - Sales
+    const salesMatrix: Record<string, Record<string, number>> = {};
+    const productNamesSet = new Set<string>();
 
-    // Group by Chain and Date and User to get unique presence per day
-    const attendanceMap: Record<string, Set<string>> = {}; // Chain name -> Set of "userId:date"
+    sales.forEach(sale => {
+      const productName = sale.product?.name || 'Unknown Product';
+      const chainName = sale.branch?.chain?.name || 'Extra';
+      
+      productNamesSet.add(productName);
+      if (!salesMatrix[productName]) salesMatrix[productName] = {};
+      if (!salesMatrix[productName][chainName]) salesMatrix[productName][chainName] = 0;
+      
+      salesMatrix[productName][chainName] += Number(sale.quantity || 0);
+    });
+    const sortedProductNames = Array.from(productNamesSet).sort();
+
+    // 3. Data Processing - Attendance
+    const promoterJourneys = journeys.filter(j => j.user?.role?.name?.toLowerCase() === 'promoter');
+    const attendanceMap: Record<string, Set<string>> = {}; 
     
     promoterJourneys.forEach(j => {
-      const isPresent = [JourneyStatus.PRESENT, JourneyStatus.CLOSED, JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED].includes(j.status as any);
+      const isPresent = [
+        JourneyStatus.PRESENT, JourneyStatus.CLOSED, 
+        JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED
+      ].includes(j.status);
+      
       if (isPresent) {
         const chainName = j.branch?.chain?.name || 'Extra';
-        const userId = j.user?.id;
-        const date = j.date;
-        const key = `${userId}:${date}`;
-
+        const key = `${j.user?.id}:${j.date}`;
         if (!attendanceMap[chainName]) attendanceMap[chainName] = new Set();
         attendanceMap[chainName].add(key);
       }
     });
 
-    // Build Attendance Table
-    reportSheet.addRow(['Row Labels', 'Sum of Status Code']);
-    let totalStatusCode = 0;
+    // 4. Writing Table 1 (Sales) - Starting at Column A (1)
+    reportSheet.getColumn(1).width = 30;
+    chainNames.forEach((_, idx) => reportSheet.getColumn(idx + 2).width = 15);
+    reportSheet.getColumn(chainNames.length + 2).width = 15;
+
+    reportSheet.getCell(1, 1).value = 'Sum of Quantity';
+    reportSheet.getCell(1, 2).value = 'Column Labels';
+    
+    const salesHeadRow = reportSheet.getRow(2);
+    salesHeadRow.getCell(1).value = 'Row Labels';
+    chainNames.forEach((name, idx) => salesHeadRow.getCell(idx + 2).value = name);
+    salesHeadRow.getCell(chainNames.length + 2).value = 'Grand Total';
+
+    let currentRow = 3;
+    let totalSalesByChain: Record<string, number> = {};
+    chainNames.forEach(c => totalSalesByChain[c] = 0);
+    let absoluteGrandTotalSales = 0;
+
+    sortedProductNames.forEach(product => {
+      reportSheet.getCell(currentRow, 1).value = product;
+      let rowTotal = 0;
+      chainNames.forEach((chain, idx) => {
+        const qty = salesMatrix[product][chain] || 0;
+        if (qty > 0) reportSheet.getCell(currentRow, idx + 2).value = qty;
+        rowTotal += qty;
+        totalSalesByChain[chain] += qty;
+      });
+      reportSheet.getCell(currentRow, chainNames.length + 2).value = rowTotal;
+      absoluteGrandTotalSales += rowTotal;
+      currentRow++;
+    });
+
+    // Grand Total Row Sales
+    reportSheet.getCell(currentRow, 1).value = 'Grand Total';
+    chainNames.forEach((chain, idx) => reportSheet.getCell(currentRow, idx + 2).value = totalSalesByChain[chain]);
+    reportSheet.getCell(currentRow, chainNames.length + 2).value = absoluteGrandTotalSales;
+
+    // 5. Writing Table 2 (Attendance) - Starting at Column G (7)
+    const attStartCol = chainNames.length + 5; // Dynamic spacing
+    reportSheet.getColumn(attStartCol).width = 15;
+    reportSheet.getColumn(attStartCol + 1).width = 20;
+
+    reportSheet.getCell(2, attStartCol).value = 'Row Labels';
+    reportSheet.getCell(2, attStartCol + 1).value = 'Sum of Status Code';
+
+    let attRow = 3;
+    let totalAtt = 0;
     chainNames.forEach(chain => {
       const count = attendanceMap[chain]?.size || 0;
-      reportSheet.addRow([chain, count]);
-      totalStatusCode += count;
+      reportSheet.getCell(attRow, attStartCol).value = chain;
+      reportSheet.getCell(attRow, attStartCol + 1).value = count;
+      totalAtt += count;
+      attRow++;
     });
-    reportSheet.addRow(['Grand Total', totalStatusCode]);
+    reportSheet.getCell(attRow, attStartCol).value = 'Grand Total';
+    reportSheet.getCell(attRow, attStartCol + 1).value = totalAtt;
 
-    // Formatting
-    reportSheet.eachRow((row, rowNumber) => {
-      row.eachCell((cell) => {
-        cell.border = {
-          top: { style: 'thin' },
-          left: { style: 'thin' },
-          bottom: { style: 'thin' },
-          right: { style: 'thin' }
-        };
+    // 6. Final Styling
+    reportSheet.eachRow((row, rowNum) => {
+      row.eachCell({ includeEmpty: false }, (cell, colNum) => {
+        cell.border = border;
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
-      });
-    });
+        
+        // Headers
+        if (rowNum === 2 || (rowNum === 1 && colNum <= 2)) {
+          cell.font = { bold: true };
+          cell.fill = headFill;
+        }
 
-    // Header styling for Sales Table (Row 1 and 2)
-    const headerRow1 = reportSheet.getRow(1);
-    const headerRow2 = reportSheet.getRow(2);
-    [headerRow1, headerRow2].forEach(row => {
-      row.eachCell(cell => {
-        cell.font = { bold: true };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+        // Grand Totals
+        if (cell.value === 'Grand Total') {
+          cell.font = { bold: true };
+          const targetRow = reportSheet.getRow(rowNum);
+          targetRow.eachCell((c, cCol) => {
+            if (cCol >= colNum || (colNum >= attStartCol && cCol >= attStartCol)) {
+               c.font = { bold: true };
+               c.fill = headFill;
+            }
+          });
+        }
       });
-    });
-
-    // Grand Total styling
-    const lastSalesRow = reportSheet.getRow(sortedProductNames.length + 3);
-    lastSalesRow.eachCell(cell => {
-      cell.font = { bold: true };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
     });
 
     const executionDateStr = now.format('YYYY_MM_DD');
