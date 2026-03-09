@@ -324,7 +324,7 @@ export class ReportsService {
   }
 
   async generateGatemeaReport(): Promise<string> {
-    this.logger.log('Started generating GATEMEA SIXSEVEN Daily report...');
+    this.logger.log('Started generating GATEMEA Daily report...');
 
     const projectName = 'gatemea';
     const project = await this.projectRepository.findOne({ 
@@ -345,16 +345,11 @@ export class ReportsService {
     const workbook = new exceljs.Workbook();
     workbook.creator = 'System SixSeven';
 
-    const reportSheet = workbook.addWorksheet(`SixSeven Report`, {
-      views: [{ state: 'frozen', xSplit: 1, ySplit: 3 }] // Freeze first column and top 3 rows
-    });
+    const reportSheet = workbook.addWorksheet(`SixSeven Report`);
 
-    // Premium Styling Tokens
-    const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } } as const; // Dark Blue
-    const subHeaderFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as const; // Light Blue
-    const zebraFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F2F2' } } as const; // Light Gray
-    const whiteFont = { color: { argb: 'FFFFFFFF' }, bold: true } as const;
-    const border = {
+    // Pivot Table Styling Tokens
+    const headerPattern = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } } as const;
+    const borderObj = {
       top: { style: 'thin' },
       left: { style: 'thin' },
       bottom: { style: 'thin' },
@@ -400,7 +395,7 @@ export class ReportsService {
 
     // 3. Data Processing - Attendance
     const promoterJourneys = journeys.filter(j => j.user?.role?.name?.toLowerCase() === 'promoter');
-    const attendanceData: any[] = [];
+    const attendanceMap: Record<string, Set<string>> = {}; 
     
     promoterJourneys.forEach(j => {
       const isPresent = [
@@ -408,151 +403,125 @@ export class ReportsService {
         JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED
       ].includes(j.status);
       
-      attendanceData.push({
-        name: j.user?.name || 'N/A',
-        id: j.user?.national_id || 'N/A',
-        chain: j.branch?.chain?.name || 'Extra',
-        status: isPresent ? 1 : 0
-      });
+      if (isPresent) {
+        const chainName = j.branch?.chain?.name || 'Extra';
+        const key = `${j.user?.id}:${j.date}`;
+        if (!attendanceMap[chainName]) attendanceMap[chainName] = new Set();
+        attendanceMap[chainName].add(key);
+      }
     });
 
-    // 4. Writing Global Header (Row 1)
-    const attStartCol = chainNames.length + 5;
-    reportSheet.mergeCells(1, 1, 1, attStartCol + 3);
-    const mainTitle = reportSheet.getCell(1, 1);
-    mainTitle.value = `GATEMEA - SIXSEVEN DAILY PERFORMANCE REPORT (Yesterday: ${dateStr})`;
-    mainTitle.font = { size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
-    mainTitle.fill = headerFill;
-    mainTitle.alignment = { vertical: 'middle', horizontal: 'center' };
+    // 4. Writing Table 1 (Sales)
+    reportSheet.getColumn(1).width = 30;
+    chainNames.forEach((_, idx) => reportSheet.getColumn(idx + 2).width = 12);
+    reportSheet.getColumn(chainNames.length + 2).width = 15;
 
-    // 5. Writing Table 1 (Sales)
-    reportSheet.getColumn(1).width = 35;
-    chainNames.forEach((_, idx) => reportSheet.getColumn(idx + 2).width = 15);
-    reportSheet.getColumn(chainNames.length + 2).width = 18;
+    // Header A1 and B1
+    reportSheet.getCell(1, 1).value = 'Sum of Quantity';
+    reportSheet.getCell(1, 2).value = 'Column Labels';
+    reportSheet.getCell(1, 1).font = { bold: true };
+    reportSheet.getCell(1, 2).font = { bold: true };
+    reportSheet.getCell(1, 1).fill = headerPattern;
+    reportSheet.getCell(1, 2).fill = headerPattern;
+    reportSheet.getCell(1, 1).border = borderObj;
+    reportSheet.getCell(1, 2).border = borderObj;
+    reportSheet.getCell(1, 1).alignment = { horizontal: 'center' };
+    reportSheet.getCell(1, 2).alignment = { horizontal: 'center' };
 
-    const salesTitleRow = reportSheet.getRow(2);
-    salesTitleRow.getCell(1).value = 'SALES BY PRODUCT & CHAIN';
-    salesTitleRow.getCell(1).font = { bold: true };
-    reportSheet.mergeCells(2, 1, 2, chainNames.length + 2);
-    salesTitleRow.getCell(1).alignment = { horizontal: 'center' };
-    salesTitleRow.getCell(1).fill = subHeaderFill;
-
-    const salesHeadRow = reportSheet.getRow(3);
-    salesHeadRow.getCell(1).value = 'Product Name (Row Labels)';
+    const salesHeadRow = reportSheet.getRow(2);
+    salesHeadRow.getCell(1).value = 'Row Labels';
     chainNames.forEach((name, idx) => salesHeadRow.getCell(idx + 2).value = name);
     salesHeadRow.getCell(chainNames.length + 2).value = 'Grand Total';
 
-    let currentRow = 4;
+    let currentRow = 3;
     let totalSalesByChain: Record<string, number> = {};
     chainNames.forEach(c => totalSalesByChain[c] = 0);
     let absoluteGrandTotalSales = 0;
 
-    sortedProductNames.forEach((product, pIdx) => {
+    sortedProductNames.forEach((product) => {
       const row = reportSheet.getRow(currentRow);
       row.getCell(1).value = product;
       let rowTotal = 0;
       chainNames.forEach((chain, idx) => {
         const qty = salesMatrix[product][chain] || 0;
-        if (qty > 0) row.getCell(idx + 2).value = qty;
+        if (qty > 0) {
+          row.getCell(idx + 2).value = qty;
+        }
         rowTotal += qty;
         totalSalesByChain[chain] += qty;
       });
       row.getCell(chainNames.length + 2).value = rowTotal;
       absoluteGrandTotalSales += rowTotal;
-
-      // Zebra Striping
-      if (pIdx % 2 !== 0) {
-        row.eachCell((cell, colNum) => {
-          if (colNum <= chainNames.length + 2) cell.fill = zebraFill;
-        });
-      }
       currentRow++;
     });
 
     // Grand Total Row Sales
     const salesTotalRow = reportSheet.getRow(currentRow);
-    salesTotalRow.getCell(1).value = 'GRAND TOTAL';
+    salesTotalRow.getCell(1).value = 'Grand Total';
     chainNames.forEach((chain, idx) => salesTotalRow.getCell(idx + 2).value = totalSalesByChain[chain]);
     salesTotalRow.getCell(chainNames.length + 2).value = absoluteGrandTotalSales;
 
-    // 6. Writing Table 2 (Attendance) - Side-by-Side
-    reportSheet.getColumn(attStartCol).width = 25; // Name
-    reportSheet.getColumn(attStartCol + 1).width = 20; // National ID
-    reportSheet.getColumn(attStartCol + 2).width = 18; // Chain
-    reportSheet.getColumn(attStartCol + 3).width = 15; // Status
+    // 5. Writing Table 2 (Attendance)
+    const attStartCol = chainNames.length + 4; // leave blank column
+    reportSheet.getColumn(attStartCol).width = 15;
+    reportSheet.getColumn(attStartCol + 1).width = 20;
 
-    const attTitleRow = reportSheet.getRow(2);
-    attTitleRow.getCell(attStartCol).value = 'ATTENDANCE DETAILS (PROMOTERS)';
-    attTitleRow.getCell(attStartCol).font = { bold: true };
-    reportSheet.mergeCells(2, attStartCol, 2, attStartCol + 3);
-    attTitleRow.getCell(attStartCol).alignment = { horizontal: 'center' };
-    attTitleRow.getCell(attStartCol).fill = subHeaderFill;
+    const attHeadRow = reportSheet.getRow(2);
+    attHeadRow.getCell(attStartCol).value = 'Row Labels';
+    attHeadRow.getCell(attStartCol + 1).value = 'Sum of Status Code';
 
-    const attHeadRow = reportSheet.getRow(3);
-    attHeadRow.getCell(attStartCol).value = 'Promoter Name';
-    attHeadRow.getCell(attStartCol + 1).value = 'National ID';
-    attHeadRow.getCell(attStartCol + 2).value = 'Chain';
-    attHeadRow.getCell(attStartCol + 3).value = 'Status';
-
-    let attInnerRow = 4;
-    attendanceData.forEach((row, rIdx) => {
+    let attInnerRow = 3;
+    let totalAtt = 0;
+    chainNames.forEach(chain => {
+      const count = attendanceMap[chain]?.size || 0;
       const excelRow = reportSheet.getRow(attInnerRow);
-      excelRow.getCell(attStartCol).value = row.name;
-      excelRow.getCell(attStartCol + 1).value = row.id;
-      excelRow.getCell(attStartCol + 2).value = row.chain;
-      excelRow.getCell(attStartCol + 3).value = row.status;
-
-      // Zebra Striping for Attendance
-      if (rIdx % 2 !== 0) {
-        for (let i = 0; i <= 3; i++) {
-          excelRow.getCell(attStartCol + i).fill = zebraFill;
-        }
-      }
-
-      // Conditional Formatting (1 = Green, 0 = Red)
-      const statusCell = excelRow.getCell(attStartCol + 3);
-      if (row.status === 1) {
-        statusCell.font = { color: { argb: 'FF006100' }, bold: true }; // Dark Green
-        statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFC6EFCE' } }; // Light Green
-      } else {
-        statusCell.font = { color: { argb: 'FF9C0006' }, bold: true }; // Dark Red
-        statusCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFC7CE' } }; // Light Red
-      }
-
+      excelRow.getCell(attStartCol).value = chain;
+      excelRow.getCell(attStartCol + 1).value = count;
+      totalAtt += count;
       attInnerRow++;
     });
 
-    // 7. Global Styling Pass
-    reportSheet.eachRow({ includeEmpty: false }, (row, rowNum) => {
-      row.eachCell({ includeEmpty: false }, (cell, colNum) => {
-        cell.border = border;
-        cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-        
-        // Product Row Labels Alignment
-        if (colNum === 1 && rowNum >= 4) {
-          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
-        }
+    const attTotalRow = reportSheet.getRow(attInnerRow);
+    attTotalRow.getCell(attStartCol).value = 'Grand Total';
+    attTotalRow.getCell(attStartCol + 1).value = totalAtt;
 
-        // Sub-Headers (Row 3)
-        if (rowNum === 3) {
-          cell.font = whiteFont;
-          cell.fill = headerFill;
-        }
+    // 6. Final Styling Application
+    // Apply styling to Table 1 Data area
+    for(let r = 2; r <= currentRow; r++) {
+       const row = reportSheet.getRow(r);
+       for(let c = 1; c <= chainNames.length + 2; c++) {
+           const cell = row.getCell(c);
+           if (cell.value !== null && cell.value !== undefined) {
+               cell.border = borderObj;
+               cell.alignment = { horizontal: 'center' };
+           } else if (c > 1) { // Apply border to blank cells in table
+               cell.border = borderObj; 
+           }
+           
+           if (r === 2 || r === currentRow) {
+               cell.font = { bold: true };
+               cell.fill = headerPattern;
+               cell.border = borderObj;
+           }
+       }
+    }
 
-        // Grand Total Row Styling
-        if (cell.value === 'GRAND TOTAL') {
-          row.eachCell((c, cCol) => {
-            if (cCol <= chainNames.length + 2) {
-              c.font = whiteFont;
-              c.fill = headerFill;
-            }
-          });
+    // Apply styling to Table 2 Data area
+    for(let r = 2; r <= attInnerRow; r++) {
+        const row = reportSheet.getRow(r);
+        for(let c = attStartCol; c <= attStartCol + 1; c++) {
+           const cell = row.getCell(c);
+           cell.border = borderObj;
+           cell.alignment = { horizontal: 'center' };
+           if (r === 2 || r === attInnerRow) {
+               cell.font = { bold: true };
+               cell.fill = headerPattern;
+           }
         }
-      });
-    });
+    }
 
     const executionDateStr = yesterday.format('YYYY_MM_DD');
-    const filename = `Gatemea_SixSeven_Daily_${executionDateStr}.xlsx`;
+    const filename = `gatemea_report_6_7_${executionDateStr}.xlsx`;
     const tempFilePath = path.join(os.tmpdir(), filename);
 
     await workbook.xlsx.writeFile(tempFilePath);
