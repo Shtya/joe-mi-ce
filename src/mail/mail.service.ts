@@ -19,7 +19,8 @@ export class MailService {
     filename: string,
     toEmail?: string,
     subject?: string,
-    text?: string
+    text?: string,
+    html?: string
   ): Promise<boolean> {
     const apiKey = this.configService.get<string>('MAILGUN_API_KEY');
     const domain = this.configService.get<string>('MAILGUN_DOMAIN');
@@ -38,7 +39,10 @@ export class MailService {
       formData.append('from', fromEmail);
       formData.append('to', toEmail || defaultToEmail);
       formData.append('subject', subject || 'Daily Team Report');
-      formData.append('text', text || 'Attached is the updated report.');
+      
+      if (text) formData.append('text', text);
+      if (html) formData.append('html', html);
+      if (!text && !html) formData.append('text', 'Attached is the updated report.');
       
       if (fs.existsSync(attachmentPath)) {
         formData.append('attachment', fs.createReadStream(attachmentPath), {
