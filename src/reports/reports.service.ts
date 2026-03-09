@@ -321,4 +321,165 @@ export class ReportsService {
 
     return tempFilePath;
   }
+
+  async generateGatemeaReport(): Promise<string> {
+    this.logger.log('Started generating Gatemea report...');
+
+    const projectName = 'gatemea';
+    const project = await this.projectRepository.findOne({ 
+      where: { name: projectName },
+      relations: ['chains']
+    });
+    const projectId = project?.id;
+
+    if (!projectId) {
+      this.logger.warn(`Project "${projectName}" not found. Gatemea report cannot be generated.`);
+      return null;
+    }
+
+    const now = dayjs();
+    const startOfMonth = now.startOf('month');
+    const endOfReportingPeriod = now.endOf('day');
+
+    const workbook = new exceljs.Workbook();
+    workbook.creator = 'System Cron';
+
+    const reportSheet = workbook.addWorksheet(`Gatemea Report`);
+
+    // 1. Sales by Product (Rows) and Chain (Columns)
+    const sales = await this.saleRepository.find({
+      where: {
+        sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
+        projectId: projectId
+      },
+      relations: ['product', 'branch', 'branch.chain'],
+    });
+
+    const chains = project.chains || [];
+    const chainNames = chains.map(c => c.name).sort();
+    
+    // Group sales by Product and Chain
+    const salesMatrix: Record<string, Record<string, number>> = {};
+    const productNamesSet = new Set<string>();
+
+    sales.forEach(sale => {
+      const productName = sale.product?.name || 'Unknown Product';
+      const chainName = sale.branch?.chain?.name || 'Extra'; 
+      
+      productNamesSet.add(productName);
+      if (!salesMatrix[productName]) salesMatrix[productName] = {};
+      if (!salesMatrix[productName][chainName]) salesMatrix[productName][chainName] = 0;
+      
+      salesMatrix[productName][chainName] += Number(sale.quantity || 0);
+    });
+
+    const sortedProductNames = Array.from(productNamesSet).sort();
+
+    // Build Sales Table
+    reportSheet.addRow(['Sum of Quantity', 'Column Labels']);
+    const salesHeaderRow = ['Row Labels', ...chainNames, 'Grand Total'];
+    reportSheet.addRow(salesHeaderRow);
+
+    let totalSalesByChain: Record<string, number> = {};
+    chainNames.forEach(c => totalSalesByChain[c] = 0);
+    let absoluteGrandTotalSales = 0;
+
+    sortedProductNames.forEach(product => {
+      const row: any[] = [product];
+      let rowTotal = 0;
+      chainNames.forEach(chain => {
+        const qty = salesMatrix[product][chain] || 0;
+        row.push(qty || ''); 
+        rowTotal += qty;
+        totalSalesByChain[chain] += qty;
+      });
+      row.push(rowTotal);
+      absoluteGrandTotalSales += rowTotal;
+      reportSheet.addRow(row);
+    });
+
+    const salesTotalRow = ['Grand Total', ...chainNames.map(c => totalSalesByChain[c]), absoluteGrandTotalSales];
+    reportSheet.addRow(salesTotalRow);
+
+    // Add empty rows between tables
+    reportSheet.addRow([]);
+    reportSheet.addRow([]);
+
+    // 2. Attendance (Status Code) by Chain
+    const journeys = await this.journeyRepository.find({
+      where: {
+        date: Between(startOfMonth.format('YYYY-MM-DD'), endOfReportingPeriod.format('YYYY-MM-DD')),
+        projectId: projectId
+      },
+      relations: ['user', 'user.role', 'branch', 'branch.chain'],
+    });
+
+    // Filter for promoters only
+    const promoterJourneys = journeys.filter(j => j.user?.role?.name?.toLowerCase() === 'promoter');
+
+    // Group by Chain and Date and User to get unique presence per day
+    const attendanceMap: Record<string, Set<string>> = {}; // Chain name -> Set of "userId:date"
+    
+    promoterJourneys.forEach(j => {
+      const isPresent = [JourneyStatus.PRESENT, JourneyStatus.CLOSED, JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED].includes(j.status as any);
+      if (isPresent) {
+        const chainName = j.branch?.chain?.name || 'Extra';
+        const userId = j.user?.id;
+        const date = j.date;
+        const key = `${userId}:${date}`;
+
+        if (!attendanceMap[chainName]) attendanceMap[chainName] = new Set();
+        attendanceMap[chainName].add(key);
+      }
+    });
+
+    // Build Attendance Table
+    reportSheet.addRow(['Row Labels', 'Sum of Status Code']);
+    let totalStatusCode = 0;
+    chainNames.forEach(chain => {
+      const count = attendanceMap[chain]?.size || 0;
+      reportSheet.addRow([chain, count]);
+      totalStatusCode += count;
+    });
+    reportSheet.addRow(['Grand Total', totalStatusCode]);
+
+    // Formatting
+    reportSheet.eachRow((row, rowNumber) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+      });
+    });
+
+    // Header styling for Sales Table (Row 1 and 2)
+    const headerRow1 = reportSheet.getRow(1);
+    const headerRow2 = reportSheet.getRow(2);
+    [headerRow1, headerRow2].forEach(row => {
+      row.eachCell(cell => {
+        cell.font = { bold: true };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+      });
+    });
+
+    // Grand Total styling
+    const lastSalesRow = reportSheet.getRow(sortedProductNames.length + 3);
+    lastSalesRow.eachCell(cell => {
+      cell.font = { bold: true };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9E1F2' } };
+    });
+
+    const executionDateStr = now.format('YYYY_MM_DD');
+    const filename = `gatemea_report_${executionDateStr}.xlsx`;
+    const tempFilePath = path.join(os.tmpdir(), filename);
+
+    await workbook.xlsx.writeFile(tempFilePath);
+    this.logger.log(`Gatemea report successfully generated at ${tempFilePath}`);
+
+    return tempFilePath;
+  }
 }

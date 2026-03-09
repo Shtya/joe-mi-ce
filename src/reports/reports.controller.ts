@@ -45,4 +45,29 @@ export class ReportsController {
       });
     }
   }
+
+  @Get('gatemea')
+  async downloadGatemeaReport(@Res() res: Response) {
+    try {
+      const filePath = await this.reportsService.generateGatemeaReport();
+      if (!filePath) {
+        return res.status(404).json({
+          success: false,
+          message: 'Gatemea project not found or report generation failed',
+        });
+      }
+      const fileName = path.basename(filePath);
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
+      
+      return res.download(filePath, fileName);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to download Gatemea report',
+        error: error.message,
+      });
+    }
+  }
 }
