@@ -40,7 +40,7 @@ export class ReportsService {
     const now = dayjs();
     const startOfMonth = now.startOf('month');
     
-    let endOfReportingPeriod = now.endOf('day');
+    let endOfReportingPeriod = now.subtract(1, 'day').endOf('day');
     if (endOfReportingPeriod.isBefore(startOfMonth)) {
       endOfReportingPeriod = now.endOf('day');
     }

@@ -118,6 +118,7 @@ export class SaleController {
 
     const startDate = new Date(`${saudiDateStr}T00:00:00.000Z`);
     const endDate = new Date(`${saudiDateStr}T23:59:59.999Z`);
+    endDate.setHours(endDate.getHours() + 5); // Extend to 5 AM next day
 
     const filters = { ...query.filters };
     if (query.filters?.fromDate) delete filters.fromDate;
@@ -292,6 +293,7 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
 
     startDate = new Date(`${saudiDateStr}T00:00:00.000Z`);
     endDate = new Date(`${saudiDateStr}T23:59:59.999Z`);
+    endDate.setHours(endDate.getHours() + 5); // Extend to 5 AM next day
   }
 
   const filters = { ...query.filters };
