@@ -142,23 +142,51 @@ export class SaleController {
   @Get('invoice-summary')
   getInvoiceSummary(
     @Req() req: any,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('groupBy') groupBy: 'product' | 'category' = 'category',
-    @Query('brandId') brandId?: string
+    @Query() query: any
   ) {
-    let start: Date | undefined;
-    let end: Date | undefined;
+    let startDate: Date | undefined;
+    let endDate: Date | undefined;
 
-    if (startDate) start = new Date(startDate);
-    
-    if (endDate) {
-      end = new Date(endDate);
-      // Extend the end date by 5 hours to include the whole working shift (until 5 AM next day)
-      end.setHours(23 + 5, 59, 59, 999);
+    if (query.filters?.fromDate || query.filters?.toDate) {
+      if (query.filters?.fromDate) {
+        startDate = new Date(query.filters.fromDate);
+      }
+      if (query.filters?.toDate) {
+        endDate = new Date(query.filters.toDate);
+        // Extend to 5 AM next day
+        endDate.setHours(23 + 5, 59, 59, 999);
+      }
+    } else {
+      // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"
+      const shiftedNow = new Date(Date.now() - 5 * 60 * 60 * 1000);
+      const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Riyadh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(shiftedNow); // Returns "YYYY-MM-DD"
+
+      // Set exactly from 00:00 KSA today to 04:59:59 KSA the next day
+      startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
+      endDate = new Date(new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() + 5 * 60 * 60 * 1000);
     }
 
-    return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end, groupBy, brandId);
+    const filters = { ...query.filters };
+    delete filters.fromDate;
+    delete filters.toDate;
+    delete filters.date;
+
+    const groupBy = query.groupBy === 'product' || query.groupBy === 'category' ? query.groupBy : 'category';
+
+    return this.saleService.getInvoiceSummaryByUser(
+      req.user.id,
+      query.search,
+      { ...filters },
+      startDate,
+      endDate,
+      groupBy,
+      query.brand_id
+    );
   }
 
   @Get('my-sales')
@@ -290,7 +318,8 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
     }
     if (query.filters?.toDate) {
       endDate = new Date(query.filters.toDate);
-      endDate.setHours(23, 59, 59, 999);
+      // Extend to 5 AM next day
+      endDate.setHours(23 + 5, 59, 59, 999);
     }
   } else {
     // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"

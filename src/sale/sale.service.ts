@@ -546,79 +546,72 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
   return formattedResults;
 }
 
-  async getInvoiceSummaryByUser(userId: string, startDate?: Date, endDate?: Date, groupBy: 'product' | 'category' = 'product', brandId?: string) {
-    const query = this.saleRepo
-      .createQueryBuilder('sale')
-      .leftJoinAndSelect('sale.product', 'product')
-      .leftJoinAndSelect('product.brand', 'brand')
-      .leftJoinAndSelect('product.category', 'category')
-      .where('sale.userId = :userId', { userId })
-      .andWhere('sale.status != :status', { status: 'cancelled' });
-
-    if (brandId) {
-      query.andWhere('brand.id = :brandId', { brandId });
-    }
-
-  if (startDate && endDate) {
-    query.andWhere('sale.createdAt BETWEEN :startDate AND :endDate', {
+  async getInvoiceSummaryByUser(
+    userId: string | null = null,
+    search?: string,
+    filters?: any,
+    startDate?: Date,
+    endDate?: Date,
+    groupBy: 'product' | 'category' = 'product',
+    brandId?: string
+  ) {
+    // 1. Fetch all matching sales using the optimized method to get ALL the extra totals/branch/user/target data
+    // We use a high limit to get all records for grouping in memory, as invoice summary typically 
+    // covers a specific period and needs all items to group correctly.
+    const baseData = await this.findSalesByUserOptimized(
+      userId,
+      search,
+      1,
+      100000, 
+      undefined,
+      'DESC',
+      filters,
       startDate,
       endDate,
-    });
+      brandId
+    );
+
+    // 2. Group the records
+    const groupedMap = new Map<string, any>();
+
+    for (const record of baseData.records) {
+      if (!record.product) continue;
+
+      let key = record.product.id;
+      if (groupBy === 'category') {
+        key = record.product.category_name || 'uncategorized';
+      }
+
+      if (!groupedMap.has(key)) {
+        // Deep clone the first record to act as the base for the group
+        groupedMap.set(key, JSON.parse(JSON.stringify(record)));
+      } else {
+        // Accumulate quantities and amounts for existing group
+        const existing = groupedMap.get(key);
+        existing.quantity += record.quantity;
+        
+        // Sum total_amount, accommodating string or number types
+        existing.total_amount = (Number(existing.total_amount) + Number(record.total_amount)).toFixed(2);
+        
+        // Sum nested product amounts
+        if (existing.product && record.product) {
+          existing.product.total_amount += record.product.total_amount;
+          existing.product.discounted_amount += record.product.discounted_amount;
+        }
+      }
+    }
+
+    const groupedRecords = Array.from(groupedMap.values());
+
+    // 3. Update pagination and record counts to reflect the grouped array
+    return {
+      ...baseData,
+      total_records: groupedRecords.length,
+      current_page: 1,
+      per_page: groupedRecords.length,
+      records: groupedRecords
+    };
   }
-
-  if (groupBy === 'category') {
-    const results = await query
-      .select([
-        'category.id as categoryId',
-        'category.name as categoryName',
-        'SUM(sale.quantity) as totalQuantity',
-        'SUM(sale.total_amount) as totalRevenue',
-        'COUNT(sale.id) as totalSales',
-      ])
-      .groupBy('category.id, category.name')
-      .orderBy('totalRevenue', 'DESC')
-      .getRawMany();
-
-    return results.map(item => ({
-      category_id: item.categoryid,
-      category_name: item.categoryname || null,
-      total_quantity: Number(item.totalquantity) || 0,
-      total_revenue: Number(item.totalrevenue) || 0,
-      total_sales: Number(item.totalsales) || 0,
-    }));
-  }
-
-  const results = await query
-    .select([
-      'product.id as productId',
-      'product.name as productName',
-      'product.sku as productSku',
-      'brand.name as brandName',
-      'category.name as categoryName',
-      'SUM(sale.quantity) as totalQuantity',
-      'SUM(sale.total_amount) as totalRevenue',
-      'AVG(sale.price) as averagePrice',
-      'COUNT(sale.id) as totalSales',
-    ])
-    .groupBy('product.id, product.name, product.sku, brand.name, category.name')
-    .orderBy('totalRevenue', 'DESC')
-    .getRawMany();
-
-  // Format the response with null handling
-  const formattedResults = results.map(item => ({
-    product_id: item.productid,
-    product_name: item.productname,
-    product_sku: item.productsku,
-    brand_name: item.brandname || null,
-    category_name: item.categoryname || null,
-    total_quantity: Number(item.totalquantity) || 0,
-    total_revenue: Number(item.totalrevenue) || 0,
-    average_price: Number(item.averageprice) || 0,
-    total_sales: Number(item.totalsales) || 0,
-  }));
-
-  return formattedResults;
-}
   async findSalesWithBrand(
     entityName: string,
     search?: string,
