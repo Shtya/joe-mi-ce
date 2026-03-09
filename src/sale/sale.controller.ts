@@ -247,6 +247,12 @@ export class SaleController {
     return this.saleService.delete(id);
   }
 
+  @Patch(':id/restore')
+  @Permissions(EPermission.SALE_DELETE)
+  restore(@Param('id') id: string) {
+    return this.saleService.restore(id);
+  }
+
   @Post(':id/cancel')
   @Permissions(EPermission.SALE_RETURN)
   cancelSale(@Param('id') id: string) {
