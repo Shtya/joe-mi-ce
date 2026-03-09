@@ -394,17 +394,15 @@ export class ReportsService {
     const sortedProductNames = Array.from(productNamesSet).sort();
 
     // 3. Data Processing - Attendance
-    const promoterJourneys = journeys.filter(j => {
-      const roleName = j.user?.role?.name?.toLowerCase() || '';
-      return roleName.includes('promoter');
-    });
+    // We remove the strict "promoter" role filter because user roles may vary (e.g. Merchandiser, Gatemea Agent)
+    // and anyone scheduled for a journey on this project should be on the attendance sheet.
     const attendanceMap: Record<string, Set<string>> = {}; 
     
-    promoterJourneys.forEach(j => {
+    journeys.forEach(j => {
+      const statusStr = j.status?.toLowerCase?.() || '';
       const isPresent = [
-        JourneyStatus.PRESENT, JourneyStatus.CLOSED, 
-        JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED
-      ].includes(j.status);
+        'present', 'closed', 'unplanned_present', 'unplanned_closed'
+      ].includes(statusStr);
       
       if (isPresent) {
         const chainName = j.branch?.chain?.name?.trim() || 'Extra';
