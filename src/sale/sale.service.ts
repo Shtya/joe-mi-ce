@@ -770,21 +770,16 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     );
   }
 
-  // Apply date range if provided
-  // Use DATE() casting to filter by calendar day, avoiding timezone issues
+  // Apply precise datetime filtering
   if (startDate && endDate) {
-    const startDateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    const endDateStr = endDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    qb.andWhere('DATE(sale.created_at) BETWEEN :startDate AND :endDate', {
-      startDate: startDateStr,
-      endDate: endDateStr
+    qb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', {
+      startDate,
+      endDate
     });
   } else if (startDate) {
-    const startDateStr = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    qb.andWhere('DATE(sale.created_at) >= :startDate', { startDate: startDateStr });
+    qb.andWhere('sale.created_at >= :startDate', { startDate });
   } else if (endDate) {
-    const endDateStr = endDate.toISOString().split('T')[0]; // YYYY-MM-DD
-    qb.andWhere('DATE(sale.created_at) <= :endDate', { endDate: endDateStr });
+    qb.andWhere('sale.created_at <= :endDate', { endDate });
   }
 
   // Apply additional filters

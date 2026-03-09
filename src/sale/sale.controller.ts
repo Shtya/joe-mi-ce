@@ -108,17 +108,18 @@ export class SaleController {
     @Param('id', new ParseUUIDPipe()) id: string,
     @Query() query: any
   ) {
-    // Default to today's date in Saudi Arabia timezone (UTC+3)
+    // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"
+    const shiftedNow = new Date(Date.now() - 5 * 60 * 60 * 1000);
     const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Riyadh',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).format(new Date());
+    }).format(shiftedNow);
 
-    const startDate = new Date(`${saudiDateStr}T00:00:00.000Z`);
-    const endDate = new Date(`${saudiDateStr}T23:59:59.999Z`);
-    endDate.setHours(endDate.getHours() + 5); // Extend to 5 AM next day
+    // Set exactly from 00:00 KSA today to 04:59:59 KSA the next day
+    const startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
+    const endDate = new Date(new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() + 5 * 60 * 60 * 1000);
 
     const filters = { ...query.filters };
     if (query.filters?.fromDate) delete filters.fromDate;
@@ -146,8 +147,17 @@ export class SaleController {
     @Query('groupBy') groupBy: 'product' | 'category' = 'category',
     @Query('brandId') brandId?: string
   ) {
-    const start = startDate ? new Date(startDate) : undefined;
-    const end = endDate ? new Date(endDate) : undefined;
+    let start: Date | undefined;
+    let end: Date | undefined;
+
+    if (startDate) start = new Date(startDate);
+    
+    if (endDate) {
+      end = new Date(endDate);
+      // Extend the end date by 5 hours to include the whole working shift (until 5 AM next day)
+      end.setHours(23 + 5, 59, 59, 999);
+    }
+
     return this.saleService.getInvoiceSummaryByUser(req.user.id, start, end, groupBy, brandId);
   }
 
@@ -283,17 +293,18 @@ findByUser(@Param('userId') userId: string, @Query() query: any) {
       endDate.setHours(23, 59, 59, 999);
     }
   } else {
-    // Default to today's date in Saudi Arabia timezone (UTC+3)
+    // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"
+    const shiftedNow = new Date(Date.now() - 5 * 60 * 60 * 1000);
     const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Riyadh',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
-    }).format(new Date()); // Returns "YYYY-MM-DD"
+    }).format(shiftedNow); // Returns "YYYY-MM-DD"
 
-    startDate = new Date(`${saudiDateStr}T00:00:00.000Z`);
-    endDate = new Date(`${saudiDateStr}T23:59:59.999Z`);
-    endDate.setHours(endDate.getHours() + 5); // Extend to 5 AM next day
+    // Set exactly from 00:00 KSA today to 04:59:59 KSA the next day
+    startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
+    endDate = new Date(new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() + 5 * 60 * 60 * 1000);
   }
 
   const filters = { ...query.filters };
