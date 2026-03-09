@@ -374,7 +374,7 @@ export class ReportsService {
     });
 
     const chains = project.chains || [];
-    const chainNames = chains.map(c => c.name).sort();
+    const chainNames = chains.map(c => c.name?.trim()).filter(Boolean).sort();
     if (!chainNames.includes('Roaming')) chainNames.push('Roaming');
     
     // 2. Data Processing - Sales
@@ -382,8 +382,8 @@ export class ReportsService {
     const productNamesSet = new Set<string>();
 
     sales.forEach(sale => {
-      const productName = sale.product?.name || 'Unknown Product';
-      const chainName = sale.branch?.chain?.name || 'Extra';
+      const productName = sale.product?.name?.trim() || 'Unknown Product';
+      const chainName = sale.branch?.chain?.name?.trim() || 'Extra';
       
       productNamesSet.add(productName);
       if (!salesMatrix[productName]) salesMatrix[productName] = {};
@@ -394,7 +394,10 @@ export class ReportsService {
     const sortedProductNames = Array.from(productNamesSet).sort();
 
     // 3. Data Processing - Attendance
-    const promoterJourneys = journeys.filter(j => j.user?.role?.name?.toLowerCase() === 'promoter');
+    const promoterJourneys = journeys.filter(j => {
+      const roleName = j.user?.role?.name?.toLowerCase() || '';
+      return roleName.includes('promoter');
+    });
     const attendanceMap: Record<string, Set<string>> = {}; 
     
     promoterJourneys.forEach(j => {
@@ -404,8 +407,8 @@ export class ReportsService {
       ].includes(j.status);
       
       if (isPresent) {
-        const chainName = j.branch?.chain?.name || 'Extra';
-        const key = `${j.user?.id}:${j.date}`;
+        const chainName = j.branch?.chain?.name?.trim() || 'Extra';
+        const key = j.user?.id || j.id; // Unique identifier per user in chain today
         if (!attendanceMap[chainName]) attendanceMap[chainName] = new Set();
         attendanceMap[chainName].add(key);
       }
