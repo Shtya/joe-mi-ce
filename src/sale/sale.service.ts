@@ -620,7 +620,6 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     filters?: any,
     startDate?: Date,
     endDate?: Date,
-    groupBy: 'product' | 'category' = 'product',
     brandId?: string
   ) {
     // 1. Fetch all matching sales using the optimized method to get ALL the extra totals/branch/user/target data
@@ -646,9 +645,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       if (!record.product) continue;
 
       let key = record.product.id;
-      if (groupBy === 'category') {
-        key = record.product.category_name || 'uncategorized';
-      }
+
 
       if (!groupedMap.has(key)) {
         // Deep clone the first record to act as the base for the group

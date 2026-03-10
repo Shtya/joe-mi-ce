@@ -184,7 +184,6 @@ export class SaleController {
       { ...filters },
       startDate,
       endDate,
-      groupBy,
       query.brand_id
     );
   }
