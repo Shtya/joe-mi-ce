@@ -72,8 +72,23 @@ export class SaleController {
 
     if (query.filters?.fromDate || query.filters?.toDate) {
       mergedFilters.created_at = {};
-      if (query.filters.fromDate) mergedFilters.created_at.gte = query.filters.fromDate;
-      if (query.filters.toDate) mergedFilters.created_at.lte = query.filters.toDate;
+      
+      const normalizeDate = (d: string) => {
+        if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
+          const [day, month, year] = d.split('-').map(Number);
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+        return d;
+      };
+
+      if (query.filters.fromDate) {
+        const d = normalizeDate(query.filters.fromDate);
+        mergedFilters.created_at.gte = d.includes('T') ? d : `${d}T00:00:00.000+03:00`;
+      }
+      if (query.filters.toDate) {
+        const d = normalizeDate(query.filters.toDate);
+        mergedFilters.created_at.lte = d.includes('T') ? d : `${d}T23:59:59.999+03:00`;
+      }
     }
     
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
@@ -125,8 +140,23 @@ export class SaleController {
 
     if (query.filters?.fromDate || query.filters?.toDate) {
       mergedFilters.created_at = {};
-      if (query.filters.fromDate) mergedFilters.created_at.gte = query.filters.fromDate;
-      if (query.filters.toDate) mergedFilters.created_at.lte = query.filters.toDate;
+      
+      const normalizeDate = (d: string) => {
+        if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
+          const [day, month, year] = d.split('-').map(Number);
+          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+        return d;
+      };
+
+      if (query.filters.fromDate) {
+        const d = normalizeDate(query.filters.fromDate);
+        mergedFilters.created_at.gte = d.includes('T') ? d : `${d}T00:00:00.000+03:00`;
+      }
+      if (query.filters.toDate) {
+        const d = normalizeDate(query.filters.toDate);
+        mergedFilters.created_at.lte = d.includes('T') ? d : `${d}T23:59:59.999+03:00`;
+      }
     }
 
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
