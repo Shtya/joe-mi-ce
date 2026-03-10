@@ -13,6 +13,48 @@ import { UsersService } from 'src/users/users.service';
 export class SaleController {
   constructor(private readonly saleService: SaleService,private readonly userService: UsersService) {}
 
+  private parseSalesDates(query: any): { startDate: Date; endDate: Date } {
+    const rawStart = query.start_date || query.filters?.fromDate || query.fromDate;
+    const rawEnd = query.end_date || query.filters?.toDate || query.toDate;
+
+    let startDate: Date;
+    let endDate: Date;
+
+    const parseDateStr = (d: string) => {
+      if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
+        const [day, month, year] = d.split('-').map(Number);
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      }
+      return d;
+    };
+
+    if (rawStart || rawEnd) {
+      if (rawStart) {
+        const dateStr = parseDateStr(rawStart);
+        startDate = new Date(`${dateStr}T07:00:00.000+03:00`);
+      } else {
+        const shiftedNow = new Date(Date.now() - 7 * 60 * 60 * 1000);
+        const saudiDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(shiftedNow);
+        startDate = new Date(`${saudiDateStr}T07:00:00.000+03:00`);
+      }
+
+      if (rawEnd) {
+        const dateStr = parseDateStr(rawEnd);
+        const targetDate = new Date(`${dateStr}T16:00:00.000+03:00`);
+        endDate = new Date(targetDate.getTime() + 24 * 60 * 60 * 1000);
+      } else {
+        endDate = new Date(startDate.getTime() + 33 * 60 * 60 * 1000);
+      }
+    } else {
+      const shiftedNow = new Date(Date.now() - 7 * 60 * 60 * 1000);
+      const saudiDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(shiftedNow);
+      startDate = new Date(`${saudiDateStr}T07:00:00.000+03:00`);
+      endDate = new Date(startDate.getTime() + 33 * 60 * 60 * 1000);
+    }
+
+    return { startDate, endDate };
+  }
+
   // 🔹 Export sales data to Excel
   @Get('/export')
   @Permissions(EPermission.SALE_EXPORT)
@@ -144,32 +186,7 @@ export class SaleController {
     @Req() req: any,
     @Query() query: any
   ) {
-    let startDate: Date | undefined;
-    let endDate: Date | undefined;
-
-    if (query.filters?.fromDate || query.filters?.toDate) {
-      if (query.filters?.fromDate) {
-        startDate = new Date(query.filters.fromDate);
-      }
-      if (query.filters?.toDate) {
-        endDate = new Date(query.filters.toDate);
-        // Extend to 5 AM next day
-        endDate.setHours(23 + 5, 59, 59, 999);
-      }
-    } else {
-      // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"
-      const shiftedNow = new Date(Date.now() - 5 * 60 * 60 * 1000);
-      const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Riyadh',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      }).format(shiftedNow); // Returns "YYYY-MM-DD"
-
-      // Set exactly from 00:00 KSA today to 04:59:59 KSA the next day
-      startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
-      endDate = new Date(new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() + 5 * 60 * 60 * 1000);
-    }
+    const { startDate, endDate } = this.parseSalesDates(query);
 
     const filters = { ...query.filters };
     delete filters.fromDate;
@@ -314,32 +331,7 @@ export class SaleController {
 @Get('by-user/:userId')
 @Permissions(EPermission.SALE_READ)
 findByUser(@Param('userId') userId: string, @Query() query: any) {
-  let startDate: Date | undefined;
-  let endDate: Date | undefined;
-
-  if (query.filters?.fromDate || query.filters?.toDate) {
-    if (query.filters?.fromDate) {
-      startDate = new Date(query.filters.fromDate);
-    }
-    if (query.filters?.toDate) {
-      endDate = new Date(query.filters.toDate);
-      // Extend to 5 AM next day
-      endDate.setHours(23 + 5, 59, 59, 999);
-    }
-  } else {
-    // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"
-    const shiftedNow = new Date(Date.now() - 5 * 60 * 60 * 1000);
-    const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Riyadh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).format(shiftedNow); // Returns "YYYY-MM-DD"
-
-    // Set exactly from 00:00 KSA today to 04:59:59 KSA the next day
-    startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
-    endDate = new Date(new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() + 5 * 60 * 60 * 1000);
-  }
+  const { startDate, endDate } = this.parseSalesDates(query);
 
   const filters = { ...query.filters };
   delete filters.fromDate;
