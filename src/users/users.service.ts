@@ -211,4 +211,42 @@ async resolveProjectIdFromUser(userId: string): Promise<string> {
         lang === 'ar' ? 'تم حذف المستخدم بنجاح' : 'User deleted successfully',
     };
   }
+
+  async importNationalIds(rows: any[]): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    const errors: string[] = [];
+    let updatedCount = 0;
+
+    for (const row of rows) {
+      // The user's image shows "User" and "ID" as column headers.
+      // We'll also support "username" and "national_id" just in case.
+      const username = row['User'] || row['username'] || row['username '];
+      const nationalId = row['ID'] || row['national_id'] || row['national_id '];
+
+      if (!username) {
+        errors.push(`Row missing username: ${JSON.stringify(row)}`);
+        continue;
+      }
+
+      if (!nationalId) {
+        errors.push(`Row for user ${username} missing national ID`);
+        continue;
+      }
+
+      const user = await this.userRepository.findOne({ where: { username: username.toString().trim() } });
+
+      if (!user) {
+        errors.push(`User ${username} not found`);
+        continue;
+      }
+
+      await this.userRepository.update({ id: user.id }, { national_id: nationalId.toString().trim() });
+      updatedCount++;
+    }
+
+    return {
+      success: true,
+      updatedCount,
+      errors,
+    };
+  }
 }

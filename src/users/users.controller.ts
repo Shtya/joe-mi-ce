@@ -1,11 +1,17 @@
 // controllers/users.controller.ts
-import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException, Delete, Req, Body, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards, Request, ParseUUIDPipe, UnauthorizedException, Delete, Req, Body, Post, HttpCode, HttpStatus, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { UserResponseDto, UsersByBranchResponseDto, ProjectUsersResponseDto } from 'dto/users.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
 import { UsersService } from './users.service';
 import { JourneyService } from 'src/journey/journey.service';
 import { Permissions } from 'decorators/permissions.decorators';
 import { EPermission } from 'enums/Permissions.enum';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { multerOptions } from 'common/multer.config';
+import * as fs from 'fs';
+import * as ExcelJS from 'exceljs';
+import * as XLSX from 'xlsx';
+import { parse } from 'papaparse';
 
 @Controller('user')
 @UseGuards(AuthGuard)
@@ -91,5 +97,66 @@ async getPromotersAndSupervisors(@Request() req) {
   @HttpCode(HttpStatus.OK)
   async registerFcmToken(@Req() req, @Body('token') token: string) {
     return this.usersService.registerFcmToken(req.user.id, token);
+  }
+
+  @Post('import-national-ids')
+  @Permissions(EPermission.USER_UPDATE)
+  @UseInterceptors(FileInterceptor('file', multerOptions))
+  async importNationalIds(
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const filePath = file.path;
+    let rows: any[] = [];
+
+    try {
+      if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+        const csvContent = fs.readFileSync(filePath, 'utf8');
+        const result = parse(csvContent, {
+          header: true,
+          skipEmptyLines: true,
+        });
+        rows = result.data;
+      } else if (file.mimetype === 'application/vnd.ms-excel' || file.originalname.endsWith('.xls')) {
+        const workbook = XLSX.readFile(filePath);
+        const sheetName = workbook.SheetNames[0];
+        rows = XLSX.utils.sheet_to_json(
+          workbook.Sheets[sheetName],
+          { defval: '' },
+        );
+      } else {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const sheet = workbook.getWorksheet(1);
+
+        const headers: string[] = [];
+        sheet.getRow(1).eachCell((cell, i) => {
+          headers[i - 1] = cell.value?.toString() || '';
+        });
+
+        for (let i = 2; i <= sheet.rowCount; i++) {
+          const row = sheet.getRow(i);
+          const obj: any = {};
+          headers.forEach((h, idx) => {
+            const v = row.getCell(idx + 1).value;
+            if (v !== null && v !== undefined) {
+              obj[h] = v.toString().trim();
+            }
+          });
+          rows.push(obj);
+        }
+      }
+
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+      return await this.usersService.importNationalIds(rows);
+
+    } catch (err) {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      throw err;
+    }
   }
 }
