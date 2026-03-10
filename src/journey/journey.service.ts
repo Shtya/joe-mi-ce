@@ -18,6 +18,7 @@ import { getDistance } from 'geolib';
 import { CRUD } from 'common/crud.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { toLocalISOString } from 'common/date.util';
+import { logger } from 'nestjs-i18n';
 
 @Injectable()
 export class JourneyService {
@@ -1185,6 +1186,7 @@ if (typeof value === 'string') {
       where: [
         { status: JourneyStatus.PRESENT },
         { status: JourneyStatus.UNPLANNED_PRESENT },
+        
       ],
       relations: ['user', 'branch', 'shift'],
     });
@@ -1200,10 +1202,7 @@ if (typeof value === 'string') {
 
         if (checkIn) {
           // Only update if there's no checkout time already
-          if (!checkIn.checkOutTime) {
-            checkIn.checkOutTime = now;
-            await this.checkInRepo.save(checkIn);
-          }
+          logger.warn(`Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`);
         } else {
           // This happens if status is PRESENT but no check-in record was found.
           // Revert status to ABSENT/UNPLANNED_ABSENT to resolve inconsistency.
