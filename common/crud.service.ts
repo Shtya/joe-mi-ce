@@ -812,20 +812,21 @@ if (value instanceof FindOperator) {
     };
   }
 
-  static joinNestedRelations2<T>(query: SelectQueryBuilder<T>, repository: Repository<T>, rootAlias: string, relations: string[]) {
+  static joinNestedRelations2<T>(query: SelectQueryBuilder<T>, repository: Repository<T>, entityName: string, relations: string[]) {
     const addedAliases = new Set<string>();
 
     function validatePathAndReturnJoins(path: string) {
       const segments = path.split('.');
       let currentMeta = repository.metadata;
-      let parentAlias = rootAlias;
+      let parentAlias = entityName;
       const steps: { joinPath: string; alias: string }[] = [];
-      let aliasPath = rootAlias;
+      let aliasPath = entityName;
 
       for (const seg of segments) {
         const relMeta = currentMeta.relations.find(r => r.propertyName === seg);
         if (!relMeta) {
-          throw new BadRequestException(`Invalid relation segment '${seg}' in '${path}'`);
+          console.warn(`[CRUD] Invalid relation segment '${seg}' in '${path}' for entity '${entityName}'. Skipping.`);
+          return []; // Skip the whole path if any segment is invalid
         }
         const joinPath = `${parentAlias}.${seg}`;
         const alias = (aliasPath + '_' + seg).replace(/\./g, '_');
@@ -839,6 +840,7 @@ if (value instanceof FindOperator) {
     }
 
     for (const path of relations) {
+      if (!path) continue;
       const steps = validatePathAndReturnJoins(path);
       for (const { joinPath, alias } of steps) {
         if (!addedAliases.has(alias)) {
