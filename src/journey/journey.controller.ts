@@ -422,7 +422,7 @@ async getOptimizedPlans(
 
   };
 }
-@Get('plans/project/g')
+@Get('plans/project/supervisor/all')
 @Permissions(EPermission.JOURNEY_READ)
 async getAllPlansWithPagination(
   @Query('') query: any,
