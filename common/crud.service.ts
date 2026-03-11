@@ -91,9 +91,14 @@ export class CRUD {
       const parts = fieldPath.split('.');
       const relationPath = parts.slice(0, -1).join('.');
       const last = parts[parts.length - 1];
-      ensureJoin(relationPath); // only joins if real relation path
-      const alias = isRelationPath(relationPath) ? relationPath : entityName;
-      return `${alias}.${last}`;
+      
+      if (!isRelationPath(relationPath)) {
+        console.warn(`[CRUD] Invalid relation path '${relationPath}' (from '${fieldPath}') for entity '${meta.name}'. skipping.`);
+        return '';
+      }
+      
+      ensureJoin(relationPath);
+      return `${relationPath}.${last}`;
     }
 
     function flatten(obj: any, prefix = ''): Record<string, any> {
@@ -110,8 +115,11 @@ export class CRUD {
     // join & select requested relations first
     if (relations?.length) {
       const invalid = relations.filter(r => !meta.relations.some((rel: any) => rel.propertyName === r || rel.relationPath === r));
-      if (invalid.length) throw new BadRequestException(`Invalid relations: ${invalid.join(', ')}`);
-      for (const rel of relations) {
+      if (invalid.length) {
+        console.warn(`[CRUD] Invalid relations for entity '${meta.name}': ${invalid.join(', ')}. Skipping.`);
+      }
+      const validRelations = relations.filter(r => meta.relations.some((rel: any) => rel.propertyName === r || rel.relationPath === r));
+      for (const rel of validRelations) {
         qb.leftJoinAndSelect(`${entityName}.${rel}`, rel);
         joined.add(rel);
       }
@@ -290,6 +298,9 @@ if (search && searchFields?.length) {
 
   static joinNestedRelations<T>(qb: SelectQueryBuilder<T>, repository: Repository<T>, rootAlias: string, relations: string[] = []): any {
     const addedAliases = new Set<string>();
+    // Pre-populate addedAliases with existing joins from the query builder
+    qb.expressionMap.joinAttributes.forEach(ja => addedAliases.add(ja.alias.name));
+    
     const aliasMap: any = new Map();
 
     function validatePathAndReturnJoins(path: string) {
@@ -303,7 +314,8 @@ if (search && searchFields?.length) {
       for (const seg of segments) {
         const relMeta = currentMeta.relations.find(r => r.propertyName === seg);
         if (!relMeta) {
-          throw new BadRequestException(`Invalid relation segment '${seg}' in '${path}'`);
+          console.warn(`[CRUD] Invalid relation segment '${seg}' in '${path}' for entity '${repository.metadata.name}'. Skipping.`);
+          return [];
         }
         const joinPath = `${parentAlias}.${seg}`;
         const alias = (aliasPath + '_' + seg).replace(/\./g, '_'); // e.g., product_stock, product_stock_branch
@@ -409,7 +421,8 @@ if (search && searchFields?.length) {
       const alias = aliasMap.get(relationPath);
       if (!alias) {
         // not joined? then it’s invalid relation path
-        throw new BadRequestException(`Missing join for relation path '${relationPath}' (from '${fieldPath}')`);
+        console.warn(`[CRUD] Missing join for relation path '${relationPath}' (from '${fieldPath}') for entity '${meta.name}'. skipping.`);
+        return '';
       }
       return `${alias}.${last}`;
     }
@@ -435,6 +448,7 @@ if (search && searchFields?.length) {
       }
 
       const qualified = qualifyField(base);
+      if (!qualified) return; // Skip filter if relation couldn't be resolved
       const param = key.replace(/\./g, '_');
 
       switch (op) {
@@ -814,6 +828,8 @@ if (value instanceof FindOperator) {
 
   static joinNestedRelations2<T>(query: SelectQueryBuilder<T>, repository: Repository<T>, entityName: string, relations: string[]) {
     const addedAliases = new Set<string>();
+    // Pre-populate addedAliases with existing joins from the query builder
+    query.expressionMap.joinAttributes.forEach(ja => addedAliases.add(ja.alias.name));
 
     function validatePathAndReturnJoins(path: string) {
       const segments = path.split('.');
@@ -1299,7 +1315,8 @@ if (value instanceof FindOperator) {
       const alias = aliasMap.get(relationPath);
       if (!alias) {
         // not joined? then it’s invalid relation path
-        throw new BadRequestException(`Missing join for relation path '${relationPath}' (from '${fieldPath}')`);
+        console.warn(`[CRUD] Missing join for relation path '${relationPath}' (from '${fieldPath}') for entity '${meta.name}'. skipping.`);
+        return '';
       }
       return `${alias}.${last}`;
     }
