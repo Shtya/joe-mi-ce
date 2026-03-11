@@ -569,6 +569,11 @@ if (search && searchFields?.length) {
 
     const skip = (pageNumber - 1) * limitNumber;
     const query = repository.createQueryBuilder(entityName).skip(skip).take(limitNumber);
+
+    if (relations?.length) {
+      CRUD.joinNestedRelations2(query, repository, entityName, relations);
+    }
+
     if (extraWhere) {
       extraWhere(query);
     }

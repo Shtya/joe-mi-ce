@@ -526,17 +526,25 @@ async getAllPlansWithPagination(
 
   const extraWhere = (qb: any) => {
     if (user.role.name === ERole.SUPERVISOR) {
+      // Exclude the supervisor themselves from the plans (if they are also a user in the system)
       qb.andWhere('plan.userId != :excludedId', { excludedId: user.id });
+      
+      // Filter for promoters only
       qb.andWhere('plan_user_role.name = :promoterRole', { promoterRole: ERole.PROMOTER });
       
       if (supervisorBranchIds.length > 0) {
         qb.andWhere(
           new Brackets((subQb) => {
-            subQb.where('plan.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds })
-                 .orWhere('plan_user.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds });
+            // Check if plan belongs to a supervisor's branch
+            subQb.where('plan.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds });
+            
+            // OR if the user (promoter) in the plan belongs to a supervisor's branch
+            // Note: plan_user is the alias for the user relation in JourneyPlan
+            subQb.orWhere('plan_user.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds });
           })
         );
       } else {
+         // No branches assigned -> return nothing
          qb.andWhere('1=0'); 
       }
     }
