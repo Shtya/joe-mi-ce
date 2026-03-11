@@ -32,10 +32,31 @@ export class ProjectController {
     @Param('projectId') projectId: string,
     @Query() query: any,
   ) {
-    const filters = query.filters || {};
+    // Robustly parse nested filters from query parameters
+    const filters: any = {};
+    
+    // If query.filters is already an object (parsed by qs), use it
+    if (query.filters && typeof query.filters === 'object') {
+      Object.assign(filters, query.filters);
+    }
+
+    // Also look for bracket notation in top-level query keys (handle non-standard parsing)
+    Object.keys(query).forEach(key => {
+      if (key.startsWith('filters[')) {
+        const path = this.parseBracketNotation(key);
+        if (path[0] === 'filters') {
+          this.setNestedValue(filters, path.slice(1), query[key]);
+        }
+      }
+    });
+    
+    // Remap filters.project.id to direct project_id column to avoid conflict with 'owned project' relation
+    if (filters.project && filters.project.id) {
+      filters.project_id = filters.project.id;
+      delete filters.project;
+    }
     
     // Ensure we are filtering by the project ID from the URL
-    // We handle both direct 'project_id' column and 'project.id' relation if needed
     filters.project_id = projectId;
 
     return CRUD.findAllRelation(
@@ -46,7 +67,7 @@ export class ProjectController {
       query.limit,
       query.sortBy,
       query.sortOrder,
-      ['role', 'project'],
+      ['role'], // Join role for filtering/display, but omit 'project' to avoid confusion with owned project
       ['name', 'mobile', 'username'],
       filters
     );
@@ -143,4 +164,6 @@ async findById(
      }
     return this.projectService.resetProjectPlans(id);
   }
+
+
 }
