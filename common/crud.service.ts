@@ -748,9 +748,6 @@ if (value instanceof FindOperator) {
       });
     }
 
-    if (relations?.length) {
-      CRUD.joinNestedRelations2(query, repository, entityName, relations);
-    }
 
     if (search && searchFields?.length >= 1) {
       query.andWhere(
