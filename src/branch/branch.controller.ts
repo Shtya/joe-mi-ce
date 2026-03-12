@@ -266,4 +266,13 @@ export class BranchController {
       throw err;
     }
   }
+
+  @Post(':id/assign-project/:projectId')
+  @Permissions(EPermission.BRANCH_UPDATE)
+  async assignProject(
+    @Param('id') id: string,
+    @Param('projectId') projectId: string,
+  ) {
+    return this.branchService.assignProject(id, projectId);
+  }
 }
