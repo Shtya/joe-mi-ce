@@ -165,10 +165,5 @@ async findById(
     return this.projectService.resetProjectPlans(id);
   }
 
-  @Post(':id/setup-extra')
-  @Permissions(EPermission.PROJECT_UPDATE)
-  async setupExtra(@Param('id') id: string) {
-    return this.projectService.setupExtraChain(id);
-  }
 
 }

@@ -619,6 +619,72 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
     return result;
   }
 
+  async restoreBranchesFromExcel(rows: any[], projectId: string) {
+    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Project not found');
+
+    const result = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    for (const [index, rawRow] of rows.entries()) {
+      try {
+        const row = this.mapHeaders(rawRow);
+        
+        if (!row.name) {
+          throw new BadRequestException('Branch name is missing in row');
+        }
+
+        const branchName = row.name.trim();
+        const chainName = (row.chain || row.retail || '').trim();
+
+        // 1. Find the branch (search system-wide since they might be anywhere now)
+        let branch = await this.branchRepo.findOne({
+          where: { name: branchName },
+          relations: ['project', 'chain']
+        });
+
+        if (!branch) {
+          throw new NotFoundException(`Branch "${branchName}" not found in system`);
+        }
+
+        // 2. Get or create chain for THIS project
+        let chain = null;
+        if (chainName) {
+          chain = await this.chainRepo.findOne({
+            where: { name: chainName, project: { id: projectId } }
+          });
+
+          if (!chain) {
+            chain = this.chainRepo.create({
+              name: chainName,
+              project: project,
+            });
+            chain = await this.chainRepo.save(chain);
+          }
+        }
+
+        // 3. Update branch
+        branch.project = project;
+        if (chain) branch.chain = chain;
+        
+        await this.branchRepo.save(branch);
+        result.success++;
+
+      } catch (err) {
+        result.failed++;
+        result.errors.push({
+          row: index + 2,
+          error: err.message,
+        });
+      }
+    }
+
+    return result;
+  }
+
   private async createSalesTargetForBranch(branch: Branch, row: any, requester: User) {
     // Check if autoCreateSalesTargets is enabled
     if (!branch.autoCreateSalesTargets) {
