@@ -10,6 +10,8 @@ import { User } from 'entities/user.entity';
 import { Journey, JourneyStatus } from 'entities/all_plans.entity';
 import { Sale } from 'entities/products/sale.entity';
 import { Project } from 'entities/project.entity';
+import { Vacation } from 'entities/employee/vacation.entity';
+import { VacationDate } from 'entities/employee/vacation-date.entity';
 
 @Injectable()
 export class ReportsService {
@@ -24,6 +26,10 @@ export class ReportsService {
     private readonly journeyRepository: Repository<Journey>,
     @InjectRepository(Sale)
     private readonly saleRepository: Repository<Sale>,
+    @InjectRepository(Vacation)
+    private readonly vacationRepository: Repository<Vacation>,
+    @InjectRepository(VacationDate)
+    private readonly vacationDateRepository: Repository<VacationDate>,
   ) {}
 
   async generateMonthlyReport(): Promise<string> {
@@ -54,11 +60,14 @@ export class ReportsService {
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const tab3Sheet = workbook.addWorksheet(`Check-in - Check-out`);
+    const salesByModelSheet = workbook.addWorksheet(`Sales by Model`);
 
     const baseColumns = [
       { header: 'JOE M.I. USER', key: 'joe_user_1', width: 15 },
       { header: 'No', key: 'no', width: 5 },
       { header: 'Name', key: 'name', width: 25 },
+      { header: 'Status', key: 'user_status', width: 15 },
+      { header: 'National ID', key: 'id', width: 15 },
       { header: 'City', key: 'city', width: 15 },
       { header: 'Channel', key: 'channel', width: 15 },
       { header: 'Store', key: 'store', width: 20 },
@@ -104,7 +113,15 @@ export class ReportsService {
         sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
         ...(projectId && { projectId })
       },
-      relations: ['user'],
+      relations: ['user', 'product', 'product.brand', 'product.category'],
+    });
+
+    const vacations = await this.vacationRepository.find({
+      where: {
+        overall_status: 'approved',
+        ...(projectId && { branch: { project: { id: projectId } } })
+      },
+      relations: ['user', 'vacationDates']
     });
 
     const dailyAttendanceTotals: Record<string, number> = {};
@@ -134,6 +151,7 @@ export class ReportsService {
         joe_user_1: user.username,
         no: rowNo++,
         name: user.name,
+        user_status: user.is_active ? 'Active' : 'Not Active',
         id:user.national_id,
         city: effectiveBranch?.city?.name || 'N/A',
         channel: effectiveBranch?.chain?.name || 'N/A',
@@ -143,7 +161,7 @@ export class ReportsService {
       const attRow = { ...baseRowData };
       const t2Row = { ...baseRowData };
       const t3RowArr = [
-         baseRowData.joe_user_1, baseRowData.no, baseRowData.name, 
+         baseRowData.joe_user_1, baseRowData.no, baseRowData.name, baseRowData.user_status,
          baseRowData.id, baseRowData.city, baseRowData.channel, baseRowData.store
       ];
 
@@ -161,6 +179,18 @@ export class ReportsService {
            t3RowArr.push('');
            t3RowArr.push('');
            continue;
+        }
+
+        // Check for Vacation
+        const userVacations = vacations.filter(v => v.user?.id === user.id);
+        const hasVacation = userVacations.some(v => v.vacationDates.some(vd => vd.date === currentDateStr));
+
+        if (hasVacation) {
+            attRow[dayKey] = 'Vacation';
+            t3RowArr.push('Vacation');
+            t3RowArr.push('Vacation');
+            t2Row[dayKey] = 'SAR -';
+            continue;
         }
 
         const dayJourneys = userJourneys.filter(j => j.date === currentDateStr);
@@ -184,14 +214,14 @@ export class ReportsService {
         }
 
         if (dayJourneys.length > 0) {
-            const inTimes = dayJourneys.map(j => j.checkin?.checkInTime ? dayjs(j.checkin.checkInTime).format('HH:mm') : '').filter(Boolean);
-            const outTimes = dayJourneys.map(j => j.checkin?.checkOutTime ? dayjs(j.checkin.checkOutTime).format('HH:mm') : '').filter(Boolean);
+            const inTimes = dayJourneys.map(j => j.checkin?.checkInTime ? dayjs(j.checkin.checkInTime).add(3, 'hour').format('HH:mm') : '').filter(Boolean);
+            const outTimes = dayJourneys.map(j => j.checkin?.checkOutTime ? dayjs(j.checkin.checkOutTime).add(3, 'hour').format('HH:mm') : '').filter(Boolean);
             
             t3RowArr.push(inTimes.length > 0 ? inTimes.join(' , ') : '--:--');
             t3RowArr.push(outTimes.length > 0 ? outTimes.join(' , ') : '--:--');
         } else {
-            t3RowArr.push('');
-            t3RowArr.push('');
+            t3RowArr.push(user.is_active ? '--:--' : '');
+            t3RowArr.push(user.is_active ? '--:--' : '');
         }
 
         const daySales = userSales.filter(s => dayjs(s.sale_date).format('YYYY-MM-DD') === currentDateStr);
@@ -210,7 +240,7 @@ export class ReportsService {
       tab3Rows.push(t3RowArr);
     }
 
-    const totalsRowData: Record<string, any> = { joe_user_1: 'Total', name: 'Total' }; 
+    const totalsRowData: Record<string, any> = { joe_user_1: 'Total', name: 'Total', user_status: '' }; 
     let totalOfTotals = 0;
     for (let i = 1; i <= daysInMonth; i++) {
        const key = `day_${i}`;
@@ -254,6 +284,47 @@ export class ReportsService {
         tab3Sheet.addRow(r);
     });
 
+    // --- Sales by Model Tab ---
+    salesByModelSheet.columns = [
+        { header: 'Brand', key: 'brand', width: 20 },
+        { header: 'Category', key: 'category', width: 20 },
+        { header: 'Model', key: 'model', width: 20 },
+        { header: 'SKU', key: 'sku', width: 20 },
+        { header: 'Product Name', key: 'name', width: 30 },
+        { header: 'Quantity', key: 'quantity', width: 15 },
+        { header: 'Total Amount', key: 'total_amount', width: 20 },
+    ];
+
+    const modelSalesMap = new Map<string, any>();
+    sales.forEach(s => {
+        const model = s.product?.model || 'N/A';
+        const sku = s.product?.sku || 'N/A';
+        const key = `${model}_${sku}`;
+        
+        if (!modelSalesMap.has(key)) {
+            modelSalesMap.set(key, {
+                brand: s.product?.brand?.name || 'N/A',
+                category: s.product?.category?.name || 'N/A',
+                model: model,
+                sku: sku,
+                name: s.product?.name || 'N/A',
+                quantity: 0,
+                total_amount: 0
+            });
+        }
+        
+        const entry = modelSalesMap.get(key);
+        entry.quantity += Number(s.quantity || 0);
+        entry.total_amount += Number(s.total_amount || 0);
+    });
+
+    modelSalesMap.forEach(value => {
+        salesByModelSheet.addRow({
+            ...value,
+            total_amount: `SAR ${value.total_amount.toFixed(2)}`
+        });
+    });
+
     // Formatting 
     const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF1DE' } }; 
     const headerDateFont = { bold: true, color: { argb: 'FFFF0000' } }; 
@@ -271,8 +342,9 @@ export class ReportsService {
         bottom: { style: 'thick', color: { argb: 'FF000000' } }
     };
 
-    [attendanceSheet, tab2Sheet, tab3Sheet].forEach(sheet => {
+    [attendanceSheet, tab2Sheet, tab3Sheet, salesByModelSheet].forEach(sheet => {
       const isTab3 = sheet.name === 'Check-in - Check-out';
+      const isSalesByModel = sheet.name === 'Sales by Model';
       const isAttendance = sheet.name === 'Attendance';
       const startRow = isTab3 ? 2 : 1; 
 
