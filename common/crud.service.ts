@@ -148,6 +148,7 @@ export class CRUD {
       }
 
       const qualified = qualifyField(base);
+      if (!qualified) return;
       const param = key.replace(/\./g, '_');
 
       switch (op) {
@@ -202,6 +203,7 @@ export class CRUD {
       for (const [base, ops] of Object.entries(grouped)) {
         if (ops.gte !== undefined && ops.lte !== undefined) {
           const qualified = qualifyField(base);
+          if (!qualified) continue;
           const pFrom = base.replace(/\./g, '_') + '_from';
           const pTo = base.replace(/\./g, '_') + '_to';
           // If range is provided as simple dates (YYYY-MM-DD), use DATE() casting for timestamp support
@@ -499,6 +501,7 @@ if (search && searchFields?.length) {
       for (const [base, ops] of Object.entries(grouped)) {
         if (ops.gte !== undefined && ops.lte !== undefined) {
           const qualified = qualifyField(base);
+          if (!qualified) continue;
           const pFrom = base.replace(/\./g, '_') + '_from';
           const pTo = base.replace(/\./g, '_') + '_to';
           // If range is provided as simple dates (YYYY-MM-DD), use DATE() casting for timestamp support
@@ -911,8 +914,8 @@ if (value instanceof FindOperator) {
 
     // Use the SAME nested relation logic as findAllRelation
     if (relations?.length) {
-      // This will validate paths and throw BadRequestException
-      // for invalid segments, exactly like in findAllRelation
+      // This will validate paths and skip invalid segments with a warning
+      // exactly like in findAllRelation
       CRUD.joinNestedRelations2(qb, repository, entityName, relations);
     }
 
@@ -1342,6 +1345,7 @@ if (value instanceof FindOperator) {
       }
 
       const qualified = qualifyField(base);
+      if (!qualified) return;
       const param = key.replace(/\./g, '_');
 
       switch (op) {
@@ -1392,6 +1396,7 @@ if (value instanceof FindOperator) {
       for (const [base, ops] of Object.entries(grouped)) {
         if (ops.gte !== undefined && ops.lte !== undefined) {
           const qualified = qualifyField(base);
+          if (!qualified) continue;
           const pFrom = base.replace(/\./g, '_') + '_from';
           const pTo = base.replace(/\./g, '_') + '_to';
           // If range is provided as simple dates (YYYY-MM-DD), use DATE() casting for timestamp support

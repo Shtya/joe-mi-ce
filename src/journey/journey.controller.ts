@@ -538,9 +538,7 @@ async getAllPlansWithPagination(
             // Check if plan belongs to a supervisor's branch
             subQb.where('plan.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds });
             
-            // OR if the user (promoter) in the plan belongs to a supervisor's branch
-            // Note: plan_user is the alias for the user relation in JourneyPlan
-            subQb.orWhere('plan_user.branchId IN (:...branchIds)', { branchIds: supervisorBranchIds });
+
           })
         );
       } else {
