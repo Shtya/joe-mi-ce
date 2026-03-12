@@ -332,4 +332,83 @@ export class ProjectService extends BaseService<Project> {
     };
   }
 
+  async setupExtraChain(projectId: string): Promise<any> {
+    // 1. Validate Project
+    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException('Project not found');
+
+    // 2. Find or Create "extra" chain for this project
+    let extraChain = await this.chainRepo.findOne({
+      where: {
+        name: 'extra',
+        project: { id: projectId }
+      }
+    });
+
+    if (!extraChain) {
+      extraChain = this.chainRepo.create({
+        name: 'extra',
+        project: project,
+      });
+      extraChain = await this.chainRepo.save(extraChain);
+      console.log(`Created new "extra" chain for project ${projectId}`);
+    }
+
+    // 3. Find branches to migrate
+    // - Branches belonging to this project with no chain
+    // - Branches associated with ANY chain named "extra" but belonging to a different project
+    // - Branches with no chain at all (system-wide)
+    
+    // We'll use QueryBuilder for a more complex "OR" condition if needed, or separate queries.
+    // Let's go with a targeted approach based on user request.
+    
+    // a. Branches in this project with no chain
+    const unchainedInProject = await this.branchRepo.find({
+      where: {
+        project: { id: projectId },
+        chain: null
+      }
+    });
+
+    // b. Branches pointing to an "extra" chain in ANOTHER project
+    const incorrectlyChained = await this.branchRepo.createQueryBuilder('branch')
+      .leftJoinAndSelect('branch.chain', 'chain')
+      .leftJoinAndSelect('chain.project', 'chainProject')
+      .where('chain.name = :chainName', { chainName: 'extra' })
+      .andWhere('(chainProject.id IS NULL OR chainProject.id != :projectId)', { projectId })
+      .getMany();
+
+    // c. System-wide unchained branches (if the user wants to pull them into this project)
+    // The user said "if the branches without chain add it to extra that was create"
+    const unchainedInSystem = await this.branchRepo.find({
+      where: {
+        chain: null,
+        project: null
+      }
+    });
+
+    const allToMigrate = [...unchainedInProject, ...incorrectlyChained, ...unchainedInSystem];
+    
+    // Remove duplicates by ID
+    const uniqueToMigrate = Array.from(new Map(allToMigrate.map(item => [item.id, item])).values());
+
+    if (uniqueToMigrate.length > 0) {
+      for (const branch of uniqueToMigrate) {
+        branch.chain = extraChain;
+        branch.project = project; // Ensure it belongs to this project now
+      }
+      await this.branchRepo.save(uniqueToMigrate);
+    }
+
+    return {
+      message: 'Extra chain setup completed',
+      chainId: extraChain.id,
+      branchesMigrated: uniqueToMigrate.length,
+      details: {
+        fromUnchainedInProject: unchainedInProject.length,
+        fromIncorrectExtraChain: incorrectlyChained.length,
+        fromUnchainedInSystem: unchainedInSystem.length
+      }
+    };
+  }
 }
