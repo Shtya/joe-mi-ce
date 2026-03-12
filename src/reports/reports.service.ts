@@ -110,7 +110,7 @@ export class ReportsService {
 
     const sales = await this.saleRepository.find({
       where: {
-        sale_date: Between(now.startOf('year').toDate(), endOfReportingPeriod.toDate()),
+        sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
         ...(projectId && { projectId })
       },
       relations: ['user', 'product', 'product.brand', 'product.category'],
@@ -285,27 +285,12 @@ export class ReportsService {
     });
 
     // --- Sales by Model Tab ---
-    const salesModelBaseColumns = [
+    salesByModelSheet.columns = [
         { header: 'Brand', key: 'brand', width: 20 },
         { header: 'Category', key: 'category', width: 20 },
         { header: 'Model', key: 'model', width: 20 },
         { header: 'SKU', key: 'sku', width: 20 },
         { header: 'Product Name', key: 'name', width: 30 },
-    ];
-
-    const salesModelDateColumns = [];
-    for (let i = 1; i <= daysInMonth; i++) {
-        const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
-        salesModelDateColumns.push({ header: dateStr, key: `day_${i}`, width: 15 });
-    }
-
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const salesModelMonthColumns = months.map((m, idx) => ({ header: m, key: `month_${idx + 1}`, width: 12 }));
-
-    salesByModelSheet.columns = [
-        ...salesModelBaseColumns,
-        ...salesModelDateColumns,
-        ...salesModelMonthColumns,
         { header: 'Total Quantity', key: 'quantity', width: 15 },
         { header: 'Total Amount', key: 'total_amount', width: 20 },
     ];
@@ -315,13 +300,9 @@ export class ReportsService {
         const model = s.product?.model || 'N/A';
         const sku = s.product?.sku || 'N/A';
         const key = `${model}_${sku}`;
-        const saleDate = dayjs(s.sale_date);
-        const dayOfMonth = saleDate.date();
-        const monthIndex = saleDate.month() + 1; // 1-12
-        const isCurrentMonth = saleDate.month() === now.month() && saleDate.year() === now.year();
         
         if (!modelSalesMap.has(key)) {
-            const initialData = {
+            modelSalesMap.set(key, {
                 brand: s.product?.brand?.name || 'N/A',
                 category: s.product?.category?.name || 'N/A',
                 model: model,
@@ -329,26 +310,10 @@ export class ReportsService {
                 name: s.product?.name || 'N/A',
                 quantity: 0,
                 total_amount: 0
-            };
-            for (let i = 1; i <= daysInMonth; i++) {
-                initialData[`day_${i}`] = 0;
-            }
-            for (let i = 1; i <= 12; i++) {
-                initialData[`month_${i}`] = 0;
-            }
-            modelSalesMap.set(key, initialData);
+            });
         }
         
         const entry = modelSalesMap.get(key);
-        
-        // Month aggregation (for the whole year)
-        entry[`month_${monthIndex}`] += Number(s.quantity || 0);
-
-        // Daily aggregation (only for current month)
-        if (isCurrentMonth && dayOfMonth <= daysInMonth) {
-            entry[`day_${dayOfMonth}`] += Number(s.quantity || 0);
-        }
-
         entry.quantity += Number(s.quantity || 0);
         entry.total_amount += Number(s.total_amount || 0);
     });
