@@ -15,6 +15,7 @@ import { User } from 'entities/user.entity';
 import { ERole } from 'enums/Role.enum';
 import { SalesTarget, SalesTargetStatus, SalesTargetType } from 'entities/sales-target.entity';
 import { UsersService } from 'src/users/users.service';
+import { Audit } from 'entities/audit.entity';
 
 @Injectable()
 export class BranchService {
@@ -619,10 +620,7 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
     return result;
   }
 
-  async restoreBranchesFromExcel(rows: any[], projectId: string) {
-    const project = await this.projectRepo.findOne({ where: { id: projectId } });
-    if (!project) throw new NotFoundException('Project not found');
-
+  async restoreBranchesFromExcel(rows: any[], defaultProjectId?: string) {
     const result = {
       success: 0,
       failed: 0,
@@ -639,35 +637,77 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
 
         const branchName = row.name.trim();
         const chainName = (row.chain || row.retail || '').trim();
+        const excelProjectName = (row.project || '').trim();
 
-        // 1. Find the branch (search system-wide since they might be anywhere now)
-        let branch = await this.branchRepo.findOne({
+        // 1. Find the branch system-wide
+        const branch = await this.branchRepo.findOne({
           where: { name: branchName },
-          relations: ['project', 'chain']
+          relations: ['project', 'chain', 'supervisor', 'supervisors', 'team']
         });
 
         if (!branch) {
           throw new NotFoundException(`Branch "${branchName}" not found in system`);
         }
 
-        // 2. Get or create chain for THIS project
+        // 2. Resolve Target Project using heuristics
+        let targetProjectId = null;
+
+        // Heuristic A: Excel "Project" column (Name or ID)
+        if (excelProjectName) {
+           const proj = await this.projectRepo.findOne({
+             where: [{ name: excelProjectName }, { id: excelProjectName }]
+           });
+           if (proj) targetProjectId = proj.id;
+        }
+
+        // Heuristic B: Supervisor project ID
+        if (!targetProjectId && branch.supervisor?.project_id) {
+          targetProjectId = branch.supervisor.project_id;
+        }
+
+        // Heuristic C: Historic Audit project ID
+        if (!targetProjectId) {
+          const lastAudit = await this.salesTargetRepo.manager.getRepository(Audit).findOne({
+            where: { branchId: branch.id },
+            order: { created_at: 'DESC' }
+          });
+          if (lastAudit?.projectId) targetProjectId = lastAudit.projectId;
+        }
+
+        // Heuristic D: Team member project ID
+        if (!targetProjectId && branch.team?.length > 0) {
+          const memberWithProject = branch.team.find(m => m.project_id);
+          if (memberWithProject) targetProjectId = memberWithProject.project_id;
+        }
+
+        // Heuristic E: Fallback to default
+        if (!targetProjectId) targetProjectId = defaultProjectId;
+
+        if (!targetProjectId) {
+          throw new BadRequestException(`Could not determine target project for branch "${branchName}"`);
+        }
+
+        const targetProject = await this.projectRepo.findOneBy({ id: targetProjectId });
+        if (!targetProject) throw new NotFoundException(`Resolved Project ID "${targetProjectId}" not found`);
+
+        // 3. Get or create chain for THIS project
         let chain = null;
         if (chainName) {
           chain = await this.chainRepo.findOne({
-            where: { name: chainName, project: { id: projectId } }
+            where: { name: chainName, project: { id: targetProjectId } }
           });
 
           if (!chain) {
             chain = this.chainRepo.create({
               name: chainName,
-              project: project,
+              project: targetProject,
             });
             chain = await this.chainRepo.save(chain);
           }
         }
 
-        // 3. Update branch
-        branch.project = project;
+        // 4. Update branch
+        branch.project = targetProject;
         if (chain) branch.chain = chain;
         
         await this.branchRepo.save(branch);

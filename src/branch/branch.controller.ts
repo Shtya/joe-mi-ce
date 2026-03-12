@@ -206,12 +206,12 @@ export class BranchController {
     return this.branchService.fixChainConsistency();
   }
 
-  @Post('restore-from-excel/:projectId')
+  @Post( 'restore-from-excel/:projectId')
   @Permissions(EPermission.BRANCH_UPDATE)
   @UseInterceptors(FileInterceptor('file', multerOptions))
   async restoreFromExcel(
-    @Param('projectId') projectId: string,
     @UploadedFile() file: Express.Multer.File,
+    @Param('projectId') projectId?: string,
   ) {
     if (!file) {
       throw new BadRequestException('File is required');
