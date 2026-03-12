@@ -1142,6 +1142,26 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
     return false;
   }
 
+  async assignProject(branchId: string, projectId: string) {
+    const branch = await this.branchRepo.findOne({
+      where: { id: branchId as any },
+      relations: ['project', 'chain', 'chain.project'],
+    });
+    if (!branch) throw new NotFoundException('Branch not found');
+
+    const project = await this.projectRepo.findOneBy({ id: projectId });
+    if (!project) throw new NotFoundException('Project not found');
+
+    // Update Project
+    branch.project = project;
+
+    // Clear Chain if it belongs to a different project
+    if (branch.chain && branch.chain.project?.id !== projectId) {
+      branch.chain = null;
+    }
+
+    return this.branchRepo.save(branch);
+  }
 
 }
 
