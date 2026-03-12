@@ -285,14 +285,26 @@ export class ReportsService {
     });
 
     // --- Sales by Model Tab ---
-    salesByModelSheet.columns = [
+    const salesModelBaseColumns = [
         { header: 'Brand', key: 'brand', width: 20 },
         { header: 'Category', key: 'category', width: 20 },
         { header: 'Model', key: 'model', width: 20 },
         { header: 'SKU', key: 'sku', width: 20 },
         { header: 'Product Name', key: 'name', width: 30 },
+    ];
+
+    const salesModelDateColumns = [];
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
+        salesModelDateColumns.push({ header: dateStr, key: `day_${i}`, width: 15 });
+    }
+
+    salesByModelSheet.columns = [
+        ...salesModelBaseColumns,
+        ...salesModelDateColumns,
         { header: 'Total Quantity', key: 'quantity', width: 15 },
         { header: 'Total Amount', key: 'total_amount', width: 20 },
+        { header: 'Last Sale Date', key: 'last_sale_date', width: 20 },
     ];
 
     const modelSalesMap = new Map<string, any>();
@@ -300,28 +312,48 @@ export class ReportsService {
         const model = s.product?.model || 'N/A';
         const sku = s.product?.sku || 'N/A';
         const key = `${model}_${sku}`;
+        const saleDate = dayjs(s.sale_date);
+        const dayOfMonth = saleDate.date();
         
         if (!modelSalesMap.has(key)) {
-            modelSalesMap.set(key, {
+            const initialData = {
                 brand: s.product?.brand?.name || 'N/A',
                 category: s.product?.category?.name || 'N/A',
                 model: model,
                 sku: sku,
                 name: s.product?.name || 'N/A',
                 quantity: 0,
-                total_amount: 0
-            });
+                total_amount: 0,
+                last_sale_date: null
+            };
+            for (let i = 1; i <= daysInMonth; i++) {
+                initialData[`day_${i}`] = 0;
+            }
+            modelSalesMap.set(key, initialData);
         }
         
         const entry = modelSalesMap.get(key);
+        
+        // Update daily quantity
+        if (dayOfMonth <= daysInMonth) {
+            entry[`day_${dayOfMonth}`] += Number(s.quantity || 0);
+        }
+
+        // Update totals
         entry.quantity += Number(s.quantity || 0);
         entry.total_amount += Number(s.total_amount || 0);
+
+        // Update Last Sale Date
+        if (!entry.last_sale_date || saleDate.isAfter(dayjs(entry.last_sale_date))) {
+            entry.last_sale_date = saleDate.format('YYYY-MM-DD HH:mm');
+        }
     });
 
     modelSalesMap.forEach(value => {
         salesByModelSheet.addRow({
             ...value,
-            total_amount: `SAR ${value.total_amount.toFixed(2)}`
+            total_amount: `SAR ${value.total_amount.toFixed(2)}`,
+            last_sale_date: value.last_sale_date || 'N/A'
         });
     });
 
