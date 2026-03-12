@@ -12,8 +12,9 @@ import { Project } from 'entities/project.entity';
 import { City } from 'entities/locations/city.entity';
 import { Chain } from 'entities/locations/chain.entity';
 import { SalesTarget } from 'entities/sales-target.entity';
+import { Journey, CheckIn } from 'entities/all_plans.entity';
 @Module({
-  imports: [TypeOrmModule.forFeature([Brand , User,Category,Branch,Project,City,Chain,SalesTarget])],
+  imports: [TypeOrmModule.forFeature([Brand, User, Category, Branch, Project, City, Chain, SalesTarget, Journey, CheckIn])],
   controllers: [BrandController],
   providers: [BrandService,UsersService,BranchService],
   exports: [BrandService,],
