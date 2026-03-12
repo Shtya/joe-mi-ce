@@ -206,6 +206,18 @@ export class BranchController {
     return this.branchService.fixChainConsistency();
   }
 
+  /**
+   * Emergency restoration endpoint.
+   * Uses journey check-in records as the ground truth to put each branch
+   * back into the correct project and clears any mismatched chain.
+   * Safe to call multiple times — already-correct branches are skipped.
+   */
+  @Post('restore-from-journeys')
+  @Permissions(EPermission.BRANCH_UPDATE)
+  async restoreFromJourneys() {
+    return this.branchService.restoreBranchesFromJourneys();
+  }
+
   @Post( 'restore-from-excel/:projectId')
   @Permissions(EPermission.BRANCH_UPDATE)
   @UseInterceptors(FileInterceptor('file', multerOptions))

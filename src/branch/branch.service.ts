@@ -7,6 +7,7 @@ import { Injectable, NotFoundException, ForbiddenException, ConflictException, B
 import { InjectRepository } from '@nestjs/typeorm';
 import { AssignPromoterDto, CreateBranchDto, UpdateBranchDto } from 'dto/branch.dto';
 import { Branch } from 'entities/branch.entity';
+import { CheckIn, Journey } from 'entities/all_plans.entity';
 import { Chain } from 'entities/locations/chain.entity';
 import { City } from 'entities/locations/city.entity';
 import { Project } from 'entities/project.entity';
@@ -26,8 +27,9 @@ export class BranchService {
     @InjectRepository(Chain) readonly chainRepo: Repository<Chain>,
     @InjectRepository(User) readonly userRepo: Repository<User>,
     @InjectRepository(SalesTarget) readonly salesTargetRepo: Repository<SalesTarget>,
-         readonly usersService: UsersService,
-
+    @InjectRepository(Journey) readonly journeyRepo: Repository<Journey>,
+    @InjectRepository(CheckIn) readonly checkInRepo: Repository<CheckIn>,
+    readonly usersService: UsersService,
   ) {}
   async create(dto: CreateBranchDto, user: User): Promise<Branch> {
     if (user.role?.name !== ERole.PROJECT_ADMIN) {
@@ -618,6 +620,98 @@ private parseGeo(value: string | { lat: number; lng: number }): { lat: number; l
     }
 
     return result;
+  }
+
+  /**
+   * RESTORATION ENDPOINT:
+   * Scans journeys (and their check-ins) to discover which project each branch
+   * truly belongs to, then re-assigns the branch (and creates/reuses its chain).
+   *
+   * Logic priority per branch:
+   *  1. Journey.projectId (most reliable — set at check-in time)
+   *  2. CheckIn journey's projectId
+   * The chain is preserved if it already belongs to the target project,
+   * otherwise the branch.chain is set to null (safer than a wrong chain).
+   */
+  async restoreBranchesFromJourneys(): Promise<any> {
+    // Get all journeys that have a branch and a projectId
+    const journeys = await this.journeyRepo
+      .createQueryBuilder('journey')
+      .leftJoinAndSelect('journey.branch', 'branch')
+      .leftJoinAndSelect('branch.chain', 'chain')
+      .leftJoinAndSelect('chain.project', 'chainProject')
+      .where('journey.projectId IS NOT NULL')
+      .andWhere('journey.branchId IS NOT NULL')
+      .getMany();
+
+    if (!journeys.length) {
+      return { message: 'No journeys found to process', branchesRestored: 0 };
+    }
+
+    // Build a map: branchId -> Set of projectIds seen in journeys
+    const branchProjectMap = new Map<string, { branchId: string; projectIds: Set<string> }>();
+    for (const journey of journeys) {
+      if (!journey.branch || !journey.projectId) continue;
+      const branchId = journey.branch.id;
+      if (!branchProjectMap.has(branchId)) {
+        branchProjectMap.set(branchId, { branchId, projectIds: new Set() });
+      }
+      branchProjectMap.get(branchId).projectIds.add(journey.projectId);
+    }
+
+    let restoredCount = 0;
+    const errors: any[] = [];
+    const details: string[] = [];
+
+    for (const [branchId, info] of branchProjectMap.entries()) {
+      try {
+        // Pick the most common project ID for this branch
+        // (in case of data inconsistency, majority wins)
+        const projectIdCounts = new Map<string, number>();
+        for (const pid of info.projectIds) {
+          projectIdCounts.set(pid, (projectIdCounts.get(pid) || 0) + 1);
+        }
+        const targetProjectId = [...projectIdCounts.entries()]
+          .sort((a, b) => b[1] - a[1])[0][0];
+
+        const branch = await this.branchRepo.findOne({
+          where: { id: branchId },
+          relations: ['project', 'chain', 'chain.project'],
+        });
+
+        if (!branch) continue;
+
+        // Already correct — skip
+        if (branch.project?.id === targetProjectId) {
+          details.push(`[SKIP] Branch "${branch.name}" already in correct project.`);
+          continue;
+        }
+
+        const targetProject = await this.projectRepo.findOneBy({ id: targetProjectId });
+        if (!targetProject) continue;
+
+        // Check chain: if the chain doesn't belong to target project, clear it
+        const chainIsCorrect = branch.chain?.project?.id === targetProjectId;
+        if (!chainIsCorrect) {
+          branch.chain = null;
+        }
+
+        branch.project = targetProject;
+        await this.branchRepo.save(branch);
+        restoredCount++;
+        details.push(`[FIXED] Branch "${branch.name}" → Project "${targetProject.name}"`);
+      } catch (err) {
+        errors.push({ branchId, error: err.message });
+      }
+    }
+
+    return {
+      message: 'Restoration from journeys complete',
+      branchesScanned: branchProjectMap.size,
+      branchesRestored: restoredCount,
+      errors,
+      details,
+    };
   }
 
   async restoreBranchesFromExcel(rows: any[], defaultProjectId?: string) {
