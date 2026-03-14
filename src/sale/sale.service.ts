@@ -881,10 +881,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     }
   }
 
-  // 2. Resolve Branch (Priority: Sales Records -> User's assigned branch -> Last Journey's branch)
-  if (records.length > 0 && records[0].branch) {
-    branchToUse = records[0].branch;
-  }
+
 
   if (!branchToUse && userId) {
     // Fallback to last journey's branch
