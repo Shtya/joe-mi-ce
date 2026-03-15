@@ -15,6 +15,7 @@ import { User } from 'entities/user.entity';
 import { Journey, JourneyStatus } from 'entities/all_plans.entity';
 import { Sale } from 'entities/products/sale.entity';
 import { Product } from 'entities/products/product.entity';
+import { Stock } from 'entities/products/stock.entity';
 import { Project } from 'entities/project.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
@@ -34,6 +35,8 @@ export class ReportsService {
     private readonly saleRepository: Repository<Sale>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(Stock)
+    private readonly stockRepository: Repository<Stock>,
     @InjectRepository(Vacation)
     private readonly vacationRepository: Repository<Vacation>,
     @InjectRepository(VacationDate)
@@ -511,7 +514,7 @@ export class ReportsService {
     } as const;
 
     // 1. Fetch Sales, Products & Journeys for Custom Period
-    const [sales, products, journeys] = await Promise.all([
+    const [sales, products, journeys, stocks] = await Promise.all([
       this.saleRepository.find({
         where: {
           sale_date: Between(reportStart.toDate(), reportEnd.toDate()),
@@ -528,10 +531,14 @@ export class ReportsService {
           { date: now.format('YYYY-MM-DD'), projectId: projectId }
         ],
         relations: ['user', 'user.role', 'branch', 'branch.chain', 'checkin'],
+      }),
+      this.stockRepository.find({
+        where: { product: { project_id: projectId, is_active: true } },
+        relations: ['branch', 'branch.chain', 'product']
       })
     ]);
 
-    this.logger.log(`Fetched Data: ${sales.length} sales, ${products.length} products, ${journeys.length} journeys for Project ID ${projectId}`);
+    this.logger.log(`Fetched Data: ${sales.length} sales, ${products.length} products, ${journeys.length} journeys, ${stocks.length} stock records for Project ID ${projectId}`);
 
     const isRoaming = (name: string) => /roam|roma/i.test(name);
     // Relaxed isPromoter check if needed, but keeping it as a check for specific logic
@@ -713,6 +720,79 @@ export class ReportsService {
            }
         }
     }
+
+    // 7. Writing Table 3 (Stock)
+    const stockSheet = workbook.addWorksheet('Stock');
+    const outOfStockSheet = workbook.addWorksheet('Out of Stock');
+
+    // Matrix for Stock: [ProductName][BranchName]
+    const stockMatrix: Record<string, Record<string, number>> = {};
+    const branchesSet = new Set<string>();
+
+    stocks.forEach(s => {
+      const bName = s.branch?.name?.trim() || 'Unknown Branch';
+      const pName = s.product?.name?.trim() || s.product?.model?.trim() || 'Unknown Product';
+      branchesSet.add(bName);
+      if (!stockMatrix[pName]) stockMatrix[pName] = {};
+      stockMatrix[pName][bName] = Number(s.quantity || 0);
+    });
+
+    const sortedBranches = Array.from(branchesSet).sort();
+    
+    // Setup Stock Header
+    stockSheet.getColumn(1).width = 30;
+    sortedBranches.forEach((_, idx) => stockSheet.getColumn(idx + 2).width = 15);
+    
+    const stockHeadRow = stockSheet.getRow(1);
+    stockHeadRow.getCell(1).value = 'Product / Branch';
+    sortedBranches.forEach((b, idx) => stockHeadRow.getCell(idx + 2).value = b);
+    stockHeadRow.font = { bold: true };
+    stockHeadRow.fill = headerPattern;
+
+    let stockRowIdx = 2;
+    sortedProductNames.forEach(p => {
+      const row = stockSheet.getRow(stockRowIdx++);
+      row.getCell(1).value = p;
+      sortedBranches.forEach((b, idx) => {
+        const qty = stockMatrix[p]?.[b] || 0;
+        row.getCell(idx + 2).value = qty;
+        row.getCell(idx + 2).border = borderObj;
+        row.getCell(idx + 2).alignment = { horizontal: 'center' };
+      });
+      row.getCell(1).border = borderObj;
+    });
+    stockHeadRow.eachCell(c => c.border = borderObj);
+
+    // 8. Writing Table 4 (Out of Stock)
+    outOfStockSheet.getColumn(1).width = 25;
+    outOfStockSheet.getColumn(2).width = 30;
+    outOfStockSheet.getColumn(3).width = 15;
+
+    const oosHeadRow = outOfStockSheet.getRow(1);
+    oosHeadRow.getCell(1).value = 'Branch';
+    oosHeadRow.getCell(2).value = 'Product Name';
+    oosHeadRow.getCell(3).value = 'Current Stock';
+    oosHeadRow.font = { bold: true };
+    oosHeadRow.fill = headerPattern;
+    oosHeadRow.eachCell(c => {
+      c.border = borderObj;
+      c.alignment = { horizontal: 'center' };
+    });
+
+    let oosRowIdx = 2;
+    // We check all products against all branches mentioned in stocks?
+    // Or just items that ARE in stocks and <= 0?
+    // Usually "out of stock" means items that should be there but aren't.
+    stocks.filter(s => Number(s.quantity || 0) <= 0).forEach(s => {
+      const row = outOfStockSheet.getRow(oosRowIdx++);
+      row.getCell(1).value = s.branch?.name || 'Unknown';
+      row.getCell(2).value = s.product?.name || s.product?.model || 'Unknown';
+      row.getCell(3).value = s.quantity;
+      row.eachCell(c => {
+        c.border = borderObj;
+        c.alignment = { horizontal: 'center' };
+      });
+    });
 
     const executionDateStr = yesterday.format('YYYY_MM_DD');
     const filename = `gatemea_report_6_7_${executionDateStr}.xlsx`;

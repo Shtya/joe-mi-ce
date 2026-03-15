@@ -9,12 +9,13 @@ import { Project } from 'entities/project.entity';
 import { Journey, CheckIn } from 'entities/all_plans.entity';
 import { Sale } from 'entities/products/sale.entity';
 import { Product } from 'entities/products/product.entity';
+import { Stock } from 'entities/products/stock.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Project, Journey, CheckIn, Sale, Product, Vacation, VacationDate]),
+    TypeOrmModule.forFeature([User, Project, Journey, CheckIn, Sale, Product, Stock, Vacation, VacationDate]),
     MailModule,
   ],
   controllers: [ReportsController],
