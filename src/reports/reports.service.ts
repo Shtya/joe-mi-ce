@@ -113,7 +113,7 @@ export class ReportsService {
         sale_date: Between(startOfMonth.toDate(), endOfReportingPeriod.toDate()),
         ...(projectId && { projectId })
       },
-      relations: ['user', 'product', 'product.brand', 'product.category'],
+      relations: ['user', 'user.role', 'product', 'product.brand', 'product.category', 'branch', 'branch.chain'],
     });
 
     const vacations = await this.vacationRepository.find({
@@ -122,6 +122,36 @@ export class ReportsService {
         ...(projectId && { branch: { project: { id: projectId } } })
       },
       relations: ['user', 'vacationDates']
+    });
+
+    const isRoaming = (name: string) => /roam|roma/i.test(name || '');
+    const isPromoter = (user: any) => user?.role?.name?.toLowerCase() === 'promoter';
+
+    const journeysByUser: Record<string, Journey[]> = {};
+    journeys.forEach(j => {
+      const uid = j.user?.id;
+      if (uid) {
+        if (!journeysByUser[uid]) journeysByUser[uid] = [];
+        journeysByUser[uid].push(j);
+      }
+    });
+
+    const salesByUser: Record<string, Sale[]> = {};
+    sales.forEach(s => {
+      const uid = s.user?.id;
+      if (uid) {
+        if (!salesByUser[uid]) salesByUser[uid] = [];
+        salesByUser[uid].push(s);
+      }
+    });
+
+    const vacationsByUser: Record<string, Set<string>> = {};
+    vacations.forEach(v => {
+      const uid = v.user?.id;
+      if (uid) {
+        if (!vacationsByUser[uid]) vacationsByUser[uid] = new Set();
+        v.vacationDates.forEach(vd => vacationsByUser[uid].add(vd.date));
+      }
     });
 
     const dailyAttendanceTotals: Record<string, number> = {};
@@ -135,8 +165,11 @@ export class ReportsService {
 
     let rowNo = 1;
     for (const user of users) {
-      const userJourneys = journeys.filter(j => j.user?.id === user.id);
-      const userSales = sales.filter(s => s.user?.id === user.id);
+      if (!isPromoter(user)) continue;
+
+      const userJourneys = journeysByUser[user.id] || [];
+      const userSales = salesByUser[user.id] || [];
+      const userVacationDates = vacationsByUser[user.id] || new Set<string>();
 
       let effectiveBranch = user.branch;
       if (!effectiveBranch && userJourneys.length > 0) {
@@ -147,14 +180,17 @@ export class ReportsService {
           }
       }
 
+      const chainName = effectiveBranch?.chain?.name || 'N/A';
+      if (isRoaming(chainName)) continue;
+
       const baseRowData = {
         joe_user_1: user.username,
         no: rowNo++,
         name: user.name,
         user_status: user.is_active ? 'Active' : 'Not Active',
-        id:user.national_id,
+        id: user.national_id,
         city: effectiveBranch?.city?.name || 'N/A',
-        channel: effectiveBranch?.chain?.name || 'N/A',
+        channel: chainName,
         store: effectiveBranch?.name || 'N/A',
       };
 
@@ -181,11 +217,7 @@ export class ReportsService {
            continue;
         }
 
-        // Check for Vacation
-        const userVacations = vacations.filter(v => v.user?.id === user.id);
-        const hasVacation = userVacations.some(v => v.vacationDates.some(vd => vd.date === currentDateStr));
-
-        if (hasVacation) {
+        if (userVacationDates.has(currentDateStr)) {
             attRow[dayKey] = 'Vacation';
             t3RowArr.push('Vacation');
             t3RowArr.push('Vacation');
@@ -309,6 +341,9 @@ export class ReportsService {
 
     const modelSalesMap = new Map<string, any>();
     sales.forEach(s => {
+        if (!isPromoter(s.user)) return;
+        if (isRoaming(s.branch?.chain?.name)) return;
+
         const model = s.product?.model || 'N/A';
         const sku = s.product?.sku || 'N/A';
         const key = `${model}_${sku}`;
