@@ -9,6 +9,7 @@ import * as path from 'path';
 import { User } from 'entities/user.entity';
 import { Journey, JourneyStatus } from 'entities/all_plans.entity';
 import { Sale } from 'entities/products/sale.entity';
+import { Product } from 'entities/products/product.entity';
 import { Project } from 'entities/project.entity';
 import { Vacation } from 'entities/employee/vacation.entity';
 import { VacationDate } from 'entities/employee/vacation-date.entity';
@@ -26,6 +27,8 @@ export class ReportsService {
     private readonly journeyRepository: Repository<Journey>,
     @InjectRepository(Sale)
     private readonly saleRepository: Repository<Sale>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
     @InjectRepository(Vacation)
     private readonly vacationRepository: Repository<Vacation>,
     @InjectRepository(VacationDate)
@@ -499,22 +502,26 @@ export class ReportsService {
       right: { style: 'thin' }
     } as const;
 
-    // 1. Fetch Sales & Journeys for Custom Period
-    const sales = await this.saleRepository.find({
-      where: {
-        sale_date: Between(reportStart.toDate(), reportEnd.toDate()),
-        projectId: projectId
-      },
-      relations: ['product', 'branch', 'branch.chain', 'user', 'user.role'],
-    });
-
-    const journeys = await this.journeyRepository.find({
-      where: [
-        { date: yesterday.format('YYYY-MM-DD'), projectId: projectId },
-        { date: now.format('YYYY-MM-DD'), projectId: projectId }
-      ],
-      relations: ['user', 'user.role', 'branch', 'branch.chain', 'checkin'],
-    });
+    // 1. Fetch Sales, Products & Journeys for Custom Period
+    const [sales, products, journeys] = await Promise.all([
+      this.saleRepository.find({
+        where: {
+          sale_date: Between(reportStart.toDate(), reportEnd.toDate()),
+          projectId: projectId
+        },
+        relations: ['product', 'branch', 'branch.chain', 'user', 'user.role'],
+      }),
+      this.productRepository.find({
+        where: { project_id: projectId, is_active: true }
+      }),
+      this.journeyRepository.find({
+        where: [
+          { date: yesterday.format('YYYY-MM-DD'), projectId: projectId },
+          { date: now.format('YYYY-MM-DD'), projectId: projectId }
+        ],
+        relations: ['user', 'user.role', 'branch', 'branch.chain', 'checkin'],
+      })
+    ]);
 
     const isRoaming = (name: string) => /roam|roma/i.test(name);
     // Relaxed isPromoter check if needed, but keeping it as a check for specific logic
@@ -532,10 +539,15 @@ export class ReportsService {
 
     const salesMatrix: Record<string, Record<string, number>> = {};
     const productNamesSet = new Set<string>();
-    sales.forEach(sale => {
-      // Removing strict isPromoter filter to capture all sales data
-      // if (!isPromoter(sale.user)) return;
 
+    // Pre-populate product names from project products
+    products.forEach(p => {
+      const modelName = p.model?.trim() || p.name?.trim() || 'Unknown Model';
+      productNamesSet.add(modelName);
+      if (!salesMatrix[modelName]) salesMatrix[modelName] = {};
+    });
+
+    sales.forEach(sale => {
       const chainName = sale.branch?.chain?.name?.trim() || 'Extra';
       if (isRoaming(chainName)) return;
 
