@@ -764,14 +764,29 @@ export class ReportsService {
     stockHeadRow.eachCell(c => c.border = borderObj);
 
     // 8. Writing Table 4 (Out of Stock)
-    outOfStockSheet.getColumn(1).width = 25;
-    outOfStockSheet.getColumn(2).width = 30;
-    outOfStockSheet.getColumn(3).width = 15;
+    // Setup Out of Stock Matrix (only for items <= 0)
+    const oosMatrix: Record<string, Record<string, number>> = {};
+    const oosBranchesSet = new Set<string>();
+    const oosProductsSet = new Set<string>();
+
+    stocks.filter(s => Number(s.quantity || 0) <= 0).forEach(s => {
+      const bName = s.branch?.name?.trim() || 'Unknown Branch';
+      const pName = s.product?.name?.trim() || s.product?.model?.trim() || 'Unknown Product';
+      oosBranchesSet.add(bName);
+      oosProductsSet.add(pName);
+      if (!oosMatrix[pName]) oosMatrix[pName] = {};
+      oosMatrix[pName][bName] = Number(s.quantity || 0);
+    });
+
+    const sortedOosBranches = Array.from(oosBranchesSet).sort();
+    const sortedOosProducts = Array.from(oosProductsSet).sort();
+
+    outOfStockSheet.getColumn(1).width = 30;
+    sortedOosBranches.forEach((_, idx) => outOfStockSheet.getColumn(idx + 2).width = 15);
 
     const oosHeadRow = outOfStockSheet.getRow(1);
-    oosHeadRow.getCell(1).value = 'Branch';
-    oosHeadRow.getCell(2).value = 'Product Name';
-    oosHeadRow.getCell(3).value = 'Current Stock';
+    oosHeadRow.getCell(1).value = 'Product / Branch (OOS)';
+    sortedOosBranches.forEach((b, idx) => oosHeadRow.getCell(idx + 2).value = b);
     oosHeadRow.font = { bold: true };
     oosHeadRow.fill = headerPattern;
     oosHeadRow.eachCell(c => {
@@ -780,18 +795,21 @@ export class ReportsService {
     });
 
     let oosRowIdx = 2;
-    // We check all products against all branches mentioned in stocks?
-    // Or just items that ARE in stocks and <= 0?
-    // Usually "out of stock" means items that should be there but aren't.
-    stocks.filter(s => Number(s.quantity || 0) <= 0).forEach(s => {
+    sortedOosProducts.forEach(p => {
       const row = outOfStockSheet.getRow(oosRowIdx++);
-      row.getCell(1).value = s.branch?.name || 'Unknown';
-      row.getCell(2).value = s.product?.name || s.product?.model || 'Unknown';
-      row.getCell(3).value = s.quantity;
-      row.eachCell(c => {
-        c.border = borderObj;
-        c.alignment = { horizontal: 'center' };
+      row.getCell(1).value = p;
+      sortedOosBranches.forEach((b, idx) => {
+        const qty = oosMatrix[p]?.[b];
+        // Only show if it was part of the filtered out-of-stock list
+        if (qty !== undefined) {
+          row.getCell(idx + 2).value = qty;
+        } else {
+          row.getCell(idx + 2).value = '-'; // Not OOS at this branch
+        }
+        row.getCell(idx + 2).border = borderObj;
+        row.getCell(idx + 2).alignment = { horizontal: 'center' };
       });
+      row.getCell(1).border = borderObj;
     });
 
     const executionDateStr = yesterday.format('YYYY_MM_DD');
