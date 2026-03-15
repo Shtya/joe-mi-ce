@@ -539,12 +539,12 @@ export class ReportsService {
       const chainName = sale.branch?.chain?.name?.trim() || 'Extra';
       if (isRoaming(chainName)) return;
 
-      const productName = sale.product?.name?.trim() || 'Unknown Product';
-      productNamesSet.add(productName);
+      const modelName = sale.product?.model?.trim() || sale.product?.name?.trim() || 'Unknown Model';
+      productNamesSet.add(modelName);
       chainsSet.add(chainName);
 
-      if (!salesMatrix[productName]) salesMatrix[productName] = {};
-      salesMatrix[productName][chainName] = (salesMatrix[productName][chainName] || 0) + Number(sale.quantity || 0);
+      if (!salesMatrix[modelName]) salesMatrix[modelName] = {};
+      salesMatrix[modelName][chainName] = (salesMatrix[modelName][chainName] || 0) + Number(sale.quantity || 0);
     });
     const sortedProductNames = Array.from(productNamesSet).sort();
 
