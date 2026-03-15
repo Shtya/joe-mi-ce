@@ -3,7 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between } from 'typeorm';
 import * as exceljs from 'exceljs';
 import * as dayjs from 'dayjs';
+import * as utc from 'dayjs/plugin/utc';
+import * as timezone from 'dayjs/plugin/timezone';
 import * as os from 'os';
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import * as path from 'path';
 
 import { User } from 'entities/user.entity';
@@ -481,12 +486,15 @@ export class ReportsService {
       return null;
     }
 
-    const now = dayjs();
-    const yesterday = now.subtract(1, 'day');
+    const now = dayjs().tz('Asia/Riyadh');
+    const yesterday = now.clone().subtract(1, 'day');
     
-    // Custom Reporting Period: 7 AM Yesterday to 5 AM Today
-    const reportStart = yesterday.hour(7).startOf('hour');
-    const reportEnd = now.hour(5).startOf('hour');
+    // Custom Reporting Period: 7 AM Yesterday to 5 AM Today (Saudi Time)
+    const reportStart = yesterday.clone().set('hour', 7).set('minute', 0).set('second', 0).set('millisecond', 0);
+    const reportEnd = now.clone().set('hour', 5).set('minute', 0).set('second', 0).set('millisecond', 0);
+
+    this.logger.log(`Gatemea Report Range (Saudi Time): ${reportStart.format()} to ${reportEnd.format()}`);
+    this.logger.log(`Gatemea Query UTC Range: ${reportStart.toDate().toISOString()} to ${reportEnd.toDate().toISOString()}`);
 
     const workbook = new exceljs.Workbook();
     workbook.creator = 'System SixSeven';
@@ -523,6 +531,8 @@ export class ReportsService {
       })
     ]);
 
+    this.logger.log(`Fetched Data: ${sales.length} sales, ${products.length} products, ${journeys.length} journeys for Project ID ${projectId}`);
+
     const isRoaming = (name: string) => /roam|roma/i.test(name);
     // Relaxed isPromoter check if needed, but keeping it as a check for specific logic
     const isPromoter = (user: any) => {
@@ -542,21 +552,21 @@ export class ReportsService {
 
     // Pre-populate product names from project products
     products.forEach(p => {
-      const modelName = p.model?.trim() || p.name?.trim() || 'Unknown Model';
-      productNamesSet.add(modelName);
-      if (!salesMatrix[modelName]) salesMatrix[modelName] = {};
+      const displayName = p.name?.trim() || p.model?.trim() || 'Unknown Product';
+      productNamesSet.add(displayName);
+      if (!salesMatrix[displayName]) salesMatrix[displayName] = {};
     });
 
     sales.forEach(sale => {
       const chainName = sale.branch?.chain?.name?.trim() || 'Extra';
       if (isRoaming(chainName)) return;
 
-      const modelName = sale.product?.model?.trim() || sale.product?.name?.trim() || 'Unknown Model';
-      productNamesSet.add(modelName);
+      const displayName = sale.product?.name?.trim() || sale.product?.model?.trim() || 'Unknown Product';
+      productNamesSet.add(displayName);
       chainsSet.add(chainName);
 
-      if (!salesMatrix[modelName]) salesMatrix[modelName] = {};
-      salesMatrix[modelName][chainName] = (salesMatrix[modelName][chainName] || 0) + Number(sale.quantity || 0);
+      if (!salesMatrix[displayName]) salesMatrix[displayName] = {};
+      salesMatrix[displayName][chainName] = (salesMatrix[displayName][chainName] || 0) + Number(sale.quantity || 0);
     });
     const sortedProductNames = Array.from(productNamesSet).sort();
 
@@ -569,11 +579,11 @@ export class ReportsService {
       // Time-based filtering for accurate shift reporting
       const checkinTime = j.checkin?.checkInTime;
       if (checkinTime) {
-        const cjs = dayjs(checkinTime);
+        const cjs = dayjs(checkinTime).tz('Asia/Riyadh');
         if (cjs.isBefore(reportStart) || cjs.isAfter(reportEnd)) return;
       } else {
-        // Fallback for journeys without check-in records: only include if they are from yesterday
-        if (j.date !== yesterdayStr) return;
+        // Fallback for journeys without check-in records: only include if they are from yesterday (Saudi date)
+        if (j.date !== yesterday.format('YYYY-MM-DD')) return;
       }
 
       chainsSet.add(chainName);
