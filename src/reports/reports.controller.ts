@@ -13,7 +13,7 @@ export class ReportsController {
     private readonly mailService: MailService
   ) {}
 
-  @Get('test-email/:email')
+  @Get('/:email')
   async sendTestEmailEndpoint(@Param('email') email: string, @Res() res: Response) {
     try {
       const filePath = await this.reportsService.generateGatemeaReport();

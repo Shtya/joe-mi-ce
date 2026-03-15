@@ -467,7 +467,7 @@ export class ReportsService {
         sale_date: Between(yesterday.startOf('day').toDate(), yesterday.endOf('day').toDate()),
         projectId: projectId
       },
-      relations: ['product', 'branch', 'branch.chain'],
+      relations: ['product', 'branch', 'branch.chain', 'user', 'user.role'],
     });
 
     const journeys = await this.journeyRepository.find({
@@ -478,44 +478,51 @@ export class ReportsService {
       relations: ['user', 'user.role', 'branch', 'branch.chain'],
     });
 
-    const chains = project.chains || [];
-    const chainNames = chains.map(c => c.name?.trim()).filter(Boolean).sort();
-    if (!chainNames.includes('Roaming')) chainNames.push('Roaming');
+    const isRoaming = (name: string) => /roam|roma/i.test(name);
+    const isPromoter = (user: any) => user?.role?.name?.toLowerCase() === 'promoter';
     
-    // 2. Data Processing - Sales
+    const chainsSet = new Set<string>();
+    (project.chains || []).forEach(c => {
+      const name = c.name?.trim();
+      if (name && !isRoaming(name)) chainsSet.add(name);
+    });
+
     const salesMatrix: Record<string, Record<string, number>> = {};
     const productNamesSet = new Set<string>();
-
     sales.forEach(sale => {
-      const productName = sale.product?.name?.trim() || 'Unknown Product';
+      if (!isPromoter(sale.user)) return;
+
       const chainName = sale.branch?.chain?.name?.trim() || 'Extra';
-      
+      if (isRoaming(chainName)) return;
+
+      const productName = sale.product?.name?.trim() || 'Unknown Product';
       productNamesSet.add(productName);
+      chainsSet.add(chainName);
+
       if (!salesMatrix[productName]) salesMatrix[productName] = {};
-      if (!salesMatrix[productName][chainName]) salesMatrix[productName][chainName] = 0;
-      
-      salesMatrix[productName][chainName] += Number(sale.quantity || 0);
+      salesMatrix[productName][chainName] = (salesMatrix[productName][chainName] || 0) + Number(sale.quantity || 0);
     });
     const sortedProductNames = Array.from(productNamesSet).sort();
 
-    // 3. Data Processing - Attendance
-    // We remove the strict "promoter" role filter because user roles may vary (e.g. Merchandiser, Gatemea Agent)
-    // and anyone scheduled for a journey on this project should be on the attendance sheet.
     const attendanceMap: Record<string, Set<string>> = {}; 
-    
     journeys.forEach(j => {
+      if (!isPromoter(j.user)) return;
+
+      const chainName = j.branch?.chain?.name?.trim() || 'Extra';
+      if (isRoaming(chainName)) return;
+
+      chainsSet.add(chainName);
       const statusStr = j.status?.toLowerCase?.() || '';
-      const isPresent = [
-        'present', 'closed', 'unplanned_present', 'unplanned_closed'
-      ].includes(statusStr);
+      const isPresent = ['present', 'closed', 'unplanned_present', 'unplanned_closed'].includes(statusStr);
       
       if (isPresent) {
-        const chainName = j.branch?.chain?.name?.trim() || 'Extra';
-        const key = j.user?.id || j.id; // Unique identifier per user in chain today
+        const key = j.user?.id || j.id;
         if (!attendanceMap[chainName]) attendanceMap[chainName] = new Set();
         attendanceMap[chainName].add(key);
       }
     });
+
+    const chainNames = Array.from(chainsSet).sort();
 
     // 4. Writing Table 1 (Sales)
     reportSheet.getColumn(1).width = 30;
