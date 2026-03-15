@@ -480,7 +480,10 @@ export class ReportsService {
 
     const now = dayjs();
     const yesterday = now.subtract(1, 'day');
-    const dateStr = yesterday.format('YYYY-MM-DD');
+    
+    // Custom Reporting Period: 7 AM Yesterday to 5 AM Today
+    const reportStart = yesterday.hour(7).startOf('hour');
+    const reportEnd = now.hour(5).startOf('hour');
 
     const workbook = new exceljs.Workbook();
     workbook.creator = 'System SixSeven';
@@ -496,25 +499,30 @@ export class ReportsService {
       right: { style: 'thin' }
     } as const;
 
-    // 1. Fetch Sales & Journeys for Yesterday
+    // 1. Fetch Sales & Journeys for Custom Period
     const sales = await this.saleRepository.find({
       where: {
-        sale_date: Between(yesterday.startOf('day').toDate(), yesterday.endOf('day').toDate()),
+        sale_date: Between(reportStart.toDate(), reportEnd.toDate()),
         projectId: projectId
       },
       relations: ['product', 'branch', 'branch.chain', 'user', 'user.role'],
     });
 
     const journeys = await this.journeyRepository.find({
-      where: {
-        date: dateStr,
-        projectId: projectId
-      },
-      relations: ['user', 'user.role', 'branch', 'branch.chain'],
+      where: [
+        { date: yesterday.format('YYYY-MM-DD'), projectId: projectId },
+        { date: now.format('YYYY-MM-DD'), projectId: projectId }
+      ],
+      relations: ['user', 'user.role', 'branch', 'branch.chain', 'checkin'],
     });
 
     const isRoaming = (name: string) => /roam|roma/i.test(name);
-    const isPromoter = (user: any) => user?.role?.name?.toLowerCase() === 'promoter';
+    // Relaxed isPromoter check if needed, but keeping it as a check for specific logic
+    const isPromoter = (user: any) => {
+      const roleName = user?.role?.name?.toLowerCase();
+      // Relaxing filter to include multiple relevant roles if "promoter" is too strict
+      return ['promoter', 'supervisor', 'admin'].includes(roleName);
+    };
     
     const chainsSet = new Set<string>();
     (project.chains || []).forEach(c => {
@@ -525,7 +533,8 @@ export class ReportsService {
     const salesMatrix: Record<string, Record<string, number>> = {};
     const productNamesSet = new Set<string>();
     sales.forEach(sale => {
-      if (!isPromoter(sale.user)) return;
+      // Removing strict isPromoter filter to capture all sales data
+      // if (!isPromoter(sale.user)) return;
 
       const chainName = sale.branch?.chain?.name?.trim() || 'Extra';
       if (isRoaming(chainName)) return;
@@ -540,17 +549,32 @@ export class ReportsService {
     const sortedProductNames = Array.from(productNamesSet).sort();
 
     const attendanceMap: Record<string, Set<string>> = {}; 
+    const yesterdayStr = yesterday.format('YYYY-MM-DD');
     journeys.forEach(j => {
-      if (!isPromoter(j.user)) return;
-
       const chainName = j.branch?.chain?.name?.trim() || 'Extra';
       if (isRoaming(chainName)) return;
 
+      // Time-based filtering for accurate shift reporting
+      const checkinTime = j.checkin?.checkInTime;
+      if (checkinTime) {
+        const cjs = dayjs(checkinTime);
+        if (cjs.isBefore(reportStart) || cjs.isAfter(reportEnd)) return;
+      } else {
+        // Fallback for journeys without check-in records: only include if they are from yesterday
+        if (j.date !== yesterdayStr) return;
+      }
+
       chainsSet.add(chainName);
       const statusStr = j.status?.toLowerCase?.() || '';
-      const isPresent = ['present', 'closed', 'unplanned_present', 'unplanned_closed'].includes(statusStr);
       
-      if (isPresent) {
+      // Using Enum-aligned identification for attendance
+      const isPresentStatus = [
+        'present', 'closed', 'unplanned_present', 'unplanned_closed',
+        JourneyStatus.PRESENT, JourneyStatus.CLOSED, 
+        JourneyStatus.UNPLANNED_PRESENT, JourneyStatus.UNPLANNED_CLOSED
+      ].includes(statusStr as any);
+      
+      if (isPresentStatus) {
         const key = j.user?.id || j.id;
         if (!attendanceMap[chainName]) attendanceMap[chainName] = new Set();
         attendanceMap[chainName].add(key);
