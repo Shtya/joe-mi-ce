@@ -176,55 +176,71 @@ export class JourneyService {
 
   // ===== إدارة الخطط =====
   async createPlan(dto: CreateJourneyPlanDto) {
-    const [user, branch, shift] = await Promise.all([
+    const [user, branch] = await Promise.all([
       this.userRepo.findOne({ where: { id: dto.userId } }),
       this.branchRepo.findOne({
         where: { id: dto.branchId },
         relations: ['city', 'city.region', 'project'],
       }),
-      this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
     ]);
 
     if (!user) throw new NotFoundException('User not found');
     if (!branch) throw new NotFoundException('Branch not found');
-    if (!shift) throw new NotFoundException('Shift not found');
 
     if (!branch.project) {
       throw new BadRequestException('Branch has no project assigned');
     }
 
-    // ❗ Check if same plan already exists
-    const existing = await this.journeyPlanRepo.find({
-      where: {
-        user: { id: dto.userId },
-        branch: { id: dto.branchId },
-        shift: { id: dto.shiftId },
-      },
+    const shifts = await this.shiftRepo.find({
+      where: { id: In(dto.shiftId) },
     });
 
-    for (const plan of existing) {
-      const overlap = plan.days.filter(d => dto.days.includes(d));
-      if (overlap.length > 0) {
-        throw new ConflictException({
-          message: "Conflict with existing plan days",
-          overlappingDays: overlap
-        });
-      }
+    if (shifts.length !== dto.shiftId.length) {
+      throw new NotFoundException('One or more shifts not found');
     }
 
-    const newPlan = this.journeyPlanRepo.create({
-      user,
-      branch,
-      shift,
-      projectId: branch.project.id,
-      days: dto.days,
-      createdBy: user,
-    });
+    const savedPlans: JourneyPlan[] = [];
 
-    const savedPlan = await this.journeyPlanRepo.save(newPlan);
+    for (const shift of shifts) {
+      // ❗ Check if same plan already exists
+      const existing = await this.journeyPlanRepo.find({
+        where: {
+          user: { id: dto.userId },
+          branch: { id: dto.branchId },
+          shift: { id: shift.id },
+        },
+      });
 
-    return savedPlan;
+      for (const plan of existing) {
+        const overlap = plan.days.filter(d => dto.days.includes(d));
+        if (overlap.length > 0) {
+          throw new ConflictException({
+            message: `Conflict with existing plan days for shift ${shift.name}`,
+            overlappingDays: overlap,
+          });
+        }
+      }
+
+      const newPlan = this.journeyPlanRepo.create({
+        user,
+        branch,
+        shift,
+        projectId: branch.project.id,
+        days: dto.days,
+        createdBy: user,
+      });
+
+      const savedPlan = await this.journeyPlanRepo.save(newPlan);
+      savedPlans.push(savedPlan);
+    }
+
+    if (dto.includeToday) {
+      await this.createJourneysForToday(dto.userId);
+    }
+
+    return savedPlans;
   }
+
   async updatePlan(id: string, dto: UpdateJourneyPlanDto) {
     const plan = await this.journeyPlanRepo.findOne({
       where: { id },
@@ -1401,7 +1417,7 @@ if (typeof value === 'string') {
         const dto: CreateJourneyPlanDto = {
             userId: user.id,
             branchId: branch.id,
-            shiftId: shift.id,
+            shiftId: [shift.id],
             days: days
         };
 

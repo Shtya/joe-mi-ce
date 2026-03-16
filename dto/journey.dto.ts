@@ -7,13 +7,18 @@ export class CreateJourneyPlanDto {
   @IsUUID()
   branchId: string;
 
-  @IsUUID()
-  shiftId: string;
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsUUID('all', { each: true })
+  shiftId: string[];
 
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })
   days: string[];
+  
+  @IsOptional()
+  includeToday?: boolean;
 
 }
 export class UpdateJourneyPlanDto {
@@ -24,7 +29,7 @@ export class UpdateJourneyPlanDto {
   branchId: string;
 
   @IsOptional()
-  shiftId: string;
+  shiftId?: string;
 
   @IsOptional()
   @IsArray()
