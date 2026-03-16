@@ -1425,7 +1425,10 @@ export class ExportService {
       const baseUrl = process.env.MAIN_API_URL || `http://localhost:${process.env.PORT || 3030}`;
       const fullUrl = cleanUrl.startsWith('http') ? cleanUrl : `${baseUrl}/${cleanUrl}`; 
   
-      console.log(`Fetching data from: ${fullUrl}`);
+      console.log(`[ExportService] Fetching data from: ${fullUrl}`);
+      if (!authorization) {
+        console.warn(`[ExportService] No authorization header provided for request to: ${cleanUrl}`);
+      }
   
       const headers: any = {
         'Content-Type': 'application/json',
@@ -1442,8 +1445,18 @@ export class ExportService {
       return response.data;
   
     } catch (error) {
-      console.error('Error fetching data from URL:', error.response?.data || error.message);
-      throw new Error(`Failed to fetch data from ${url}: ${error.response?.data?.message || error.message}`);
+      const status = error.response?.status;
+      const data = error.response?.data;
+      console.error(`[ExportService] Error fetching data from ${url}. Status: ${status}`, data || error.message);
+      
+      let errorMessage = `Failed to fetch data from ${url}`;
+      if (status === 401) {
+        errorMessage += `: Unauthorized (401). Please ensure you have valid credentials.`;
+      } else {
+        errorMessage += `: ${data?.message || error.message}`;
+      }
+      
+      throw new Error(errorMessage);
     }
   }
 

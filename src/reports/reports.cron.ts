@@ -28,7 +28,7 @@ export class ReportsCron {
       const filename = path.basename(filePath);
       const subject = 'JOE MI CI Monthly Report';
       const toRecipient = 'mamro@joe13th.com';
-      const ccRecipients = '"Abdulrahman Abdullah" <a.doma@AECKSA.COM>, "Mohammed Abdu Alhaj" <MAlhaj@aecksa.com>, Riyad Abdullah Ali Alzahrani <r.alzahrani@AECKSA.COM>';
+      const ccRecipients = '"Abdulrahman Abdullah" <a.doma@AECKSA.COM>, "Mohammed Abdu Alhaj" <MAlhaj@aecksa.com>, "Riyad Abdullah Ali Alzahrani" <r.alzahrani@AECKSA.COM>';
       const textBody = `Dear Team,\n\nPlease find attached the JOE MI CI Monthly Performance Report up to yesterday.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
@@ -99,7 +99,7 @@ export class ReportsCron {
       const filename = path.basename(filePath);
       const recipient = 'abdullah.almeri@gatemea.com';
       const subject = 'Gatemea Report Six Seven';
-      const ccRecipients = '"mohamad.hamze@gatemea.com", "Oussama.Barakat@gatemea.com"';
+      const ccRecipients = 'mohamad.hamze@gatemea.com, Oussama.Barakat@gatemea.com';
 
       const textBody = `Dear Team,\n\nPlease find attached the Gatemea SixSeven Daily Performance Report for yesterday.\n\nBest regards,\nSystem SixSeven Operations`;
       const emailHtml = `
