@@ -70,6 +70,7 @@ export class ReportsService {
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const tab3Sheet = workbook.addWorksheet(`Check-in - Check-out`);
     const salesByModelSheet = workbook.addWorksheet(`Sales by Model`);
+    const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
 
     const baseColumns = [
       { header: 'JOE M.I. USER', key: 'joe_user_1', width: 15 },
@@ -403,6 +404,48 @@ export class ReportsService {
         });
     });
 
+    // --- Sales Detail Tab ---
+    salesDetailSheet.columns = [
+        { header: 'User Name', key: 'user_name', width: 25 },
+        { header: 'User Username', key: 'user_username', width: 25 },
+        { header: 'User Mobile', key: 'user_mobile', width: 15 },
+        { header: 'City Name', key: 'city_name', width: 15 },
+        { header: 'Chain', key: 'chain', width: 15 },
+        { header: 'Branch', key: 'branch', width: 20 },
+        { header: 'Brand', key: 'brand', width: 15 },
+        { header: 'Categories', key: 'categories', width: 15 },
+        { header: 'Product Model', key: 'product_model', width: 20 },
+        { header: 'Price', key: 'price', width: 10 },
+        { header: 'Total Amount', key: 'total_amount', width: 15 },
+        { header: 'Quantity', key: 'quantity', width: 10 },
+        { header: 'Date of Sale', key: 'date_of_sale', width: 15 },
+        { header: 'Time of Sale', key: 'time_of_sale', width: 10 },
+    ];
+
+    sales.forEach(s => {
+        if (!isPromoter(s.user)) return;
+        if (isRoaming(s.branch?.chain?.name)) return;
+
+        const saleDate = dayjs(s.sale_date);
+        
+        salesDetailSheet.addRow({
+            user_name: s.user?.name || '-',
+            user_username: s.user?.username || '-',
+            user_mobile: s.user?.mobile || '-',
+            city_name: s.branch?.city?.name || '-',
+            chain: s.branch?.chain?.name || '-',
+            branch: s.branch?.name || '-',
+            brand: s.product?.brand?.name || '-',
+            categories: s.product?.category?.name || '-',
+            product_model: s.product?.model || s.product?.name || '-',
+            price: s.price ?? '-',
+            total_amount: s.total_amount ?? '-',
+            quantity: s.quantity ?? '-',
+            date_of_sale: saleDate.format('YYYY-MM-DD'),
+            time_of_sale: saleDate.format('HH:mm:ss'),
+        });
+    });
+
     // Formatting 
     const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEBF1DE' } }; 
     const headerDateFont = { bold: true, color: { argb: 'FFFF0000' } }; 
@@ -420,11 +463,16 @@ export class ReportsService {
         bottom: { style: 'thick', color: { argb: 'FF000000' } }
     };
 
-    [attendanceSheet, tab2Sheet, tab3Sheet, salesByModelSheet].forEach(sheet => {
+    [attendanceSheet, tab2Sheet, tab3Sheet, salesByModelSheet, salesDetailSheet].forEach(sheet => {
       const isTab3 = sheet.name === 'Check-in - Check-out';
       const isSalesByModel = sheet.name === 'Sales by Model';
+      const isSalesDetail = sheet.name === 'Sales Detail';
       const isAttendance = sheet.name === 'Attendance';
-      const effectiveBaseColCount = isSalesByModel ? 5 : baseColumns.length;
+      
+      let effectiveBaseColCount = baseColumns.length;
+      if (isSalesByModel) effectiveBaseColCount = 5;
+      if (isSalesDetail) effectiveBaseColCount = 0; // Sales Detail doesn't use standard base/date column split logic for coloring
+      
       const startRow = isTab3 ? 2 : 1; 
 
       if (sheet.rowCount > startRow && sheet.columnCount > 0) {
