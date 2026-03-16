@@ -20,7 +20,8 @@ export class MailService {
     toEmail?: string,
     subject?: string,
     text?: string,
-    html?: string
+    html?: string,
+    ccEmail?: string
   ): Promise<boolean> {
     const apiKey = this.configService.get<string>('MAILGUN_API_KEY');
     const domain = this.configService.get<string>('MAILGUN_DOMAIN');
@@ -38,6 +39,9 @@ export class MailService {
       const formData = new FormData();
       formData.append('from', fromEmail);
       formData.append('to', toEmail || defaultToEmail);
+      if (ccEmail) {
+        formData.append('cc', ccEmail);
+      }
       formData.append('subject', subject || 'Daily Team Report');
       
       if (text) formData.append('text', text);

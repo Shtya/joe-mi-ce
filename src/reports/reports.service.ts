@@ -422,7 +422,14 @@ export class ReportsService {
         { header: 'Time of Sale', key: 'time_of_sale', width: 10 },
     ];
 
-    sales.forEach(s => {
+    // Sort sales by date and time (ascending)
+    const sortedSales = [...sales].sort((a, b) => {
+        const dateA = dayjs(a.sale_date);
+        const dateB = dayjs(b.sale_date);
+        return dateA.diff(dateB);
+    });
+
+    sortedSales.forEach(s => {
         if (!isPromoter(s.user)) return;
         if (isRoaming(s.branch?.chain?.name)) return;
 
