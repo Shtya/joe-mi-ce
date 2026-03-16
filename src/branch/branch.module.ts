@@ -11,16 +11,12 @@ import { JwtService } from '@nestjs/jwt';
 import { User } from 'entities/user.entity';
 import { SalesTarget } from 'entities/sales-target.entity';
 import { Journey, CheckIn } from 'entities/all_plans.entity';
-import { UsersModule } from 'src/users/users.module';
+import { UsersService } from 'src/users/users.service';
 
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Branch, Project, City, Chain, User, SalesTarget, Journey, CheckIn]),
-    UsersModule
-  ],
+  imports: [TypeOrmModule.forFeature([Branch, Project, City, Chain, User, SalesTarget, Journey, CheckIn])],
   controllers: [BranchController],
-  providers: [BranchService],
-  exports: [BranchService],
+  providers: [BranchService ,UsersService],
 })
 export class BranchModule {}
