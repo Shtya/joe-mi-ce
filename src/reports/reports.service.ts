@@ -57,13 +57,11 @@ export class ReportsService {
     const now = dayjs();
     const startOfMonth = now.startOf('month');
     
-    let endOfReportingPeriod = now.subtract(1, 'day').endOf('day');
-    if (endOfReportingPeriod.isBefore(startOfMonth)) {
-      endOfReportingPeriod = now.endOf('day');
-    }
+    const daysInMonthForAttendance = now.daysInMonth();
+    const daysInMonthForSales = (now.month() === dayjs().month() && now.year() === dayjs().year()) ? now.date() : now.daysInMonth();
 
-    const daysInMonth = (now.month() === dayjs().month() && now.year() === dayjs().year()) ? now.date() : now.daysInMonth();
     const currentMonthPrefix = now.format('YYYY-MM');
+    const endOfReportingPeriod = now.endOf('day');
 
     const workbook = new exceljs.Workbook();
     workbook.creator = 'System Cron';
@@ -84,17 +82,23 @@ export class ReportsService {
       { header: 'Store', key: 'store', width: 20 },
     ];
 
-    const dateColumns = [];
+    const dateColumnsForAttendance = [];
+    const dateColumnsForSales = [];
     const checkinDateColumns = [];
-    for (let i = 1; i <= daysInMonth; i++) {
+
+    for (let i = 1; i <= daysInMonthForAttendance; i++) {
         const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
-        dateColumns.push({ header: dateStr, key: `day_${i}`, width: 15 });
+        dateColumnsForAttendance.push({ header: dateStr, key: `day_${i}`, width: 15 });
         checkinDateColumns.push({ header: `${dateStr} Check-in`, width: 15 });
         checkinDateColumns.push({ header: `${dateStr} Check-out`, width: 15 });
+
+        if (i <= daysInMonthForSales) {
+            dateColumnsForSales.push({ header: dateStr, key: `day_${i}`, width: 15 });
+        }
     }
 
-    attendanceSheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'ttl_attendance', width: 15 }];
-    tab2Sheet.columns = [...baseColumns, ...dateColumns, { header: 'TLL DAYS', key: 'tll_days_tab2', width: 15 }];
+    attendanceSheet.columns = [...baseColumns, ...dateColumnsForAttendance, { header: 'TLL DAYS', key: 'ttl_attendance', width: 15 }];
+    tab2Sheet.columns = [...baseColumns, ...dateColumnsForSales, { header: 'TLL DAYS', key: 'tll_days_tab2', width: 15 }];
 
     // Set widths for Tab 3
     const tab3TotalCols = baseColumns.length + checkinDateColumns.length + 1;
@@ -166,7 +170,7 @@ export class ReportsService {
     });
 
     const dailyAttendanceTotals: Record<string, number> = {};
-    for (let i = 1; i <= daysInMonth; i++) {
+    for (let i = 1; i <= daysInMonthForAttendance; i++) {
       dailyAttendanceTotals[`day_${i}`] = 0;
     }
 
@@ -216,23 +220,17 @@ export class ReportsService {
       let ttlAttendance = 0;
       let totalSales = 0;
 
-      for (let i = 1; i <= daysInMonth; i++) {
+      for (let i = 1; i <= daysInMonthForAttendance; i++) {
         const currentDateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
         const dayKey = `day_${i}`;
         
-        if (dayjs(currentDateStr).isAfter(endOfReportingPeriod, 'day')) {
-           attRow[dayKey] = '';
-           t2Row[dayKey] = 'SAR -';
-           t3RowArr.push('');
-           t3RowArr.push('');
-           continue;
-        }
+        const isPastReportingPeriod = dayjs(currentDateStr).isAfter(endOfReportingPeriod, 'day');
 
         if (userVacationDates.has(currentDateStr)) {
             attRow[dayKey] = 'Vacation';
             t3RowArr.push('Vacation');
             t3RowArr.push('Vacation');
-            t2Row[dayKey] = 'SAR -';
+            if (i <= daysInMonthForSales) t2Row[dayKey] = 'SAR -';
             continue;
         }
 
@@ -253,7 +251,7 @@ export class ReportsService {
                 attRow[dayKey] = ''; 
             }
         } else {
-            attRow[dayKey] = '';
+            attRow[dayKey] = isPastReportingPeriod ? '' : (user.is_active ? 0 : '');
         }
 
         if (dayJourneys.length > 0) {
@@ -263,15 +261,17 @@ export class ReportsService {
             t3RowArr.push(inTimes.length > 0 ? inTimes.join(' , ') : '--:--');
             t3RowArr.push(outTimes.length > 0 ? outTimes.join(' , ') : '--:--');
         } else {
-            t3RowArr.push(user.is_active ? '--:--' : '');
-            t3RowArr.push(user.is_active ? '--:--' : '');
+            t3RowArr.push(isPastReportingPeriod ? '' : (user.is_active ? '--:--' : ''));
+            t3RowArr.push(isPastReportingPeriod ? '' : (user.is_active ? '--:--' : ''));
         }
 
-        const daySales = userSales.filter(s => dayjs(s.sale_date).format('YYYY-MM-DD') === currentDateStr);
-        const dailySalesTotal = daySales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
-        
-        t2Row[dayKey] = dailySalesTotal > 0 ? `SAR ${dailySalesTotal}` : 'SAR -';
-        totalSales += dailySalesTotal;
+        if (i <= daysInMonthForSales) {
+            const daySales = userSales.filter(s => dayjs(s.sale_date).format('YYYY-MM-DD') === currentDateStr);
+            const dailySalesTotal = daySales.reduce((sum, sale) => sum + Number(sale.total_amount || 0), 0);
+            
+            t2Row[dayKey] = dailySalesTotal > 0 ? `SAR ${dailySalesTotal}` : 'SAR -';
+            totalSales += dailySalesTotal;
+        }
       }
 
       attRow['ttl_attendance'] = ttlAttendance;
@@ -285,7 +285,7 @@ export class ReportsService {
 
     const totalsRowData: Record<string, any> = { joe_user_1: 'Total', name: 'Total', user_status: '' }; 
     let totalOfTotals = 0;
-    for (let i = 1; i <= daysInMonth; i++) {
+    for (let i = 1; i <= daysInMonthForAttendance; i++) {
        const key = `day_${i}`;
        totalsRowData[key] = dailyAttendanceTotals[key];
        totalOfTotals += dailyAttendanceTotals[key];
@@ -307,7 +307,7 @@ export class ReportsService {
     });
 
     let currentColIndex = baseColumns.length + 1;
-    for (let i = 1; i <= daysInMonth; i++) {
+    for (let i = 1; i <= daysInMonthForAttendance; i++) {
         const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
         
         const dateCell = headerRow1.getCell(currentColIndex);
@@ -337,7 +337,7 @@ export class ReportsService {
     ];
 
     const salesModelDateColumns = [];
-    for (let i = 1; i <= daysInMonth; i++) {
+    for (let i = 1; i <= daysInMonthForSales; i++) {
         const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, '0')}`;
         salesModelDateColumns.push({ header: dateStr, key: `day_${i}`, width: 15 });
     }
@@ -372,7 +372,7 @@ export class ReportsService {
                 total_amount: 0,
                 last_sale_date: null
             };
-            for (let i = 1; i <= daysInMonth; i++) {
+            for (let i = 1; i <= daysInMonthForSales; i++) {
                 initialData[`day_${i}`] = 0;
             }
             modelSalesMap.set(key, initialData);
@@ -381,7 +381,7 @@ export class ReportsService {
         const entry = modelSalesMap.get(key);
         
         // Update daily quantity
-        if (dayOfMonth <= daysInMonth) {
+        if (dayOfMonth <= daysInMonthForSales) {
             entry[`day_${dayOfMonth}`] += Number(s.quantity || 0);
         }
 
