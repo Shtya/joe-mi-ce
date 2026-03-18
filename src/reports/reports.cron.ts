@@ -13,7 +13,7 @@ export class ReportsCron {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('0 9 * * *', { timeZone: 'Asia/Riyadh' })
+  @Cron('0 8 * * *', { timeZone: 'Asia/Riyadh' })
   async handleMonthlyReportCron() {
     this.logger.log('Starting JOE MI CI monthly report cron job');
 
@@ -84,7 +84,7 @@ export class ReportsCron {
 
 
 
-  @Cron('0 9 * * *', { timeZone: 'Asia/Riyadh' })
+  @Cron('0 8 * * *', { timeZone: 'Asia/Riyadh' })
   async handleGatemeaReport() {
     this.logger.log('Starting Gatemea report cron job (Daily Yesterday)');
 
