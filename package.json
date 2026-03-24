@@ -108,6 +108,8 @@
     "moduleNameMapper": {
       "^entities/(.*)$": "<rootDir>/../entities/$1",
       "^common/(.*)$": "<rootDir>/../common/$1",
+      "^enums/(.*)$": "<rootDir>/../enums/$1",
+      "^dto/(.*)$": "<rootDir>/../dto/$1",
       "^src/(.*)$": "<rootDir>/$1"
     },
     "collectCoverageFrom": [

@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not, ILike, MoreThan } from 'typeorm';
 import * as dayjs from 'dayjs';
 import * as XLSX from 'xlsx';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto, AdminCheckInOutDto } from 'dto/journey.dto';
+import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto, AdminCheckInOutDto, AssignShiftAllDaysDto } from 'dto/journey.dto';
 
 import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
 import { User } from 'entities/user.entity';
@@ -19,6 +19,7 @@ import { CRUD } from 'common/crud.service';
 import { NotificationService } from 'src/notification/notification.service';
 import { toLocalISOString } from 'common/date.util';
 import { logger } from 'nestjs-i18n';
+import { ERole } from 'enums/Role.enum';
 
 @Injectable()
 export class JourneyService {
@@ -1452,6 +1453,70 @@ if (typeof value === 'string') {
     }
 
     return this.journeyPlanRepo.delete({ user: { id: userId } });
+  }
+
+  async assignShiftToAllPromoters(dto: AssignShiftAllDaysDto, adminUser: User) {
+    const { projectId, shiftId } = dto;
+
+    const shift = await this.shiftRepo.findOne({ where: { id: shiftId } });
+    if (!shift) throw new NotFoundException('Shift not found');
+
+    // 1. Find all promoters in the project
+    const promoters = await this.userRepo.find({
+      where: {
+        project_id: projectId,
+        role: { name: ERole.PROMOTER },
+      },
+      relations: ['branch', 'role'],
+    });
+
+    if (promoters.length === 0) {
+      return { message: 'No promoters found in this project', processedCount: 0 };
+    }
+
+    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    let processedCount = 0;
+
+    for (const promoter of promoters) {
+      // Prioritize branch from the last checked-in journey
+      const lastCheckinJourney = await this.journeyRepo.manager.createQueryBuilder(Journey, 'journey')
+        .innerJoin('journey.checkin', 'checkin')
+        .leftJoinAndSelect('journey.branch', 'branch')
+        .where('journey.user.id = :userId', { userId: promoter.id })
+        .orderBy('checkin.checkInTime', 'DESC')
+        .getOne();
+
+      const branchToUse = lastCheckinJourney?.branch || promoter.branch;
+
+      if (!branchToUse) {
+        console.warn(`Skipping promoter ${promoter.name} (${promoter.id}): No branch found`);
+        continue;
+      }
+
+      await this.journeyRepo.manager.transaction(async (em) => {
+        // 2. Remove all existing plans for this promoter
+        await em.delete(JourneyPlan, { user: { id: promoter.id } });
+
+        // 3. Create new plan for all 7 days
+        const newPlan = em.create(JourneyPlan, {
+          user: promoter,
+          branch: branchToUse,
+          shift: shift,
+          projectId: projectId,
+          days: allDays,
+          createdBy: adminUser,
+        });
+
+        await em.save(JourneyPlan, newPlan);
+      });
+
+      processedCount++;
+    }
+
+    return {
+      message: `Successfully assigned shift ${shift.name} to ${processedCount} promoters`,
+      processedCount,
+    };
   }
 
   async fixNightShiftJourneys(date?: string) {

@@ -38,6 +38,13 @@ export class UpdateJourneyPlanDto {
   days: string[];
 
 }
+export class AssignShiftAllDaysDto {
+  @IsUUID()
+  projectId: string;
+
+  @IsUUID()
+  shiftId: string;
+}
 
 
 export class CreateUnplannedJourneyDto {
