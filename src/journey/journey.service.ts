@@ -1493,11 +1493,19 @@ if (typeof value === 'string') {
         continue;
       }
 
-      await this.journeyRepo.manager.transaction(async (em) => {
-        // 2. Remove all existing plans for this promoter
-        await em.delete(JourneyPlan, { user: { id: promoter.id } });
+      // 2. Fetch existing plans for safe deactivation (clearing days instead of deleting)
+      const existingPlans = await this.journeyPlanRepo.find({
+        where: { user: { id: promoter.id } }
+      });
 
-        // 3. Create new plan for all 7 days
+      await this.journeyRepo.manager.transaction(async (em) => {
+        // 3. Deactivate existing plans by clearing their days
+        for (const plan of existingPlans) {
+          plan.days = [];
+          await em.save(JourneyPlan, plan);
+        }
+
+        // 4. Create new plan for all 7 days
         const newPlan = em.create(JourneyPlan, {
           user: promoter,
           branch: branchToUse,

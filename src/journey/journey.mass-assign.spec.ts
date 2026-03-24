@@ -62,7 +62,7 @@ describe('JourneyService - mass assign shift', () => {
       .rejects.toThrow(NotFoundException);
   });
 
-  it('should assign shift prioritizing last check-in branch', async () => {
+  it('should assign shift by clearing old days instead of deleting', async () => {
     const mockShift = { id: 's1', name: 'Day Shift' };
     const mockBranchDefault = { id: 'b_default' };
     const mockBranchLast = { id: 'b_last' };
@@ -72,10 +72,15 @@ describe('JourneyService - mass assign shift', () => {
       branch: mockBranchDefault, 
       role: { name: ERole.PROMOTER } 
     };
+    const mockOldPlan = {
+      id: 'old1',
+      days: ['monday'],
+    };
     
     // Repository behavior
     mockRepo.findOne.mockResolvedValueOnce(mockShift); // shiftRepo.findOne
     mockRepo.find.mockResolvedValueOnce([mockPromoter]); // userRepo.find
+    mockRepo.find.mockResolvedValueOnce([mockOldPlan]); // journeyPlanRepo.find (existing)
     
     // Mock queryBuilder for last check-in
     const mockQueryBuilder = {
@@ -91,8 +96,14 @@ describe('JourneyService - mass assign shift', () => {
 
     expect(result.processedCount).toBe(1);
     
-    // Verify deletion and new plan
-    expect(mockRepo.manager.delete).toHaveBeenCalledWith(JourneyPlan, { user: { id: 'u1' } });
+    // Verify deactivation (saving old plan with empty days)
+    expect(mockOldPlan.days).toEqual([]);
+    expect(mockRepo.manager.save).toHaveBeenCalledWith(JourneyPlan, mockOldPlan);
+
+    // Verify deletion is NOT called
+    expect(mockRepo.manager.delete).not.toHaveBeenCalled();
+
+    // Verify new plan creation
     expect(mockRepo.manager.create).toHaveBeenCalledWith(JourneyPlan, expect.objectContaining({
       user: mockPromoter,
       branch: mockBranchLast,
