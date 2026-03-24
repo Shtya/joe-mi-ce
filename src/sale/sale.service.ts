@@ -877,23 +877,21 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     });
     if (user) {
       userInfo = { id: user.id, name: user.name };
-      branchToUse = user.branch;
     }
-  }
 
-
-
-  if (!branchToUse && userId) {
-    // Fallback to last journey's branch
-    const lastJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
+    // Prioritize branch from the last checked-in journey
+    const lastCheckinJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
+      .innerJoin('journey.checkin', 'checkin')
       .leftJoinAndSelect('journey.branch', 'branch')
-      .where('journey.userId = :userId', { userId })
-      .orderBy('journey.date', 'DESC')
-      .addOrderBy('journey.updated_at', 'DESC')
+      .leftJoinAndSelect('branch.project', 'project')
+      .where('journey.user.id = :userId', { userId })
+      .orderBy('checkin.checkInTime', 'DESC')
       .getOne();
-    
-    if (lastJourney?.branch) {
-      branchToUse = lastJourney.branch;
+
+    if (lastCheckinJourney?.branch) {
+      branchToUse = lastCheckinJourney.branch;
+    } else if (user?.branch) {
+      branchToUse = user.branch;
     }
   }
 
