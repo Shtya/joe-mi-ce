@@ -9,11 +9,14 @@ import { Branch } from '../../entities/branch.entity';
 import { User } from 'entities/user.entity';
 import { UsersService } from 'src/users/users.service';
 import { Project } from 'entities/project.entity';
+import { JourneyModule } from '../journey/journey.module';
+import { CheckIn } from 'entities/all_plans.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SalesTarget, Branch,User,Project]),
+    TypeOrmModule.forFeature([SalesTarget, Branch,User,Project, CheckIn]),
     ScheduleModule.forRoot(),
+    JourneyModule,
   ],
   controllers: [SalesTargetController],
   providers: [SalesTargetService,UsersService],
