@@ -541,7 +541,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
   async checkInOut(dto: CheckInOutDto, lang: string = 'en') {
     const journey = await this.journeyRepo.findOne({
       where: { id: dto.journeyId },
-      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain'],
+      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain', 'user.role'],
     });
  
     if (!journey) {
@@ -645,7 +645,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     let savedCheckIn: CheckIn;
     await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
       await transactionalEntityManager.save(Journey, journey);
-      if (dto.checkInTime && journey.user) {
+      if (dto.checkInTime && journey.user?.role?.name === ERole.PROMOTER) {
         await transactionalEntityManager.update(User, journey.user.id, { branch: journey.branch });
       }
       savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
@@ -706,7 +706,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
   async adminCheckInOut(dto: AdminCheckInOutDto, adminUser: User, lang: string = 'en') {
     const journey = await this.journeyRepo.findOne({
       where: { id: dto.journeyId },
-      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain'],
+      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain', 'user.role'],
     });
 
     if (!journey) {
@@ -759,6 +759,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     let savedCheckIn: CheckIn;
     await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
       await transactionalEntityManager.save(Journey, journey);
+      if (journey.user?.role?.name === ERole.PROMOTER) {
+        await transactionalEntityManager.update(User, journey.user.id, { branch: journey.branch });
+      }
       savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
     });
 
