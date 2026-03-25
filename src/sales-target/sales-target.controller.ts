@@ -29,10 +29,7 @@ import { EPermission } from 'enums/Permissions.enum';
 import { CRUD } from 'common/crud.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { UsersService } from 'src/users/users.service';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
-import { CheckIn } from 'entities/all_plans.entity';
-import { JourneyService } from '../journey/journey.service';
+;
   
   @Controller('sales-targets')
   
@@ -40,10 +37,7 @@ import { JourneyService } from '../journey/journey.service';
   @UseGuards(AuthGuard)
   export class SalesTargetController {
     constructor( readonly salesTargetService: SalesTargetService,
-      readonly userService:UsersService,
-      readonly journeyService: JourneyService,
-      @InjectRepository(CheckIn)
-      private readonly checkInRepository: Repository<CheckIn>,
+      readonly userService:UsersService
     ) {}
   
     @Post()
@@ -73,45 +67,22 @@ import { JourneyService } from '../journey/journey.service';
             query.limit,
             query.sortBy,
             query.sortOrder,
-            ['branch', 'branch.supervisor', 'createdBy'],
+            ['branch', 'branch.supervisor', 'createdBy', 'branch.team', 'branch.team.role'],
             ['name', 'created_at'],
             filtersObj
         );
 
-        // Fetch latest promoter names from check-ins for each branch
-        const branchIds = [...new Set(result.records.map((r: any) => r.branch?.id).filter(Boolean))];
-        
-        if (branchIds.length > 0) {
-            // Find all recent check-ins for these branches, ordered by time
-            const recentCheckIns = await this.checkInRepository.find({
-                where: {
-                    journey: {
-                        branch: { id: In(branchIds) }
-                    }
-                },
-                relations: ['user', 'journey', 'journey.branch'],
-                order: { checkInTime: 'DESC' }
-            });
-
-            // Map branchId to the name of the latest promoter
-            const latestPromoterMap = new Map<string, string>();
-            for (const ci of recentCheckIns) {
-                const bId = ci.journey?.branch?.id;
-                if (bId && !latestPromoterMap.has(bId)) {
-                    latestPromoterMap.set(bId, ci.user?.name);
-                }
-            }
-
-            // Add promoter_names to each record (as an array containing the last promoter)
-            result.records = result.records.map((target: any) => {
-                const bId = target.branch?.id;
-                const lastPromoter = latestPromoterMap.get(bId);
-                return {
-                    ...target,
-                    promoter_names: lastPromoter ? [lastPromoter] : []
-                };
-            });
-        }
+        // Add promoter names to each record
+        result.records = result.records.map((target: any) => {
+            const promoters = target.branch?.team?.filter((user: any) => 
+                user.role?.name === 'promoter' || user.role?.name === 'Promoter'
+            ) || [];
+            
+            return {
+                ...target,
+                promoter_names: promoters.map((p: any) => p.name).filter(Boolean)
+            };
+        });
 
         return result;
     }
