@@ -645,6 +645,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     let savedCheckIn: CheckIn;
     await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
       await transactionalEntityManager.save(Journey, journey);
+      if (dto.checkInTime && journey.user) {
+        await transactionalEntityManager.update(User, journey.user.id, { branch: journey.branch });
+      }
       savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
     });
 
