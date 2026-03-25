@@ -59,7 +59,7 @@ import { UsersService } from 'src/users/users.service';
         const filtersObj = this.parseFiltersFromQuery(query);
         filtersObj['branch.project.id'] = projectId;
         
-        return CRUD.findAll2(
+        const result = await CRUD.findAll2(
             this.salesTargetService.salesTargetRepository,
             'sales_targets',
             query.search,
@@ -67,10 +67,24 @@ import { UsersService } from 'src/users/users.service';
             query.limit,
             query.sortBy,
             query.sortOrder,
-            ['branch', 'branch.supervisor', 'createdBy'],
+            ['branch', 'branch.supervisor', 'createdBy', 'branch.team', 'branch.team.role'],
             ['name', 'created_at'],
             filtersObj
         );
+
+        // Add promoter names to each record
+        result.records = result.records.map((target: any) => {
+            const promoters = target.branch?.team?.filter((user: any) => 
+                user.role?.name === 'promoter' || user.role?.name === 'Promoter'
+            ) || [];
+            
+            return {
+                ...target,
+                promoter_names: promoters.map((p: any) => p.name).filter(Boolean)
+            };
+        });
+
+        return result;
     }
     
     private parseFiltersFromQuery(query: any): Record<string, any> {
