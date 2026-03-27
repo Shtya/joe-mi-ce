@@ -611,8 +611,11 @@ async getAllPlansWithPagination(
       const d = dayjs(dateStr);
       const dayOfWeek = d.format('dddd').toLowerCase();
       const isActiveForDate = plan.days.includes(dayOfWeek);
-      const journey = plan.journeys?.find((j: any) => j.date === dateStr);
- 
+      const journey = plan.journeys?.find((j: any) => {
+        const jDateStr = typeof j.date === 'string' ? j.date.split('T')[0] : dayjs(j.date).format('YYYY-MM-DD');
+        return jDateStr === dateStr;
+      });
+
       // If not active for today and no journey exists, skip this date row
       if (!isActiveForDate && !journey) return;
 
