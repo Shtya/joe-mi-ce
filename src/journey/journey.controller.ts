@@ -586,7 +586,22 @@ async getAllPlansWithPagination(
     relations: ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin']
   });
 
+  // Fetch all promoters assigned to supervisor's branches
+  let assignedPromoters: any[] = [];
+  if (user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0) {
+    assignedPromoters = await this.journeyService.userRepo.find({
+      where: {
+        branch: { id: In(supervisorBranchIds) },
+        role: { name: ERole.PROMOTER },
+        project_id: projectId
+      },
+      relations: ['branch', 'role', 'branch.city', 'branch.city.region']
+    });
+  }
+
   const transformedData: any[] = [];
+  const seenPromoterDate = new Set<string>(); // Track 'userId:date' to avoid duplicates
+
   plans.records.forEach((plan: any) => {
     datesInRange.forEach(dateStr => {
       const d = dayjs(dateStr);
@@ -596,6 +611,8 @@ async getAllPlansWithPagination(
       
       // If not active for today and no journey exists, skip this date row
       if (!isActiveForDate && !journey) return;
+
+      seenPromoterDate.add(`${plan.user?.id}:${dateStr}`);
 
       const checkin = journey?.checkin;
       const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
@@ -692,6 +709,8 @@ async getAllPlansWithPagination(
     const journeyStatusEn = getTranslatedStatus(journey.status, 'en');
     const finalJourneyStatus = getTranslatedStatus(journey.status, lang);
 
+    seenPromoterDate.add(`${journey.user?.id}:${journey.date}`);
+
     transformedData.push({
       planId: null,
       branchName: journey.branch?.name,
@@ -724,6 +743,49 @@ async getAllPlansWithPagination(
     });
   });
 
+  // Add missing promoters who are assigned to supervisor branches but had no plan/journey for the dates
+  assignedPromoters.forEach(promoter => {
+    datesInRange.forEach(dateStr => {
+      if (!seenPromoterDate.has(`${promoter.id}:${dateStr}`)) {
+        const attendanceStatus = 'Absent';
+        const finalAttendanceStatus = getTranslatedStatus(attendanceStatus, lang);
+        const attendanceStatusEn = getTranslatedStatus(attendanceStatus, 'en');
+
+        transformedData.push({
+          planId: null,
+          branchName: promoter.branch?.name,
+          city: promoter.branch?.city?.name,
+          region: promoter.branch?.city?.region?.name,
+          promoterName: promoter.name,
+          promoterId: promoter.id,
+          shiftName: null,
+          days: [],
+          isActiveForToday: false,
+          attendanceStatus: finalAttendanceStatus,
+          attendanceStatusEn,
+          checkInDocument: null,
+          checkOutDocument: null,
+          checkInTime: null,
+          checkOutTime: null,
+          shiftStartTime: null,
+          shiftEndTime: null,
+          noteIn: null,
+          noteOut: null,
+          isWithinRadius: null,
+          journeyId: null,
+          journeyStatus: null,
+          journeyStatusEn: null,
+          journeyDate: dateStr,
+          createdAt: promoter.created_at,
+          updatedAt: promoter.updated_at,
+          isActive: promoter.is_active,
+          totalJourneys: 0,
+        });
+        seenPromoterDate.add(`${promoter.id}:${dateStr}`);
+      }
+    });
+  });
+
   let optimizedPlans = transformedData;
 
   // Apply status filter if provided (compare against English values for consistency)
@@ -742,10 +804,10 @@ async getAllPlansWithPagination(
 
   return {
     data: finalData,
-    total: status ? optimizedPlans.length : plans.total_records,
+    total: (status || unplannedJourneys.length > 0 || assignedPromoters.length > 0) ? optimizedPlans.length : plans.total_records,
     page: plans.current_page,
     limit: plans.per_page,
-    totalPages: Math.ceil((status ? optimizedPlans.length : plans.total_records) / plans.per_page),
+    totalPages: Math.ceil(((status || unplannedJourneys.length > 0 || assignedPromoters.length > 0) ? optimizedPlans.length : plans.total_records) / plans.per_page),
   };
 }
   @Get('plans/:id')
