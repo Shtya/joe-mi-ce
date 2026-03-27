@@ -581,7 +581,10 @@ async getAllPlansWithPagination(
       projectId,
       type: JourneyType.UNPLANNED,
       date: In(datesInRange),
-      ...(user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0 ? { branch: { id: In(supervisorBranchIds) } } : {}),
+      ...(user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0 ? { 
+        branch: { id: In(supervisorBranchIds) },
+        user: { role: { name: ERole.PROMOTER } }
+      } : {}),
       ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
     },
     relations: ['user', 'user.role', 'user.branch', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin']
@@ -712,7 +715,6 @@ async getAllPlansWithPagination(
     const finalJourneyStatus = getTranslatedStatus(journey.status, lang);
 
     // Filter: Only include if the journey's branch matches the promoter's assigned branch (if they have one)
-    if (journey.user?.branch?.id && journey.branch?.id !== journey.user.branch.id) return;
 
     seenPromoterDate.add(`${journey.user?.id}:${journey.date}`);
 
