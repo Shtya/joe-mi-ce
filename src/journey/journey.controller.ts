@@ -557,7 +557,7 @@ async getAllPlansWithPagination(
     limit,
     '', 
     'DESC',
-    ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift','journeys','journeys.checkin'],
+    ['user', 'user.role', 'user.branch', 'branch', 'branch.city', 'branch.city.region', 'shift', 'journeys', 'journeys.checkin'],
     ['plan_user.name', 'plan_branch.name'],
     filters,
     extraWhere
@@ -584,7 +584,7 @@ async getAllPlansWithPagination(
       ...(user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0 ? { branch: { id: In(supervisorBranchIds) } } : {}),
       ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
     },
-    relations: ['user', 'user.role', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin']
+    relations: ['user', 'user.role', 'user.branch', 'branch', 'branch.city', 'branch.city.region', 'shift', 'checkin']
   });
 
   // Fetch all promoters assigned to supervisor's branches
@@ -610,6 +610,9 @@ async getAllPlansWithPagination(
       const isActiveForDate = plan.days.includes(dayOfWeek);
       const journey = plan.journeys?.find((j: any) => j.date === dateStr);
       
+      // Filter: Only include if the plan's branch matches the promoter's assigned branch (if they have one)
+      if (plan.user?.branch?.id && plan.branch?.id !== plan.user.branch.id) return;
+
       // If not active for today and no journey exists, skip this date row
       if (!isActiveForDate && !journey) return;
 
@@ -710,6 +713,9 @@ async getAllPlansWithPagination(
     const finalAttendanceStatus = getTranslatedStatus(attendanceStatus, lang);
     const journeyStatusEn = getTranslatedStatus(journey.status, 'en');
     const finalJourneyStatus = getTranslatedStatus(journey.status, lang);
+
+    // Filter: Only include if the journey's branch matches the promoter's assigned branch (if they have one)
+    if (journey.user?.branch?.id && journey.branch?.id !== journey.user.branch.id) return;
 
     seenPromoterDate.add(`${journey.user?.id}:${journey.date}`);
 
