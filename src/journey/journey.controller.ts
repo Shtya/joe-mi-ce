@@ -553,8 +553,8 @@ async getAllPlansWithPagination(
     this.journeyService.journeyPlanRepo,
     'plan',
     search,
-    page,
-    limit,
+    1, // fetch all
+    100000, // retrieve all plans to paginate in-memory
     '', 
     'DESC',
     ['user', 'user.role', 'user.branch', 'branch', 'branch.city', 'branch.city.region', 'shift', 'journeys', 'journeys.checkin'],
@@ -808,16 +808,35 @@ async getAllPlansWithPagination(
     });
   }
 
+  // Sort by date descending, then promoter name
+  optimizedPlans.sort((a, b) => {
+    if (a.date > b.date) return -1;
+    if (a.date < b.date) return 1;
+    const nameA = a.promoterName || '';
+    const nameB = b.promoterName || '';
+    return nameA.localeCompare(nameB);
+  });
+
+  const total = optimizedPlans.length;
+  
+  // Calculate distinct counts based on the FULL dataset
+  const uniqueBranches = new Set(optimizedPlans.map(p => p.branchId).filter(Boolean)).size;
+
+  // Perform in-memory pagination
+  const startIndex = (page - 1) * limit;
+  const endIndex = startIndex + Number(limit);
+  const paginatedData = optimizedPlans.slice(startIndex, endIndex);
+
   // Clean up internal fields before returning
-  const finalData = optimizedPlans.map(({ attendanceStatusEn, journeyStatusEn, ...rest }) => rest);
+  const finalData = paginatedData.map(({ attendanceStatusEn, journeyStatusEn, ...rest }) => rest);
 
   return {
     data: finalData,
-    total: (status || unplannedJourneys.length > 0 || assignedPromoters.length > 0) ? optimizedPlans.length : plans.total_records,
-    page: plans.current_page,
-    limit: plans.per_page,
-    totalPages: Math.ceil(((status || unplannedJourneys.length > 0 || assignedPromoters.length > 0) ? optimizedPlans.length : plans.total_records) / plans.per_page),
-    branchCount: new Set(optimizedPlans.map(p => p.branchId).filter(Boolean)).size,
+    total,
+    page: Number(page),
+    limit: Number(limit),
+    totalPages: Math.ceil(total / Number(limit)) || 1,
+    branchCount: uniqueBranches,
   };
 }
   @Get('plans/:id')
