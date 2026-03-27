@@ -657,6 +657,7 @@ async getAllPlansWithPagination(
       transformedData.push({
         planId: plan.id,
         branchName: plan.branch?.name,
+        branchId: plan.branch?.id,
         city: plan.branch?.city?.name,
         region: plan.branch?.city?.region?.name,
         promoterName: plan.user?.name,
@@ -715,6 +716,7 @@ async getAllPlansWithPagination(
     transformedData.push({
       planId: null,
       branchName: journey.branch?.name,
+      branchId: journey.branch?.id,
       city: journey.branch?.city?.name,
       region: journey.branch?.city?.region?.name,
       promoterName: journey.user?.name,
@@ -755,6 +757,7 @@ async getAllPlansWithPagination(
         transformedData.push({
           planId: null,
           branchName: promoter.branch?.name,
+          branchId: promoter.branch?.id,
           city: promoter.branch?.city?.name,
           region: promoter.branch?.city?.region?.name,
           promoterName: promoter.name,
@@ -809,7 +812,7 @@ async getAllPlansWithPagination(
     page: plans.current_page,
     limit: plans.per_page,
     totalPages: Math.ceil(((status || unplannedJourneys.length > 0 || assignedPromoters.length > 0) ? optimizedPlans.length : plans.total_records) / plans.per_page),
-    branchCount: supervisorBranchIds.length,
+    branchCount: new Set(optimizedPlans.map(p => p.branchId).filter(Boolean)).size,
   };
 }
   @Get('plans/:id')
