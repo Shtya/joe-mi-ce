@@ -481,6 +481,7 @@ async getAllPlansWithPagination(
         page: page,
         limit: limit,
         totalPages: 0,
+        branchCount: 0,
       };
     }
     supervisorBranchIds = branches.map(b => b.id);
@@ -808,6 +809,7 @@ async getAllPlansWithPagination(
     page: plans.current_page,
     limit: plans.per_page,
     totalPages: Math.ceil(((status || unplannedJourneys.length > 0 || assignedPromoters.length > 0) ? optimizedPlans.length : plans.total_records) / plans.per_page),
+    branchCount: supervisorBranchIds.length,
   };
 }
   @Get('plans/:id')
