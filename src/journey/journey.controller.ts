@@ -609,10 +609,7 @@ async getAllPlansWithPagination(
       const dayOfWeek = d.format('dddd').toLowerCase();
       const isActiveForDate = plan.days.includes(dayOfWeek);
       const journey = plan.journeys?.find((j: any) => j.date === dateStr);
-      
-      // Filter: Only include if the plan's branch matches the promoter's assigned branch (if they have one)
-      if (plan.user?.branch?.id && plan.branch?.id !== plan.user.branch.id) return;
-
+ 
       // If not active for today and no journey exists, skip this date row
       if (!isActiveForDate && !journey) return;
 
