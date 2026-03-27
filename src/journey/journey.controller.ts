@@ -616,7 +616,7 @@ async getAllPlansWithPagination(
       // If not active for today and no journey exists, skip this date row
       if (!isActiveForDate && !journey) return;
 
-      seenPromoterDate.add(`${plan.user?.id}:${dateStr}`);
+      seenPromoterDate.add(`${plan.user?.id}:${dateStr}:${plan.branch?.id}`);
 
       const checkin = journey?.checkin;
       const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
@@ -716,7 +716,7 @@ async getAllPlansWithPagination(
 
     // Filter: Only include if the journey's branch matches the promoter's assigned branch (if they have one)
 
-    seenPromoterDate.add(`${journey.user?.id}:${journey.date}`);
+    seenPromoterDate.add(`${journey.user?.id}:${journey.date}:${journey.branch?.id}`);
 
     transformedData.push({
       planId: null,
@@ -754,7 +754,7 @@ async getAllPlansWithPagination(
   // Add missing promoters who are assigned to supervisor branches but had no plan/journey for the dates
   assignedPromoters.forEach(promoter => {
     datesInRange.forEach(dateStr => {
-      if (!seenPromoterDate.has(`${promoter.id}:${dateStr}`)) {
+      if (!seenPromoterDate.has(`${promoter.id}:${dateStr}:${promoter.branch?.id}`)) {
         const attendanceStatus = 'Absent';
         const finalAttendanceStatus = getTranslatedStatus(attendanceStatus, lang);
         const attendanceStatusEn = getTranslatedStatus(attendanceStatus, 'en');
