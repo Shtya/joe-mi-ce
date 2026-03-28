@@ -685,7 +685,7 @@ async getAllPlansWithPagination(
         journeyId: journey?.id,
         journeyStatus: finalJourneyStatus,
         journeyStatusEn, // internal for filtering
-        journeyDate: journey?.date || (journey?.createdAt ? dayjs(journey.createdAt).format('YYYY-MM-DD') : dateStr),
+        journeyDate: journey?.date ? (typeof journey.date === 'string' ? journey.date.split('T')[0] : dayjs(journey.date).format('YYYY-MM-DD')) : dateStr,
         createdAt: plan.createdAt,
         updatedAt: plan.updatedAt,
         isActive: plan.isActive, 
@@ -746,7 +746,7 @@ async getAllPlansWithPagination(
       journeyId: journey.id,
       journeyStatus: finalJourneyStatus,
       journeyStatusEn,
-      journeyDate: journey.date,
+      journeyDate: typeof journey.date === 'string' ? journey.date.split('T')[0] : dayjs(journey.date).format('YYYY-MM-DD'),
       createdAt: journey.created_at,
       updatedAt: journey.updated_at,
       isActive: true, 
@@ -806,9 +806,15 @@ async getAllPlansWithPagination(
     const key = `${row.promoterId}:${row.journeyDate}`;
     const currentEn = row.attendanceStatusEn?.toLowerCase() || 'absent';
     
-    const isPresent = ['present', 'closed', 'late_check-in', 'early_check-out', 'late check-in', 'early check-out'].includes(currentEn);
+    const isNotAbsent = !['absent', 'unplanned_absent'].includes(currentEn);
+    const isStronglyPresent = ['present', 'closed', 'late_check-in', 'early_check-out', 'late check-in', 'early check-out'].includes(currentEn);
     
-    if (!bestStatusMap.has(key) || isPresent) {
+    const existing = bestStatusMap.get(key);
+    const existingWasStronglyPresent = existing ? ['present', 'closed', 'late_check-in', 'early_check-out', 'late check-in', 'early check-out'].includes(existing.attendanceStatusEn.toLowerCase()) : false;
+
+    // If first time, OR if we found a non-absent status and previous was absent, 
+    // OR if we found a "strongly present" status and previous was just some other non-absent status
+    if (!existing || (isNotAbsent && existing.attendanceStatusEn?.toLowerCase() === 'absent') || isStronglyPresent) {
       bestStatusMap.set(key, {
         attendanceStatus: row.attendanceStatus,
         attendanceStatusEn: row.attendanceStatusEn
