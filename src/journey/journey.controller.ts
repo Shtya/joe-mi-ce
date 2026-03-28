@@ -611,85 +611,130 @@ async getAllPlansWithPagination(
       const d = dayjs(dateStr);
       const dayOfWeek = d.format('dddd').toLowerCase();
       const isActiveForDate = plan.days.includes(dayOfWeek);
-      const journey = plan.journeys?.find((j: any) => {
+      
+       const matchingJourneys = plan.journeys?.filter((j: any) => {
         const jDateStr = typeof j.date === 'string' ? j.date.split('T')[0] : dayjs(j.date).format('YYYY-MM-DD');
         return jDateStr === dateStr;
-      });
+      }) || [];
 
-      // If not active for today and no journey exists, skip this date row
-      if (!isActiveForDate && !journey) return;
-
-      seenPromoterDate.add(`${plan.user?.id}:${dateStr}:${plan.branch?.id}`);
-
-      const checkin = journey?.checkin;
-      const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
-      const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
-
-      // Planned shift times for this date
-      const shiftStart = d.clone().startOf('day');
-      const shiftEnd = d.clone().startOf('day');
-      const [startH, startM, startS] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
-      const [endH, endM, endS] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
-      shiftStart.set('hour', startH).set('minute', startM).set('second', startS);
-      shiftEnd.set('hour', endH).set('minute', endM).set('second', endS);
-      if (endH < startH) shiftEnd.add(1, 'day');
-
-      // Calculate attendance status
-      let attendanceStatus = 'Absent';
-      if (journey) {
-        if (journey.status === 'present') {
-          attendanceStatus = 'Present';
-        } else if (journey.status === 'absent') {
-          attendanceStatus = 'Absent';
-        } else if (checkInTime && !checkOutTime) {
-          attendanceStatus = 'Not Checked Out';
-        } else if (checkInTime && checkOutTime) {
-          if (dayjs(checkInTime).isAfter(shiftStart)) {
-            attendanceStatus = 'Late Check-in';
-          } else if (dayjs(checkOutTime).isBefore(shiftEnd)) {
-            attendanceStatus = 'Early Check-out';
-          } else {
-            attendanceStatus = 'Present';
-          }
-        }
+      // If no journeys exist for this plan/date, but it was active, push one Absent row
+      if (matchingJourneys.length === 0) {
+        if (!isActiveForDate) return;
+        
+        seenPromoterDate.add(`${plan.user?.id}:${dateStr}:${plan.branch?.id}`);
+        
+        const attendanceStatus = 'Absent';
+        const attendanceStatusEn = getTranslatedStatus(attendanceStatus, 'en');
+        const finalAttendanceStatus = getTranslatedStatus(attendanceStatus, lang);
+        
+        transformedData.push({
+          planId: plan.id,
+          branchName: plan.branch?.name,
+          branchId: plan.branch?.id,
+          city: plan.branch?.city?.name,
+          region: plan.branch?.city?.region?.name,
+          promoterName: plan.user?.name,
+          promoterId: plan.user?.id,
+          shiftName: plan.shift?.name,
+          days: plan.days,
+          isActiveForToday: isActiveForDate, 
+          attendanceStatus: finalAttendanceStatus,
+          attendanceStatusEn,
+          checkInDocument: null,
+          checkOutDocument: null,
+          checkInTime: null,
+          checkOutTime: null,
+          shiftStartTime: null,
+          shiftEndTime: null,
+          noteIn: null,
+          noteOut: null,
+          isWithinRadius: null,
+          journeyId: null,
+          journeyStatus: null,
+          journeyStatusEn: null,
+          journeyDate: dateStr,
+          createdAt: plan.createdAt,
+          updatedAt: plan.updatedAt,
+          isActive: plan.isActive, 
+          totalJourneys: plan.journeys?.length || 0,
+        });
+        return;
       }
 
-      const attendanceStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : getTranslatedStatus(attendanceStatus, 'en');
-      const journeyStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : null;
+      // If one or more journeys exist, push a row for each one
+      matchingJourneys.forEach(journey => {
+        seenPromoterDate.add(`${plan.user?.id}:${dateStr}:${plan.branch?.id}`);
 
-      const finalAttendanceStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : getTranslatedStatus(attendanceStatus, lang);
-      const finalJourneyStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : null;
+        const checkin = journey?.checkin;
+        const checkInTime = checkin?.checkInTime ? new Date(checkin.checkInTime) : null;
+        const checkOutTime = checkin?.checkOutTime ? new Date(checkin.checkOutTime) : null;
 
-      transformedData.push({
-        planId: plan.id,
-        branchName: plan.branch?.name,
-        branchId: plan.branch?.id,
-        city: plan.branch?.city?.name,
-        region: plan.branch?.city?.region?.name,
-        promoterName: plan.user?.name,
-        promoterId: plan.user?.id,
-        shiftName: plan.shift?.name,
-        days: plan.days,
-        isActiveForToday: isActiveForDate, 
-        attendanceStatus: finalAttendanceStatus,
-        attendanceStatusEn, // internal for filtering
-        checkInDocument: journey?.checkin?.checkInDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkInDocument : journey?.checkin?.checkInDocument,
-        checkOutDocument: journey?.checkin?.checkOutDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkOutDocument : journey?.checkin?.checkOutDocument,
-        checkInTime: toLocalISOString(checkInTime),
-        checkOutTime: toLocalISOString(checkOutTime),
-        shiftStartTime:  toLocalISOString(checkInTime),
-        shiftEndTime: toLocalISOString(checkOutTime),
-        noteIn: journey?.checkin?.noteIn,
-        noteOut: journey?.checkin?.noteOut,
-        isWithinRadius: journey?.checkin?.isWithinRadius,
-        journeyId: journey?.id,
-        journeyStatus: finalJourneyStatus,
-        journeyStatusEn, // internal for filtering
-        journeyDate: journey?.date ? (typeof journey.date === 'string' ? journey.date.split('T')[0] : dayjs(journey.date).format('YYYY-MM-DD')) : dateStr,
-        createdAt: plan.createdAt,
-        updatedAt: plan.updatedAt,
-        isActive: plan.isActive, 
-        totalJourneys: plan.journeys?.length || 0,
+        // Planned shift times for this date
+        const shiftStart = d.clone().startOf('day');
+        const shiftEnd = d.clone().startOf('day');
+        const [startH, startM, startS] = plan.shift?.startTime?.split(':').map(Number) || [0, 0, 0];
+        const [endH, endM, endS] = plan.shift?.endTime?.split(':').map(Number) || [0, 0, 0];
+        shiftStart.set('hour', startH).set('minute', startM).set('second', startS);
+        shiftEnd.set('hour', endH).set('minute', endM).set('second', endS);
+        if (endH < startH) shiftEnd.add(1, 'day');
+
+        // Calculate attendance status
+        let attendanceStatus = 'Absent';
+        if (journey) {
+          if (journey.status === 'present') {
+            attendanceStatus = 'Present';
+          } else if (journey.status === 'absent') {
+            attendanceStatus = 'Absent';
+          } else if (checkInTime && !checkOutTime) {
+            attendanceStatus = 'Not Checked Out';
+          } else if (checkInTime && checkOutTime) {
+            if (dayjs(checkInTime).isAfter(shiftStart)) {
+              attendanceStatus = 'Late Check-in';
+            } else if (dayjs(checkOutTime).isBefore(shiftEnd)) {
+              attendanceStatus = 'Early Check-out';
+            } else {
+              attendanceStatus = 'Present';
+            }
+          }
+        }
+
+        const attendanceStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : getTranslatedStatus(attendanceStatus, 'en');
+        const journeyStatusEn = journey?.status ? getTranslatedStatus(journey.status, 'en') : null;
+
+        const finalAttendanceStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : getTranslatedStatus(attendanceStatus, lang);
+        const finalJourneyStatus = journey?.status ? getTranslatedStatus(journey.status, lang) : null;
+
+        transformedData.push({
+          planId: plan.id,
+          branchName: plan.branch?.name,
+          branchId: plan.branch?.id,
+          city: plan.branch?.city?.name,
+          region: plan.branch?.city?.region?.name,
+          promoterName: plan.user?.name,
+          promoterId: plan.user?.id,
+          shiftName: plan.shift?.name,
+          days: plan.days,
+          isActiveForToday: isActiveForDate, 
+          attendanceStatus: finalAttendanceStatus,
+          attendanceStatusEn, // internal for filtering
+          checkInDocument: journey?.checkin?.checkInDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkInDocument : journey?.checkin?.checkInDocument,
+          checkOutDocument: journey?.checkin?.checkOutDocument?.startsWith('tmp/') ? '/' + journey?.checkin?.checkOutDocument : journey?.checkin?.checkOutDocument,
+          checkInTime: toLocalISOString(checkInTime),
+          checkOutTime: toLocalISOString(checkOutTime),
+          shiftStartTime:  toLocalISOString(checkInTime),
+          shiftEndTime: toLocalISOString(checkOutTime),
+          noteIn: journey?.checkin?.noteIn,
+          noteOut: journey?.checkin?.noteOut,
+          isWithinRadius: journey?.checkin?.isWithinRadius,
+          journeyId: journey?.id,
+          journeyStatus: finalJourneyStatus,
+          journeyStatusEn, // internal for filtering
+          journeyDate: typeof journey.date === 'string' ? journey.date.split('T')[0] : dayjs(journey.date).format('YYYY-MM-DD'),
+          createdAt: plan.createdAt,
+          updatedAt: plan.updatedAt,
+          isActive: plan.isActive, 
+          totalJourneys: plan.journeys?.length || 0,
+        });
       });
     });
   });
