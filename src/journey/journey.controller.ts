@@ -798,6 +798,36 @@ async getAllPlansWithPagination(
     });
   });
 
+  // --- OVERRIDE LOGIC: If a promoter is present on ANY shift today, override their Absent shifts ---
+  const bestStatusMap = new Map<string, { attendanceStatus: string, attendanceStatusEn: string }>();
+
+  transformedData.forEach(row => {
+    if (!row.promoterId) return;
+    const key = `${row.promoterId}:${row.journeyDate}`;
+    const currentEn = row.attendanceStatusEn?.toLowerCase() || 'absent';
+    
+    const isPresent = ['present', 'closed', 'late_check-in', 'early_check-out', 'late check-in', 'early check-out'].includes(currentEn);
+    
+    if (!bestStatusMap.has(key) || isPresent) {
+      bestStatusMap.set(key, {
+        attendanceStatus: row.attendanceStatus,
+        attendanceStatusEn: row.attendanceStatusEn
+      });
+    }
+  });
+
+  // Apply the best status to any Absent rows for the same user + day
+  transformedData.forEach(row => {
+    if (!row.promoterId) return;
+    const key = `${row.promoterId}:${row.journeyDate}`;
+    const best = bestStatusMap.get(key);
+    
+    if (best && row.attendanceStatusEn?.toLowerCase() === 'absent') {
+      row.attendanceStatus = best.attendanceStatus;
+      row.attendanceStatusEn = best.attendanceStatusEn;
+    }
+  });
+
   let optimizedPlans = transformedData;
 
   // Apply status filter if provided (compare against English values for consistency)
@@ -813,12 +843,13 @@ async getAllPlansWithPagination(
 
   // Sort by date descending, then promoter name
   optimizedPlans.sort((a, b) => {
-    if (a.date > b.date) return -1;
-    if (a.date < b.date) return 1;
+    if (a.journeyDate > b.journeyDate) return -1;
+    if (a.journeyDate < b.journeyDate) return 1;
     const nameA = a.promoterName || '';
     const nameB = b.promoterName || '';
     return nameA.localeCompare(nameB);
   });
+
 
   const total = optimizedPlans.length;
   
