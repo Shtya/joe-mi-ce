@@ -49,6 +49,7 @@ export class ReportsService {
     const projectName = "taqnia";
     const project = await this.projectRepository.findOne({
       where: { name: projectName },
+      relations: ["branches", "branches.chain"],
     });
     const projectId = project?.id;
 
@@ -678,13 +679,18 @@ export class ReportsService {
     });
 
     // --- Branch Promoter Sales Matrix Tab ---
+    const bpIsPromoter = (user: User) => {
+      const roleName = user?.role?.name?.toLowerCase();
+      return ["promoter", "supervisor", "admin"].includes(roleName);
+    };
+
     const promotersMap = new Map<string, User>();
     const journeysByBranchAndDate = new Map<string, Map<string, User>>();
 
     journeys.forEach((j) => {
       if (!j.branch || !j.user) return;
       if (isRoaming(j.branch.chain?.name)) return;
-      if (!isPromoter(j.user)) return;
+      if (!bpIsPromoter(j.user)) return;
 
       promotersMap.set(j.user.id, j.user);
 
@@ -700,11 +706,16 @@ export class ReportsService {
 
     const bpSalesMatrix = new Map<string, Map<string, number>>();
     const branchesMap = new Map<string, any>();
+    (project?.branches || []).forEach((b) => {
+      if (!isRoaming(b.chain?.name)) {
+        branchesMap.set(b.id, b);
+      }
+    });
 
     sales.forEach((s) => {
       if (isRoaming(s.branch?.chain?.name)) return;
 
-      const saleDate = dayjs(s.sale_date);
+      const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
       // Determine Reporting Day (7 AM - 5 AM window)
       // Sales between 00:00 and 06:59 count for the previous day
       const reportingDay =
@@ -715,7 +726,9 @@ export class ReportsService {
       const branchId = s.branch?.id;
       if (!branchId) return;
 
-      branchesMap.set(branchId, s.branch);
+      if (!branchesMap.has(branchId)) {
+        branchesMap.set(branchId, s.branch);
+      }
 
       const assignedUser = journeysByBranchAndDate
         .get(branchId)
@@ -752,17 +765,16 @@ export class ReportsService {
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
       .forEach((branch) => {
         const branchSales = bpSalesMatrix.get(branch.id);
-        if (!branchSales) return;
-
         const rowData: any = { branch_name: branch.name };
         let branchTotal = 0;
         sortedPromoters.forEach((p) => {
-          const val = branchSales.get(p.id) || 0;
+          const val = branchSales?.get(p.id) || 0;
           rowData[`user_${p.id}`] = val > 0 ? Number(val.toFixed(2)) : "";
           bpTotalsRow[`user_${p.id}`] += val;
           branchTotal += val;
         });
-        rowData.grand_total = Number(branchTotal.toFixed(2));
+        rowData.grand_total =
+          branchTotal > 0 ? Number(branchTotal.toFixed(2)) : "";
         bpAbsoluteTotal += branchTotal;
         branchPromoterSalesSheet.addRow(rowData);
       });
