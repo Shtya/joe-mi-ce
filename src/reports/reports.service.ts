@@ -458,32 +458,6 @@ export class ReportsService {
 
     tab2Rows.forEach((r) => tab2Sheet.addRow(r));
 
-    const headerRow1 = tab3Sheet.getRow(1);
-    const headerRow2 = tab3Sheet.getRow(2);
-
-    baseColumns.forEach((col, index) => {
-      const cell = headerRow1.getCell(index + 1);
-      cell.value = col.header;
-      tab3Sheet.mergeCells(1, index + 1, 2, index + 1);
-    });
-
-    let currentColIndex = baseColumns.length + 1;
-    for (let i = 1; i <= daysInMonthForAttendance; i++) {
-      const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, "0")}`;
-
-      const dateCell = headerRow1.getCell(currentColIndex);
-      dateCell.value = dateStr;
-      tab3Sheet.mergeCells(1, currentColIndex, 1, currentColIndex + 1);
-
-      headerRow2.getCell(currentColIndex).value = "Check-in";
-      headerRow2.getCell(currentColIndex + 1).value = "Check-out";
-      currentColIndex += 2;
-    }
-
-    const tllDaysCell = headerRow1.getCell(currentColIndex);
-    tllDaysCell.value = "TLL DAYS";
-    tab3Sheet.mergeCells(1, currentColIndex, 2, currentColIndex);
-
     tab3Rows.forEach((r) => {
       tab3Sheet.addRow(r);
     });
