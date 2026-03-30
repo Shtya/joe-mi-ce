@@ -76,6 +76,7 @@ export class ReportsService {
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const tab3Sheet = workbook.addWorksheet(`Check-in - Check-out`);
+    const durationSheet = workbook.addWorksheet(`Attendance Duration`);
     const salesByModelSheet = workbook.addWorksheet(`Sales by Model`);
     const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
 
@@ -93,6 +94,7 @@ export class ReportsService {
     const dateColumnsForAttendance = [];
     const dateColumnsForSales = [];
     const checkinDateColumns = [];
+    const durationDateColumns = [];
 
     for (let i = 1; i <= daysInMonthForAttendance; i++) {
       const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, "0")}`;
@@ -103,6 +105,11 @@ export class ReportsService {
       });
       checkinDateColumns.push({ header: `${dateStr} Check-in`, width: 15 });
       checkinDateColumns.push({ header: `${dateStr} Check-out`, width: 15 });
+      durationDateColumns.push({
+        header: dateStr,
+        key: `duration_${i}`,
+        width: 15,
+      });
 
       if (i <= daysInMonthForSales) {
         dateColumnsForSales.push({
@@ -122,6 +129,12 @@ export class ReportsService {
       ...baseColumns,
       ...dateColumnsForSales,
       { header: "TLL DAYS", key: "tll_days_tab2", width: 15 },
+    ];
+    durationSheet.columns = [
+      ...baseColumns,
+      ...durationDateColumns,
+      { header: "Total Hours", key: "total_hours", width: 15 },
+      { header: "Average Duration", key: "avg_duration", width: 18 },
     ];
 
     // Set widths for Tab 3
@@ -216,6 +229,15 @@ export class ReportsService {
     const attendanceRows: any[] = [];
     const tab2Rows: any[] = [];
     const tab3Rows: any[] = [];
+    const durationRows: any[] = [];
+
+    const formatDuration = (ms: number) => {
+      if (!ms || ms <= 0) return "00:00";
+      const totalMinutes = Math.floor(ms / (1000 * 60));
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    };
 
     let rowNo = 1;
     for (const user of users) {
@@ -262,10 +284,12 @@ export class ReportsService {
         baseRowData.channel,
         baseRowData.store,
       ];
+      const durationRow = { ...baseRowData };
 
       let ttlDays = 0;
       let ttlAttendance = 0;
       let totalSales = 0;
+      let totalDurationMs = 0;
 
       for (let i = 1; i <= daysInMonthForAttendance; i++) {
         const currentDateStr = `${currentMonthPrefix}-${String(i).padStart(2, "0")}`;
@@ -280,6 +304,7 @@ export class ReportsService {
           attRow[dayKey] = "Vacation";
           t3RowArr.push("Vacation");
           t3RowArr.push("Vacation");
+          durationRow[`duration_${i}`] = "Vacation";
           if (i <= daysInMonthForSales) t2Row[dayKey] = "";
           continue;
         }
@@ -342,6 +367,27 @@ export class ReportsService {
           t3RowArr.push(
             isPastReportingPeriod ? "" : user.is_active ? "--:--" : "",
           );
+          durationRow[`duration_${i}`] = isPastReportingPeriod
+            ? ""
+            : user.is_active
+              ? "00:00"
+              : "";
+        }
+
+        // Calculate daily duration sum
+        if (dayJourneys.length > 0) {
+          let dayDurationMs = 0;
+          dayJourneys.forEach((j) => {
+            if (j.checkin?.checkInTime && j.checkin?.checkOutTime) {
+              const start = dayjs(j.checkin.checkInTime);
+              const end = dayjs(j.checkin.checkOutTime);
+              if (end.isAfter(start)) {
+                dayDurationMs += end.diff(start);
+              }
+            }
+          });
+          durationRow[`duration_${i}`] = formatDuration(dayDurationMs);
+          totalDurationMs += dayDurationMs;
         }
 
         if (i <= daysInMonthForSales) {
@@ -365,6 +411,11 @@ export class ReportsService {
       attendanceRows.push(attRow);
       tab2Rows.push(t2Row);
       tab3Rows.push(t3RowArr);
+
+      durationRow["total_hours"] = formatDuration(totalDurationMs);
+      const avgMs = totalDurationMs / daysInMonthForAttendance;
+      durationRow["avg_duration"] = formatDuration(avgMs);
+      durationRows.push(durationRow);
     }
 
     const totalsRowData: Record<string, any> = {
@@ -413,6 +464,10 @@ export class ReportsService {
 
     tab3Rows.forEach((r) => {
       tab3Sheet.addRow(r);
+    });
+
+    durationRows.forEach((r) => {
+      durationSheet.addRow(r);
     });
 
     // --- Sales by Model Tab ---
@@ -572,6 +627,7 @@ export class ReportsService {
       attendanceSheet,
       tab2Sheet,
       tab3Sheet,
+      durationSheet,
       salesByModelSheet,
       salesDetailSheet,
     ].forEach((sheet) => {
@@ -582,7 +638,10 @@ export class ReportsService {
 
       let effectiveBaseColCount = baseColumns.length;
       if (isSalesByModel) effectiveBaseColCount = 5;
-      if (isSalesDetail) effectiveBaseColCount = 0; // Sales Detail doesn't use standard base/date column split logic for coloring
+      if (isSalesDetail) effectiveBaseColCount = 0;
+      if (sheet.name === "Attendance Duration") {
+        effectiveBaseColCount = baseColumns.length;
+      }
 
       const startRow = isTab3 ? 2 : 1;
 
@@ -726,11 +785,11 @@ export class ReportsService {
 
     const isRoaming = (name: string) => /roam|roma/i.test(name);
     // Relaxed isPromoter check if needed, but keeping it as a check for specific logic
-    const isPromoter = (user: any) => {
-      const roleName = user?.role?.name?.toLowerCase();
-      // Relaxing filter to include multiple relevant roles if "promoter" is too strict
-      return ["promoter", "supervisor", "admin"].includes(roleName);
-    };
+    // const isPromoter = (user: any) => {
+    //   const roleName = user?.role?.name?.toLowerCase();
+    //   // Relaxing filter to include multiple relevant roles if "promoter" is too strict
+    //   return ["promoter", "supervisor", "admin"].includes(roleName);
+    // };
 
     const chainsSet = new Set<string>();
     (project.chains || []).forEach((c) => {
@@ -767,7 +826,7 @@ export class ReportsService {
     const sortedProductNames = Array.from(productNamesSet).sort();
 
     const attendanceMap: Record<string, Set<string>> = {};
-    const yesterdayStr = yesterday.format("YYYY-MM-DD");
+    // const yesterdayStr = yesterday.format("YYYY-MM-DD");
     journeys.forEach((j) => {
       const chainName = j.branch?.chain?.name?.trim() || "Extra";
       if (isRoaming(chainName)) return;
