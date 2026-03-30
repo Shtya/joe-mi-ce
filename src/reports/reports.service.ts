@@ -105,9 +105,15 @@ export class ReportsService {
       });
       checkinDateColumns.push({ header: `${dateStr} Check-in`, width: 15 });
       checkinDateColumns.push({ header: `${dateStr} Check-out`, width: 15 });
+
       durationDateColumns.push({
-        header: dateStr,
+        header: `${dateStr} Duration`,
         key: `duration_${i}`,
+        width: 15,
+      });
+      durationDateColumns.push({
+        header: `${dateStr} Shift Count`,
+        key: `shift_count_${i}`,
         width: 15,
       });
 
@@ -134,13 +140,19 @@ export class ReportsService {
       ...baseColumns,
       ...durationDateColumns,
       { header: "Total Hours", key: "total_hours", width: 15 },
+      { header: "Days of Work", key: "days_of_work", width: 15 },
       { header: "Average Duration", key: "avg_duration", width: 18 },
     ];
 
-    // Set widths for Tab 3
+    // Set widths for Tab 3 and Duration Sheet
     const tab3TotalCols = baseColumns.length + checkinDateColumns.length + 1;
     for (let i = 1; i <= tab3TotalCols; i++) {
       tab3Sheet.getColumn(i).width = 15;
+    }
+    const durationTotalCols =
+      baseColumns.length + durationDateColumns.length + 3;
+    for (let i = 1; i <= durationTotalCols; i++) {
+      durationSheet.getColumn(i).width = 15;
     }
 
     let users = await this.userRepository.find({
@@ -290,6 +302,7 @@ export class ReportsService {
       let ttlAttendance = 0;
       let totalSales = 0;
       let totalDurationMs = 0;
+      let daysOfWork = 0;
 
       for (let i = 1; i <= daysInMonthForAttendance; i++) {
         const currentDateStr = `${currentMonthPrefix}-${String(i).padStart(2, "0")}`;
@@ -305,6 +318,7 @@ export class ReportsService {
           t3RowArr.push("Vacation");
           t3RowArr.push("Vacation");
           durationRow[`duration_${i}`] = "Vacation";
+          durationRow[`shift_count_${i}`] = "Vacation";
           if (i <= daysInMonthForSales) t2Row[dayKey] = "";
           continue;
         }
@@ -372,6 +386,11 @@ export class ReportsService {
             : user.is_active
               ? "00:00"
               : "";
+          durationRow[`shift_count_${i}`] = isPastReportingPeriod
+            ? ""
+            : user.is_active
+              ? 0
+              : "";
         }
 
         // Calculate daily duration sum
@@ -387,7 +406,9 @@ export class ReportsService {
             }
           });
           durationRow[`duration_${i}`] = formatDuration(dayDurationMs);
+          durationRow[`shift_count_${i}`] = dayJourneys.length;
           totalDurationMs += dayDurationMs;
+          daysOfWork++;
         }
 
         if (i <= daysInMonthForSales) {
@@ -413,7 +434,8 @@ export class ReportsService {
       tab3Rows.push(t3RowArr);
 
       durationRow["total_hours"] = formatDuration(totalDurationMs);
-      const avgMs = totalDurationMs / daysInMonthForAttendance;
+      durationRow["days_of_work"] = daysOfWork;
+      const avgMs = daysOfWork > 0 ? totalDurationMs / daysOfWork : 0;
       durationRow["avg_duration"] = formatDuration(avgMs);
       durationRows.push(durationRow);
     }
@@ -469,6 +491,80 @@ export class ReportsService {
     durationRows.forEach((r) => {
       durationSheet.addRow(r);
     });
+
+    // Merging Headers for Tab 3 and Duration Sheet
+    const headerRow1_t3 = tab3Sheet.getRow(1);
+    const headerRow2_t3 = tab3Sheet.getRow(2);
+    const headerRow1_dur = durationSheet.getRow(1);
+    const headerRow2_dur = durationSheet.getRow(2);
+
+    baseColumns.forEach((col, index) => {
+      // Tab 3
+      const cell_t3 = headerRow1_t3.getCell(index + 1);
+      cell_t3.value = col.header;
+      tab3Sheet.mergeCells(1, index + 1, 2, index + 1);
+
+      // Duration Sheet
+      const cell_dur = headerRow1_dur.getCell(index + 1);
+      cell_dur.value = col.header;
+      durationSheet.mergeCells(1, index + 1, 2, index + 1);
+    });
+
+    let currentColIndex_t3 = baseColumns.length + 1;
+    let currentColIndex_dur = baseColumns.length + 1;
+
+    for (let i = 1; i <= daysInMonthForAttendance; i++) {
+      const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, "0")}`;
+
+      // Tab 3
+      const dateCell_t3 = headerRow1_t3.getCell(currentColIndex_t3);
+      dateCell_t3.value = dateStr;
+      tab3Sheet.mergeCells(1, currentColIndex_t3, 1, currentColIndex_t3 + 1);
+      headerRow2_t3.getCell(currentColIndex_t3).value = "Check-in";
+      headerRow2_t3.getCell(currentColIndex_t3 + 1).value = "Check-out";
+      currentColIndex_t3 += 2;
+
+      // Duration Sheet
+      const dateCell_dur = headerRow1_dur.getCell(currentColIndex_dur);
+      dateCell_dur.value = dateStr;
+      durationSheet.mergeCells(
+        1,
+        currentColIndex_dur,
+        1,
+        currentColIndex_dur + 1,
+      );
+      headerRow2_dur.getCell(currentColIndex_dur).value = "Duration";
+      headerRow2_dur.getCell(currentColIndex_dur + 1).value = "Shift Count";
+      currentColIndex_dur += 2;
+    }
+
+    // Totals columns for Tab 3
+    const tllDaysCell_t3 = headerRow1_t3.getCell(currentColIndex_t3);
+    tllDaysCell_t3.value = "TLL DAYS";
+    tab3Sheet.mergeCells(1, currentColIndex_t3, 2, currentColIndex_t3);
+
+    // Totals columns for Duration Sheet
+    const totalHoursCell = headerRow1_dur.getCell(currentColIndex_dur);
+    totalHoursCell.value = "Total Hours";
+    durationSheet.mergeCells(1, currentColIndex_dur, 2, currentColIndex_dur);
+
+    const daysOfWorkCell = headerRow1_dur.getCell(currentColIndex_dur + 1);
+    daysOfWorkCell.value = "Days of Work";
+    durationSheet.mergeCells(
+      1,
+      currentColIndex_dur + 1,
+      2,
+      currentColIndex_dur + 1,
+    );
+
+    const avgDurationCell = headerRow1_dur.getCell(currentColIndex_dur + 2);
+    avgDurationCell.value = "Average Duration";
+    durationSheet.mergeCells(
+      1,
+      currentColIndex_dur + 2,
+      2,
+      currentColIndex_dur + 2,
+    );
 
     // --- Sales by Model Tab ---
     const salesModelBaseColumns = [
@@ -639,11 +735,14 @@ export class ReportsService {
       let effectiveBaseColCount = baseColumns.length;
       if (isSalesByModel) effectiveBaseColCount = 5;
       if (isSalesDetail) effectiveBaseColCount = 0;
-      if (sheet.name === "Attendance Duration") {
+      if (
+        sheet.name === "Attendance Duration" ||
+        sheet.name === "Check-in - Check-out"
+      ) {
         effectiveBaseColCount = baseColumns.length;
       }
 
-      const startRow = isTab3 ? 2 : 1;
+      const startRow = isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
 
       if (sheet.rowCount > startRow && sheet.columnCount > 0) {
         sheet.autoFilter = {
