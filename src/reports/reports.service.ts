@@ -408,7 +408,9 @@ export class ReportsService {
           durationRow[`duration_${i}`] = formatDuration(dayDurationMs);
           durationRow[`shift_count_${i}`] = dayJourneys.length;
           totalDurationMs += dayDurationMs;
-          daysOfWork++;
+          if (dayDurationMs > 0) {
+            daysOfWork++;
+          }
         }
 
         if (i <= daysInMonthForSales) {
