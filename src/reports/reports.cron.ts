@@ -1,8 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
-import { ReportsService } from './reports.service';
-import { MailService } from '../mail/mail.service';
-import * as path from 'path';
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron, CronExpression } from "@nestjs/schedule";
+import { ReportsService } from "./reports.service";
+import { MailService } from "../mail/mail.service";
+import * as path from "path";
 
 @Injectable()
 export class ReportsCron {
@@ -13,22 +13,23 @@ export class ReportsCron {
     private readonly mailService: MailService,
   ) {}
 
-  @Cron('0 8 * * *', { timeZone: 'Asia/Riyadh' })
+  @Cron("0 8 * * *", { timeZone: "Asia/Riyadh" })
   async handleMonthlyReportCron() {
-    this.logger.log('Starting JOE MI CI monthly report cron job');
+    this.logger.log("Starting JOE MI CI monthly report cron job");
 
     try {
       const filePath = await this.reportsService.generateMonthlyReport();
       if (!filePath) {
-         this.logger.warn('JOE MI CI report generation skipped or failed.');
-         return;
+        this.logger.warn("JOE MI CI report generation skipped or failed.");
+        return;
       }
       this.logger.log(`Excel report generated successfully at: ${filePath}`);
 
       const filename = path.basename(filePath);
-      const subject = 'JOE MI CI Monthly Report';
-      const toRecipient = 'mamro@joe13th.com';
-      const ccRecipients = '"Abdulrahman Abdullah" <a.doma@AECKSA.COM>, "Mohammed Abdu Alhaj" <MAlhaj@aecksa.com>, "Riyad Abdullah Ali Alzahrani" <r.alzahrani@AECKSA.COM>';
+      const subject = "JOE MI CI Monthly Report";
+      const toRecipient = "mamro@joe13th.com";
+      const ccRecipients =
+        '"Abdulrahman Abdullah" <a.doma@AECKSA.COM>, "Mohammed Abdu Alhaj" <MAlhaj@aecksa.com>, "Riyad Abdullah Ali Alzahrani" <r.alzahrani@AECKSA.COM>';
       const textBody = `Dear Team,\n\nPlease find attached the JOE MI CI Monthly Performance Report up to yesterday.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
@@ -64,42 +65,53 @@ export class ReportsCron {
 </body>
 </html>`;
 
-      const emailSent = await this.mailService.sendReportEmail(filePath, filename, toRecipient, subject, textBody, emailHtml, ccRecipients);
+      const emailSent = await this.mailService.sendReportEmail(
+        filePath,
+        filename,
+        toRecipient,
+        subject,
+        textBody,
+        emailHtml,
+        ccRecipients,
+      );
 
       if (emailSent) {
-        this.logger.log('JOE MI CI report email sent successfully.');
+        this.logger.log("JOE MI CI report email sent successfully.");
       } else {
-        this.logger.warn('JOE MI CI report generation succeeded, but email sending failed.');
+        this.logger.warn(
+          "JOE MI CI report generation succeeded, but email sending failed.",
+        );
       }
     } catch (error) {
-      this.logger.error('Error occurred during JOE MI CI report cron job execution');
+      this.logger.error(
+        "Error occurred during JOE MI CI report cron job execution",
+      );
       this.logger.error(error.message);
       if (error.stack) {
         this.logger.error(error.stack);
       }
     }
 
-    this.logger.log('Finished JOE MI CI monthly report cron job');
+    this.logger.log("Finished JOE MI CI monthly report cron job");
   }
 
-
-
-  @Cron('0 8 * * *', { timeZone: 'Asia/Riyadh' })
+  @Cron("0 8 * * *", { timeZone: "Asia/Riyadh" })
   async handleGatemeaReport() {
-    this.logger.log('Starting Gatemea report cron job (Daily Yesterday)');
+    this.logger.log("Starting Gatemea report cron job (Daily Yesterday)");
 
     try {
       const filePath = await this.reportsService.generateGatemeaReport();
       if (!filePath) {
-        this.logger.warn('Gatemea report generation skipped or failed.');
+        this.logger.warn("Gatemea report generation skipped or failed.");
         return;
       }
       this.logger.log(`Gatemea report generated successfully at: ${filePath}`);
 
       const filename = path.basename(filePath);
-      const recipient = 'abdullah.almeri@gatemea.com';
-      const subject = 'Gatemea Report Six Seven';
-      const ccRecipients = 'mohamad.hamze@gatemea.com, Oussama.Barakat@gatemea.com';
+      const recipient = "abdullah.almeri@gatemea.com";
+      const subject = "Gatemea Report Six Seven";
+      const ccRecipients =
+        "mohamad.hamze@gatemea.com, Oussama.Barakat@gatemea.com";
 
       const textBody = `Dear Team,\n\nPlease find attached the Gatemea SixSeven Daily Performance Report for yesterday.\n\nBest regards,\nSystem SixSeven Operations`;
       const emailHtml = `
@@ -150,9 +162,9 @@ export class ReportsCron {
 </html>`;
 
       const emailSent = await this.mailService.sendReportEmail(
-        filePath, 
-        filename, 
-        recipient, 
+        filePath,
+        filename,
+        recipient,
         subject,
         textBody,
         emailHtml,
@@ -160,18 +172,24 @@ export class ReportsCron {
       );
 
       if (emailSent) {
-        this.logger.log(`Gatemea report email sent successfully to ${recipient}.`);
+        this.logger.log(
+          `Gatemea report email sent successfully to ${recipient}.`,
+        );
       } else {
-        this.logger.warn(`Gatemea report generation succeeded, but email sending to ${recipient} failed.`);
+        this.logger.warn(
+          `Gatemea report generation succeeded, but email sending to ${recipient} failed.`,
+        );
       }
     } catch (error) {
-      this.logger.error('Error occurred during Gatemea report cron job execution');
+      this.logger.error(
+        "Error occurred during Gatemea report cron job execution",
+      );
       this.logger.error(error.message);
       if (error.stack) {
         this.logger.error(error.stack);
       }
     }
 
-    this.logger.log('Finished Gatemea report cron job');
+    this.logger.log("Finished Gatemea report cron job");
   }
 }

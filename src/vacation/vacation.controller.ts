@@ -15,77 +15,81 @@ import {
   UsePipes,
   ValidationPipe,
   Patch,
-  Req
-} from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { VacationService } from './vacation.service';
+  Req,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
+import { VacationService } from "./vacation.service";
 import {
   CreateVacationDto,
   UpdateDateStatusDto,
   UpdateMultipleDatesStatusDto,
   VacationQueryDto,
-  ApprovedDatesQueryDto
-} from 'dto/vacation.dto';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { UUID } from 'crypto';
-import { Permissions } from 'decorators/permissions.decorators';
-import { EPermission } from 'enums/Permissions.enum';
-import { multerOptionsVaction } from 'common/multer.config';
+  ApprovedDatesQueryDto,
+} from "dto/vacation.dto";
+import { AuthGuard } from "src/auth/auth.guard";
+import { UUID } from "crypto";
+import { Permissions } from "decorators/permissions.decorators";
+import { EPermission } from "enums/Permissions.enum";
+import { multerOptionsVaction } from "common/multer.config";
 
 @UseGuards(AuthGuard)
-@Controller('vacations')
-@UsePipes(new ValidationPipe({
-  transform: true,
-  whitelist: true,
-  forbidNonWhitelisted: false,
-  transformOptions: {
-    enableImplicitConversion: true,
-  }
-}))
+@Controller("vacations")
+@UsePipes(
+  new ValidationPipe({
+    transform: true,
+    whitelist: true,
+    forbidNonWhitelisted: false,
+    transformOptions: {
+      enableImplicitConversion: true,
+    },
+  }),
+)
 export class VacationController {
   constructor(private readonly vacationService: VacationService) {}
 
   @Post()
   @Permissions(EPermission.VACATION_CREATE)
-  @UseInterceptors(FileInterceptor('image', multerOptionsVaction))
+  @UseInterceptors(FileInterceptor("image", multerOptionsVaction))
   async createVacation(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: CreateVacationDto,
-    @Req() res: any
+    @Req() res: any,
   ) {
     try {
       let imagePath = null;
       if (file) {
         imagePath = `/uploads/vacations/${file.filename}`;
       }
-      if (!dto.userId){
-        dto.userId = res.user.id
+      if (!dto.userId) {
+        dto.userId = res.user.id;
       }
-      if(!dto.branchId){
-
+      if (!dto.branchId) {
       }
-      const lang = res.headers?.['accept-language'] || res.headers?.['lang'] || 'en';
+      const lang =
+        res.headers?.["accept-language"] || res.headers?.["lang"] || "en";
       return await this.vacationService.createVacation(dto, imagePath, lang);
     } catch (error) {
-      throw new BadRequestException(`Failed to create vacation: ${error.message}`);
+      throw new BadRequestException(
+        `Failed to create vacation: ${error.message}`,
+      );
     }
   }
 
   // 🔹 Update single date status
-  @Patch(':id/date-status')
+  @Patch(":id/date-status")
   @Permissions(EPermission.VACATION_UPDATE)
   async updateDateStatus(
-    @Param('id') id: string,
-    @Body() dto: UpdateDateStatusDto
+    @Param("id") id: string,
+    @Body() dto: UpdateDateStatusDto,
   ) {
     return await this.vacationService.updateDateStatus(id, dto);
   }
 
-  @Get('for-mobile')
+  @Get("for-mobile")
   @Permissions(EPermission.VACATION_READ)
   async getVacationsForMobile(
     @Req() req: any,
-    @Query() query: VacationQueryDto
+    @Query() query: VacationQueryDto,
   ) {
     const transformedQuery = this.transformQueryParams(query);
     return await this.vacationService.getVacationsWithPagination(
@@ -93,15 +97,15 @@ export class VacationController {
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
-      transformedQuery.sortOrder
+      transformedQuery.sortOrder,
     );
   }
   // 🔹 Get vacations by branch (summary)
-  @Get('by-branch/:branchId')
+  @Get("by-branch/:branchId")
   @Permissions(EPermission.VACATION_READ)
   async getVacationsByBranch(
-    @Param('branchId') branchId: UUID,
-    @Query() query: VacationQueryDto
+    @Param("branchId") branchId: UUID,
+    @Query() query: VacationQueryDto,
   ) {
     const transformedQuery = this.transformQueryParams(query);
     return await this.vacationService.getVacationsWithPagination(
@@ -109,17 +113,16 @@ export class VacationController {
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
-      transformedQuery.sortOrder
+      transformedQuery.sortOrder,
     );
   }
 
-
   // 🔹 Get vacations by user (summary)
-  @Get('by-user/:userId')
+  @Get("by-user/:userId")
   @Permissions(EPermission.VACATION_READ)
   async getVacationsByUser(
-    @Param('userId') userId: UUID,
-    @Query() query: VacationQueryDto
+    @Param("userId") userId: UUID,
+    @Query() query: VacationQueryDto,
   ) {
     const transformedQuery = this.transformQueryParams(query);
     return await this.vacationService.getVacationsWithPagination(
@@ -127,15 +130,14 @@ export class VacationController {
       transformedQuery.page,
       transformedQuery.limit,
       transformedQuery.sortBy,
-      transformedQuery.sortOrder
+      transformedQuery.sortOrder,
     );
   }
-
 
   // 🔹 Get all vacations (summary)
   @Get()
   @Permissions(EPermission.VACATION_READ)
-  async getAllVacations(@Query() query: any,@Req() req:any) {
+  async getAllVacations(@Query() query: any, @Req() req: any) {
     const transformedQuery = this.transformQueryParams(query);
     const mergedConditions = {
       ...transformedQuery.filters,
@@ -149,10 +151,9 @@ export class VacationController {
       transformedQuery.limit,
       transformedQuery.sortBy,
       transformedQuery.sortOrder,
-      req
+      req,
     );
   }
-
 
   // // 🔹 Get user's vacation dates (summary)
   // @Get('user/:userId/dates')
@@ -188,11 +189,11 @@ export class VacationController {
   //   );
   // }
   // 🔹 Update vacation branches from last check-in/out journey
-  @Patch('update-branches-from-journey')
+  @Patch("update-branches-from-journey")
   @Permissions(EPermission.VACATION_READ)
   async updateVacationBranchesFromJourney(
     @Req() req: any,
-    @Query() query: VacationQueryDto
+    @Query() query: VacationQueryDto,
   ) {
     const transformedQuery = this.transformQueryParams(query);
     return await this.vacationService.updateVacationBranchesFromJourney(
@@ -205,19 +206,19 @@ export class VacationController {
   }
 
   // 🔹 Manually reassign a vacation's branch (if data is incorrect, use this to correct it)
-  @Patch(':id/reassign-branch')
+  @Patch(":id/reassign-branch")
   @Permissions(EPermission.VACATION_UPDATE)
   async reassignVacationBranch(
-    @Param('id') id: string,
-    @Body('branchId') branchId: string,
+    @Param("id") id: string,
+    @Body("branchId") branchId: string,
   ) {
     return await this.vacationService.reassignVacationBranch(id, branchId);
   }
 
   // 🔹 Get vacation by ID with full details
-  @Get(':id')
+  @Get(":id")
   @Permissions(EPermission.VACATION_READ)
-  async getVacation(@Param('id') id: string) {
+  async getVacation(@Param("id") id: string) {
     return await this.vacationService.getVacationById(id);
   }
 
@@ -229,9 +230,9 @@ export class VacationController {
   // }
 
   // 🔹 Delete vacation
-  @Delete(':id')
+  @Delete(":id")
   @Permissions(EPermission.VACATION_DELETE)
-  async deleteVacation(@Param('id') id: string) {
+  async deleteVacation(@Param("id") id: string) {
     return await this.vacationService.vacationRepo.softDelete(id);
   }
 
@@ -239,8 +240,8 @@ export class VacationController {
     return {
       page: query.page ? Number(query.page) : 1,
       limit: query.limit ? Number(query.limit) : 10,
-      sortBy: query.sortBy || 'created_at',
-      sortOrder: query.sortOrder || 'DESC',
+      sortBy: query.sortBy || "created_at",
+      sortOrder: query.sortOrder || "DESC",
       search: query.search,
       status: query.status,
       filters: query.filters,

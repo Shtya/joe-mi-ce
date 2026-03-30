@@ -1,15 +1,15 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 
-import { Notification, NotificationType } from 'entities/notification.entity';
-import { User } from 'entities/user.entity';
-import { Branch } from 'entities/branch.entity';
-import { Journey } from 'entities/all_plans.entity';
-import { Sale } from 'entities/products/sale.entity';
-import { FirebaseService } from 'src/firebase/firebase.service';
+import { Notification, NotificationType } from "entities/notification.entity";
+import { User } from "entities/user.entity";
+import { Branch } from "entities/branch.entity";
+import { Journey } from "entities/all_plans.entity";
+import { Sale } from "entities/products/sale.entity";
+import { FirebaseService } from "src/firebase/firebase.service";
 
-export type SupervisorCheckinType = 'checkin' | 'checkout' | 'update';
+export type SupervisorCheckinType = "checkin" | "checkout" | "update";
 
 export interface SupervisorCheckinPayload {
   supervisorId: string;
@@ -45,14 +45,32 @@ export class NotificationService {
 
   // ====== PUBLIC API FOR OTHER MODULES ======
 
-  async notifySupervisorOnCheckin(payload: SupervisorCheckinPayload, lang: string = 'en') {
-    const type = payload.type === 'checkin' ? NotificationType.JOURNEY_CHECKIN : payload.type === 'checkout' ? NotificationType.JOURNEY_CHECKOUT : NotificationType.JOURNEY_UPDATE;
+  async notifySupervisorOnCheckin(
+    payload: SupervisorCheckinPayload,
+    lang: string = "en",
+  ) {
+    const type =
+      payload.type === "checkin"
+        ? NotificationType.JOURNEY_CHECKIN
+        : payload.type === "checkout"
+          ? NotificationType.JOURNEY_CHECKOUT
+          : NotificationType.JOURNEY_UPDATE;
 
-    const titleEn = payload.type === 'checkin' ? 'New check-in on your branch' : payload.type === 'checkout' ? 'Check-out completed on your branch' : 'Journey status updated on your branch';
-    const titleAr = payload.type === 'checkin' ? 'تسجيل دخول جديد في فرعك' : payload.type === 'checkout' ? 'تم تسجيل الخروج في فرعك' : 'تم تحديث حالة الرحلة في فرعك';
+    const titleEn =
+      payload.type === "checkin"
+        ? "New check-in on your branch"
+        : payload.type === "checkout"
+          ? "Check-out completed on your branch"
+          : "Journey status updated on your branch";
+    const titleAr =
+      payload.type === "checkin"
+        ? "تسجيل دخول جديد في فرعك"
+        : payload.type === "checkout"
+          ? "تم تسجيل الخروج في فرعك"
+          : "تم تحديث حالة الرحلة في فرعك";
 
-    const messageEn = `${payload.promoterName || 'Promoter'} did ${payload.type} at ${payload.branchName}`;
-    const messageAr = `${payload.promoterName || 'المروج'} قام بـ ${this.translateType(payload.type)} في ${payload.branchName}`;
+    const messageEn = `${payload.promoterName || "Promoter"} did ${payload.type} at ${payload.branchName}`;
+    const messageAr = `${payload.promoterName || "المروج"} قام بـ ${this.translateType(payload.type)} في ${payload.branchName}`;
 
     const notification = this.notificationRepo.create({
       user: { id: payload.supervisorId } as User,
@@ -60,39 +78,59 @@ export class NotificationService {
       journey: { id: payload.journeyId } as Journey,
       sale: null,
       type,
-      title: lang === 'ar' ? titleAr : titleEn,
-      message: lang === 'ar' ? messageAr : messageEn,
+      title: lang === "ar" ? titleAr : titleEn,
+      message: lang === "ar" ? messageAr : messageEn,
       meta: {
         ...payload,
       },
     });
 
     await this.notificationRepo.save(notification);
-    this.logger.log(`Notification stored for supervisor ${payload.supervisorId} (journey ${payload.journeyId})`);
+    this.logger.log(
+      `Notification stored for supervisor ${payload.supervisorId} (journey ${payload.journeyId})`,
+    );
 
     // 🔔 Send FCM push notification
     const supervisorUser = await this.userRepo.findOne({
       where: { id: payload.supervisorId },
-      select: ['id', 'fcm_token'],
+      select: ["id", "fcm_token"],
     });
     if (supervisorUser?.fcm_token) {
       await this.firebaseService.sendPushNotification(
         supervisorUser.fcm_token,
-        lang === 'ar' ? titleAr : titleEn,
-        lang === 'ar' ? messageAr : messageEn,
+        lang === "ar" ? titleAr : titleEn,
+        lang === "ar" ? messageAr : messageEn,
         { type, journeyId: payload.journeyId, branchId: payload.branchId },
       );
     }
   }
 
-  async notifyPromoterOnCheckin(payload: PromoterCheckinPayload, lang: string = 'en') {
-    const type = payload.type === 'checkin' ? NotificationType.JOURNEY_CHECKIN : payload.type === 'checkout' ? NotificationType.JOURNEY_CHECKOUT : NotificationType.JOURNEY_UPDATE;
+  async notifyPromoterOnCheckin(
+    payload: PromoterCheckinPayload,
+    lang: string = "en",
+  ) {
+    const type =
+      payload.type === "checkin"
+        ? NotificationType.JOURNEY_CHECKIN
+        : payload.type === "checkout"
+          ? NotificationType.JOURNEY_CHECKOUT
+          : NotificationType.JOURNEY_UPDATE;
 
-    const titleEn = payload.type === 'checkin' ? 'Check-in Successful' : payload.type === 'checkout' ? 'Check-out Successful' : 'Journey Updated';
-    const titleAr = payload.type === 'checkin' ? 'تم تسجيل الدخول بنجاح' : payload.type === 'checkout' ? 'تم تسجيل الخروج بنجاح' : 'تم تحديث الرحلة';
+    const titleEn =
+      payload.type === "checkin"
+        ? "Check-in Successful"
+        : payload.type === "checkout"
+          ? "Check-out Successful"
+          : "Journey Updated";
+    const titleAr =
+      payload.type === "checkin"
+        ? "تم تسجيل الدخول بنجاح"
+        : payload.type === "checkout"
+          ? "تم تسجيل الخروج بنجاح"
+          : "تم تحديث الرحلة";
 
-    const messageEn = `You have successfully ${payload.type === 'checkin' ? 'checked in' : payload.type === 'checkout' ? 'checked out' : 'updated status'} at ${payload.branchName}`;
-    const messageAr = `لقد قمت ${payload.type === 'checkin' ? 'بتسجيل الدخول' : payload.type === 'checkout' ? 'بتسجيل الخروج' : 'بتحديث الحالة'} بنجاح في ${payload.branchName}`;
+    const messageEn = `You have successfully ${payload.type === "checkin" ? "checked in" : payload.type === "checkout" ? "checked out" : "updated status"} at ${payload.branchName}`;
+    const messageAr = `لقد قمت ${payload.type === "checkin" ? "بتسجيل الدخول" : payload.type === "checkout" ? "بتسجيل الخروج" : "بتحديث الحالة"} بنجاح في ${payload.branchName}`;
 
     const notification = this.notificationRepo.create({
       user: { id: payload.promoterId } as User,
@@ -100,26 +138,28 @@ export class NotificationService {
       journey: { id: payload.journeyId } as Journey,
       sale: null,
       type,
-      title: lang === 'ar' ? titleAr : titleEn,
-      message: lang === 'ar' ? messageAr : messageEn,
+      title: lang === "ar" ? titleAr : titleEn,
+      message: lang === "ar" ? messageAr : messageEn,
       meta: {
         ...payload,
       },
     });
 
     await this.notificationRepo.save(notification);
-    this.logger.log(`Notification stored for promoter ${payload.promoterId} (journey ${payload.journeyId})`);
+    this.logger.log(
+      `Notification stored for promoter ${payload.promoterId} (journey ${payload.journeyId})`,
+    );
 
     // 🔔 Send FCM push notification
     const promoterUser = await this.userRepo.findOne({
       where: { id: payload.promoterId },
-      select: ['id', 'fcm_token'],
+      select: ["id", "fcm_token"],
     });
     if (promoterUser?.fcm_token) {
       await this.firebaseService.sendPushNotification(
         promoterUser.fcm_token,
-        lang === 'ar' ? titleAr : titleEn,
-        lang === 'ar' ? messageAr : messageEn,
+        lang === "ar" ? titleAr : titleEn,
+        lang === "ar" ? messageAr : messageEn,
         { type, journeyId: payload.journeyId, branchId: payload.branchId },
       );
     }
@@ -127,16 +167,23 @@ export class NotificationService {
 
   private translateType(type: string): string {
     switch (type) {
-      case 'checkin': return 'تسجيل الدخول';
-      case 'checkout': return 'تسجيل الخروج';
-      case 'update': return 'تحديث';
-      default: return type;
+      case "checkin":
+        return "تسجيل الدخول";
+      case "checkout":
+        return "تسجيل الخروج";
+      case "update":
+        return "تحديث";
+      default:
+        return type;
     }
   }
 
   // ====== UI – GET LIST FOR CURRENT USER ======
 
-  async getUserNotifications(userId: string, query: any & { is_read?: string; type?: NotificationType }) {
+  async getUserNotifications(
+    userId: string,
+    query: any & { is_read?: string; type?: NotificationType },
+  ) {
     const page = Number(query.page) || 1;
     const limit = Number(query.limit) || 20;
 
@@ -145,7 +192,7 @@ export class NotificationService {
     };
 
     if (query.is_read !== undefined) {
-      where.is_read = query.is_read === 'true' || query.is_read === true;
+      where.is_read = query.is_read === "true" || query.is_read === true;
     }
 
     if (query.type) {
@@ -154,7 +201,7 @@ export class NotificationService {
 
     const [items, total] = await this.notificationRepo.findAndCount({
       where,
-      order: { created_at: 'DESC' },
+      order: { created_at: "DESC" },
       skip: (page - 1) * limit,
       take: limit,
     });
@@ -173,7 +220,7 @@ export class NotificationService {
     });
 
     if (!notif) {
-      throw new NotFoundException('Notification not found');
+      throw new NotFoundException("Notification not found");
     }
 
     notif.is_read = true;
@@ -183,7 +230,10 @@ export class NotificationService {
   }
 
   async markAllAsRead(userId: string) {
-    await this.notificationRepo.update({ user: { id: userId }, is_read: false }, { is_read: true });
+    await this.notificationRepo.update(
+      { user: { id: userId }, is_read: false },
+      { is_read: true },
+    );
 
     return { success: true };
   }

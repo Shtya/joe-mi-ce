@@ -1,20 +1,39 @@
 // sale.controller.ts
-import { Controller, Get, Post, Body, Param, Patch, Delete, Query, Res, UseGuards, Req, Put, Header, ParseUUIDPipe } from '@nestjs/common';
-import { SaleService } from './sale.service';
-import { CreateSaleDto, UpdateSaleDto } from 'dto/sale.dto';
-import { CRUD } from 'common/crud.service';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { Permissions } from 'decorators/permissions.decorators';
-import { EPermission } from 'enums/Permissions.enum';
-import { UsersService } from 'src/users/users.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Delete,
+  Query,
+  Res,
+  UseGuards,
+  Req,
+  Put,
+  Header,
+  ParseUUIDPipe,
+} from "@nestjs/common";
+import { SaleService } from "./sale.service";
+import { CreateSaleDto, UpdateSaleDto } from "dto/sale.dto";
+import { CRUD } from "common/crud.service";
+import { AuthGuard } from "src/auth/auth.guard";
+import { Permissions } from "decorators/permissions.decorators";
+import { EPermission } from "enums/Permissions.enum";
+import { UsersService } from "src/users/users.service";
 
 @UseGuards(AuthGuard)
-@Controller('sales')
+@Controller("sales")
 export class SaleController {
-  constructor(private readonly saleService: SaleService,private readonly userService: UsersService) {}
+  constructor(
+    private readonly saleService: SaleService,
+    private readonly userService: UsersService,
+  ) {}
 
   private parseSalesDates(query: any): { startDate: Date; endDate: Date } {
-    const rawStart = query.start_date || query.filters?.fromDate || query.fromDate;
+    const rawStart =
+      query.start_date || query.filters?.fromDate || query.fromDate;
     const rawEnd = query.end_date || query.filters?.toDate || query.toDate;
 
     let startDate: Date;
@@ -22,8 +41,8 @@ export class SaleController {
 
     const parseDateStr = (d: string) => {
       if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
-        const [day, month, year] = d.split('-').map(Number);
-        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const [day, month, year] = d.split("-").map(Number);
+        return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       }
       return d;
     };
@@ -34,7 +53,12 @@ export class SaleController {
         startDate = new Date(`${dateStr}T07:00:00.000+03:00`);
       } else {
         const shiftedNow = new Date(Date.now() - 7 * 60 * 60 * 1000);
-        const saudiDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(shiftedNow);
+        const saudiDateStr = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Riyadh",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        }).format(shiftedNow);
         startDate = new Date(`${saudiDateStr}T07:00:00.000+03:00`);
       }
 
@@ -47,7 +71,12 @@ export class SaleController {
       }
     } else {
       const shiftedNow = new Date(Date.now() - 7 * 60 * 60 * 1000);
-      const saudiDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(shiftedNow);
+      const saudiDateStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Riyadh",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(shiftedNow);
       startDate = new Date(`${saudiDateStr}T07:00:00.000+03:00`);
       endDate = new Date(startDate.getTime() + 33 * 60 * 60 * 1000);
     }
@@ -56,12 +85,14 @@ export class SaleController {
   }
 
   // 🔹 Export sales data to Excel
-  @Get('/export')
+  @Get("/export")
   @Permissions(EPermission.SALE_EXPORT)
   async exportData(@Query() query: any, @Req() req: any, @Res() res: any) {
-    const project = await this.userService.resolveProjectIdFromUser(req.user.id);
+    const project = await this.userService.resolveProjectIdFromUser(
+      req.user.id,
+    );
     const mergedFilters: any = {
-      projectId : project,
+      projectId: project,
       ...query.filters,
     };
 
@@ -72,25 +103,29 @@ export class SaleController {
 
     if (query.filters?.fromDate || query.filters?.toDate) {
       mergedFilters.created_at = {};
-      
+
       const normalizeDate = (d: string) => {
         if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
-          const [day, month, year] = d.split('-').map(Number);
-          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const [day, month, year] = d.split("-").map(Number);
+          return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         }
         return d;
       };
 
       if (query.filters.fromDate) {
         const d = normalizeDate(query.filters.fromDate);
-        mergedFilters.created_at.gte = d.includes('T') ? d : `${d}T00:00:00.000+03:00`;
+        mergedFilters.created_at.gte = d.includes("T")
+          ? d
+          : `${d}T00:00:00.000+03:00`;
       }
       if (query.filters.toDate) {
         const d = normalizeDate(query.filters.toDate);
-        mergedFilters.created_at.lte = d.includes('T') ? d : `${d}T23:59:59.999+03:00`;
+        mergedFilters.created_at.lte = d.includes("T")
+          ? d
+          : `${d}T23:59:59.999+03:00`;
       }
     }
-    
+
     if (mergedFilters.fromDate) delete mergedFilters.fromDate;
     if (mergedFilters.toDate) delete mergedFilters.toDate;
     if (mergedFilters.date) delete mergedFilters.date;
@@ -99,25 +134,33 @@ export class SaleController {
     if (mergedFilters.project) delete mergedFilters.project;
 
     return CRUD.exportEntityToExcel2(
-      this.saleService.saleRepo, 
-      'sale', 
-      'sales_report', 
-      res, 
-      { 
+      this.saleService.saleRepo,
+      "sale",
+      "sales_report",
+      res,
+      {
         exportLimit: query.limit,
         search: query.search,
         filters: mergedFilters,
         sortBy: query.sortBy,
         sortOrder: query.sortOrder,
-        relations: ["user", "product", "branch", "branch.chain", "branch.city", "product.brand", "product.category"],
-      }
+        relations: [
+          "user",
+          "product",
+          "branch",
+          "branch.chain",
+          "branch.city",
+          "product.brand",
+          "product.category",
+        ],
+      },
     );
   }
 
   @Get()
   @Permissions(EPermission.SALE_READ)
-  async findAll(@Query() query: any , @Req() req:any) {
-		// const mergedFilters: any = {
+  async findAll(@Query() query: any, @Req() req: any) {
+    // const mergedFilters: any = {
     //   ...parsedFilters,
     // };6b140f73-7d36-44ad-89b2-492d482e8997
 
@@ -127,9 +170,11 @@ export class SaleController {
     // if (query.filters.toDate) {
     //   mergedFilters.audit_date_to = query.filters.toDate; // will map to audit.audit_date <= toDate
     // }
-    const project = await this.userService.resolveProjectIdFromUser(req.user.id);
+    const project = await this.userService.resolveProjectIdFromUser(
+      req.user.id,
+    );
     const mergedFilters: any = {
-      projectId : project,
+      projectId: project,
       ...query.filters, // This might spread 'fromDate'/'toDate' if they exist in query.filters
     };
 
@@ -140,22 +185,26 @@ export class SaleController {
 
     if (query.filters?.fromDate || query.filters?.toDate) {
       mergedFilters.created_at = {};
-      
+
       const normalizeDate = (d: string) => {
         if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
-          const [day, month, year] = d.split('-').map(Number);
-          return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const [day, month, year] = d.split("-").map(Number);
+          return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         }
         return d;
       };
 
       if (query.filters.fromDate) {
         const d = normalizeDate(query.filters.fromDate);
-        mergedFilters.created_at.gte = d.includes('T') ? d : `${d}T00:00:00.000+03:00`;
+        mergedFilters.created_at.gte = d.includes("T")
+          ? d
+          : `${d}T00:00:00.000+03:00`;
       }
       if (query.filters.toDate) {
         const d = normalizeDate(query.filters.toDate);
-        mergedFilters.created_at.lte = d.includes('T') ? d : `${d}T23:59:59.999+03:00`;
+        mergedFilters.created_at.lte = d.includes("T")
+          ? d
+          : `${d}T23:59:59.999+03:00`;
       }
     }
 
@@ -166,7 +215,26 @@ export class SaleController {
     if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
     if (mergedFilters.project) delete mergedFilters.project;
 
-    return CRUD.findAll2(this.saleService.saleRepo, 'sale', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [ "user", "product", "branch", "branch.chain", "branch.city", "product.brand", "product.category"], [ 'user.name', 'user.username'], mergedFilters);
+    return CRUD.findAll2(
+      this.saleService.saleRepo,
+      "sale",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      [
+        "user",
+        "product",
+        "branch",
+        "branch.chain",
+        "branch.city",
+        "product.brand",
+        "product.category",
+      ],
+      ["user.name", "user.username"],
+      mergedFilters,
+    );
   }
   @Post()
   @Permissions(EPermission.SALE_CREATE)
@@ -174,24 +242,27 @@ export class SaleController {
     return this.saleService.create(dto);
   }
 
-  @Get('promoter/:id/today')
+  @Get("promoter/:id/today")
   @Permissions(EPermission.SALE_READ)
   async getPromoterSalesForToday(
-    @Param('id', new ParseUUIDPipe()) id: string,
-    @Query() query: any
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query() query: any,
   ) {
     // Shift current time backward by 5 hours so that 00:00 to 05:00 AM counts as "today"
     const shiftedNow = new Date(Date.now() - 5 * 60 * 60 * 1000);
-    const saudiDateStr = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Riyadh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
+    const saudiDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Riyadh",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
     }).format(shiftedNow);
 
     // Set exactly from 00:00 KSA today to 04:59:59 KSA the next day
     const startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
-    const endDate = new Date(new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() + 5 * 60 * 60 * 1000);
+    const endDate = new Date(
+      new Date(`${saudiDateStr}T23:59:59.999+03:00`).getTime() +
+        5 * 60 * 60 * 1000,
+    );
 
     const filters = { ...query.filters };
     if (query.filters?.fromDate) delete filters.fromDate;
@@ -207,15 +278,12 @@ export class SaleController {
       query.sortOrder,
       filters,
       startDate,
-      endDate
+      endDate,
     );
   }
 
-  @Get('invoice-summary')
-  getInvoiceSummary(
-    @Req() req: any,
-    @Query() query: any
-  ) {
+  @Get("invoice-summary")
+  getInvoiceSummary(@Req() req: any, @Query() query: any) {
     const { startDate, endDate } = this.parseSalesDates(query);
 
     const filters = { ...query.filters };
@@ -223,7 +291,10 @@ export class SaleController {
     delete filters.toDate;
     delete filters.date;
 
-    const groupBy = query.groupBy === 'product' || query.groupBy === 'category' ? query.groupBy : 'category';
+    const groupBy =
+      query.groupBy === "product" || query.groupBy === "category"
+        ? query.groupBy
+        : "category";
 
     return this.saleService.getInvoiceSummaryByUser(
       req.user.id,
@@ -231,31 +302,28 @@ export class SaleController {
       { ...filters },
       startDate,
       endDate,
-      query.brand_id
+      query.brand_id,
     );
   }
 
-  @Get('my-sales')
+  @Get("my-sales")
   @Permissions(EPermission.SALE_READ)
-  async getMySales(
-    @Req() req: any,
-    @Query() query: any
-  ) {
+  async getMySales(@Req() req: any, @Query() query: any) {
     const filters = { ...query.filters };
     let startDate: Date | undefined;
     let endDate: Date | undefined;
 
     if (query.startDate) startDate = new Date(query.startDate);
     if (query.endDate) endDate = new Date(query.endDate);
-    
+
     // Also support filters.fromDate / toDate standard we use elsewhere
     if (query.filters?.fromDate) {
-        startDate = new Date(query.filters.fromDate);
-        delete filters.fromDate;
+      startDate = new Date(query.filters.fromDate);
+      delete filters.fromDate;
     }
     if (query.filters?.toDate) {
-        endDate = new Date(query.filters.toDate);
-        delete filters.toDate;
+      endDate = new Date(query.filters.toDate);
+      delete filters.toDate;
     }
 
     return this.saleService.findSalesByUserOptimized(
@@ -267,149 +335,145 @@ export class SaleController {
       query.sortOrder,
       filters,
       startDate,
-      endDate
+      endDate,
     );
   }
 
-  @Put(':id')
+  @Put(":id")
   @Permissions(EPermission.SALE_UPDATE)
-  update(@Param('id') id: string, @Body() dto: UpdateSaleDto) {
+  update(@Param("id") id: string, @Body() dto: UpdateSaleDto) {
     return this.saleService.update(id, dto);
   }
 
-
-
   // 🔹 Get sale by ID
-  @Get(':id')
+  @Get(":id")
   @Permissions(EPermission.SALE_READ)
-  findOne(@Param('id') id: string) {
-    return CRUD.findOne(this.saleService.saleRepo, 'sale', id, ['product', 'user', 'branch']);
+  findOne(@Param("id") id: string) {
+    return CRUD.findOne(this.saleService.saleRepo, "sale", id, [
+      "product",
+      "user",
+      "branch",
+    ]);
   }
 
   // 🔹 Delete sale
-  @Delete(':id')
+  @Delete(":id")
   @Permissions(EPermission.SALE_DELETE)
-  remove(@Param('id') id: string) {
+  remove(@Param("id") id: string) {
     return this.saleService.delete(id);
   }
 
-  @Patch(':id/restore')
+  @Patch(":id/restore")
   @Permissions(EPermission.SALE_DELETE)
-  restore(@Param('id') id: string) {
+  restore(@Param("id") id: string) {
     return this.saleService.restore(id);
   }
 
-  @Post(':id/cancel')
+  @Post(":id/cancel")
   @Permissions(EPermission.SALE_RETURN)
-  cancelSale(@Param('id') id: string) {
+  cancelSale(@Param("id") id: string) {
     return this.saleService.cancelSale(id);
   }
 
-
-
-  @Post(':id/return')
+  @Post(":id/return")
   @Permissions(EPermission.SALE_RETURN)
-  cancelOrReturn(@Param('id') id: string) {
+  cancelOrReturn(@Param("id") id: string) {
     return this.saleService.cancelOrReturn(id);
   }
 
-
-  @Get('by-branch/:branchId')
+  @Get("by-branch/:branchId")
   @Permissions(EPermission.SALE_READ)
-  findByBranch(@Param('branchId') branchId: string, @Query() query: any) {
+  findByBranch(@Param("branchId") branchId: string, @Query() query: any) {
     const filters = { ...query.filters };
     delete filters.fromDate;
     delete filters.toDate;
     delete filters.date;
 
     return this.saleService.findSalesWithBrand(
-      'sale',
+      "sale",
       query.search,
       query.page,
       query.limit,
       query.sortBy,
       query.sortOrder,
-      ["user", "product", "branch","branch.salesTargets"],
-      ['status'],
-      { branch: { id: branchId }, ...filters }
+      ["user", "product", "branch", "branch.salesTargets"],
+      ["status"],
+      { branch: { id: branchId }, ...filters },
     );
   }
 
-
-
-  @Get('by-product/:productId')
+  @Get("by-product/:productId")
   @Permissions(EPermission.SALE_READ)
-  findByProduct(@Param('productId') productId: string, @Query() query: any) {
+  findByProduct(@Param("productId") productId: string, @Query() query: any) {
     const filters = { ...query.filters };
     delete filters.fromDate;
     delete filters.toDate;
     delete filters.date;
 
     return this.saleService.findSalesWithBrand(
-      'sale',
+      "sale",
       query.search,
       query.page,
       query.limit,
       query.sortBy,
       query.sortOrder,
       ["user", "product", "branch"],
-      ['status'],
-      { product: { id: productId }, ...filters }
+      ["status"],
+      { product: { id: productId }, ...filters },
     );
   }
 
-@Get('by-user/:userId')
-@Permissions(EPermission.SALE_READ)
-findByUser(@Param('userId') userId: string, @Query() query: any) {
-  const { startDate, endDate } = this.parseSalesDates(query);
+  @Get("by-user/:userId")
+  @Permissions(EPermission.SALE_READ)
+  findByUser(@Param("userId") userId: string, @Query() query: any) {
+    const { startDate, endDate } = this.parseSalesDates(query);
 
-  const filters = { ...query.filters };
-  delete filters.fromDate;
-  delete filters.toDate;
-  delete filters.date;
+    const filters = { ...query.filters };
+    delete filters.fromDate;
+    delete filters.toDate;
+    delete filters.date;
 
-  return this.saleService.findSalesByUserOptimized(
-    userId,
-    query.search,
-    query.page,
-    query.limit,
-    query.sortBy,
-    query.sortOrder,
-    { ...filters },
-    startDate,
-    endDate,
-    query.brand_id
-  );
-}
+    return this.saleService.findSalesByUserOptimized(
+      userId,
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      { ...filters },
+      startDate,
+      endDate,
+      query.brand_id,
+    );
+  }
 
-
-@Get('branch/:branchId/progress')
+  @Get("branch/:branchId/progress")
   @Permissions(EPermission.SALE_READ)
   getSalesWithTargetProgress(
-    @Param('branchId') branchId: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
+    @Param("branchId") branchId: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;
     return this.saleService.getSalesWithTargetProgress(branchId, start, end);
   }
 
-  @Get('branch/:branchId/performance')
+  @Get("branch/:branchId/performance")
   @Permissions(EPermission.SALE_READ)
   getSalesPerformance(
-    @Param('branchId') branchId: string,
-    @Query('period') period: 'day' | 'week' | 'month' | 'quarter' = 'month'
+    @Param("branchId") branchId: string,
+    @Query("period") period: "day" | "week" | "month" | "quarter" = "month",
   ) {
     return this.saleService.getSalesPerformanceByBranch(branchId, period);
   }
 
-  @Get('branch/:branchId/product-summary')
+  @Get("branch/:branchId/product-summary")
   @Permissions(EPermission.SALE_READ)
   getProductSummary(
-    @Param('branchId') branchId: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string
+    @Param("branchId") branchId: string,
+    @Query("startDate") startDate?: string,
+    @Query("endDate") endDate?: string,
   ) {
     const start = startDate ? new Date(startDate) : undefined;
     const end = endDate ? new Date(endDate) : undefined;

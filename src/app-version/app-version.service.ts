@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { AppVersion } from 'entities/app-version.entity';
-import { CreateAppVersionDto } from './dto/create-app-version.dto';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { AppVersion } from "entities/app-version.entity";
+import { CreateAppVersionDto } from "./dto/create-app-version.dto";
 
 @Injectable()
 export class AppVersionService {
@@ -13,17 +13,17 @@ export class AppVersionService {
 
   async getUpdateInfo() {
     const version = await this.appVersionRepository.findOne({
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
     });
 
     if (!version) {
       return {
-          updateAvailable: false,
-          latestVersion: '0.0.0',
-          latestBuildNumber: '0',
-          isForcedUpdate: false,
-          updateMessage: '',
-          downloadUrl: { android: '', ios: '' },
+        updateAvailable: false,
+        latestVersion: "0.0.0",
+        latestBuildNumber: "0",
+        isForcedUpdate: false,
+        updateMessage: "",
+        downloadUrl: { android: "", ios: "" },
       };
     }
 

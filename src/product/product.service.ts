@@ -1,26 +1,37 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { CreateProductDto, ImportProductRowDto, ImportProductsDto, StockDto, UpdateProductDto } from 'dto/product.dto';
-import { Branch } from 'entities/branch.entity';
-import { Brand } from 'entities/products/brand.entity';
-import { Category } from 'entities/products/category.entity';
-import { Product } from 'entities/products/product.entity';
-import { Project } from 'entities/project.entity';
-import { Stock } from 'entities/products/stock.entity';
-import { Brackets, ILike, In, Repository } from 'typeorm';
-import { ProductFilterQueryDto } from 'dto/product-filters.dto';
-import { CRUD } from 'common/crud.service';
-import { PaginationQueryDto } from 'dto/pagination.dto';
-import * as ExcelJS from 'exceljs';
-import { User } from 'entities/user.entity';
-import { UsersService } from 'src/users/users.service';
-import * as fs from 'fs';
-import * as path from 'path';
-import { v4 as uuidv4 } from 'uuid';
-import axios from 'axios';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import {
+  CreateProductDto,
+  ImportProductRowDto,
+  ImportProductsDto,
+  StockDto,
+  UpdateProductDto,
+} from "dto/product.dto";
+import { Branch } from "entities/branch.entity";
+import { Brand } from "entities/products/brand.entity";
+import { Category } from "entities/products/category.entity";
+import { Product } from "entities/products/product.entity";
+import { Project } from "entities/project.entity";
+import { Stock } from "entities/products/stock.entity";
+import { Brackets, ILike, In, Repository } from "typeorm";
+import { ProductFilterQueryDto } from "dto/product-filters.dto";
+import { CRUD } from "common/crud.service";
+import { PaginationQueryDto } from "dto/pagination.dto";
+import * as ExcelJS from "exceljs";
+import { User } from "entities/user.entity";
+import { UsersService } from "src/users/users.service";
+import * as fs from "fs";
+import * as path from "path";
+import { v4 as uuidv4 } from "uuid";
+import axios from "axios";
 @Injectable()
 export class ProductService {
-    private readonly uploadPath = './uploads/products';
+  private readonly uploadPath = "./uploads/products";
 
   constructor(
     @InjectRepository(Product)
@@ -37,11 +48,9 @@ export class ProductService {
     private stockRepository: Repository<Stock>,
     @InjectRepository(Branch)
     private branchRepository: Repository<Branch>,
-        public readonly userService: UsersService, // inject userService
-
+    public readonly userService: UsersService, // inject userService
   ) {
-        this.ensureUploadDirectory();
-
+    this.ensureUploadDirectory();
   }
   private async projectWhere(user: any, extra: any = {}) {
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
@@ -53,22 +62,26 @@ export class ProductService {
     if (dto.stock?.length) {
       for (const stockItem of dto.stock) {
         if (!stockItem.all_branches && !stockItem.branch_id) {
-          throw new BadRequestException('branch_id is required when all_branches is false');
+          throw new BadRequestException(
+            "branch_id is required when all_branches is false",
+          );
         }
       }
     }
 
     const [brand, category, project] = await Promise.all([
-      dto.brand_id ? this.brandRepository.findOne({
-        where: { id: dto.brand_id }
-      }) : Promise.resolve(undefined),
+      dto.brand_id
+        ? this.brandRepository.findOne({
+            where: { id: dto.brand_id },
+          })
+        : Promise.resolve(undefined),
       this.categoryRepository.findOne({
-        where: { id: dto.category_id }
+        where: { id: dto.category_id },
       }),
       this.projectRepository.findOne({
         where: { id: dto.project_id },
-        relations: ['branches']
-      })
+        relations: ["branches"],
+      }),
     ]);
 
     // Validations
@@ -76,10 +89,14 @@ export class ProductService {
       throw new NotFoundException(`Brand with ID ${dto.brand_id} not found`);
     }
     if (!category) {
-      throw new NotFoundException(`Category with ID ${dto.category_id} not found`);
+      throw new NotFoundException(
+        `Category with ID ${dto.category_id} not found`,
+      );
     }
     if (!project) {
-      throw new NotFoundException(`Project with ID ${dto.project_id} not found`);
+      throw new NotFoundException(
+        `Project with ID ${dto.project_id} not found`,
+      );
     }
 
     // Check for existing product name in this project (including soft-deleted)
@@ -94,7 +111,7 @@ export class ProductService {
     if (product) {
       if (!product.deleted_at) {
         throw new ConflictException(
-          `Product name "${dto.name}" already exists in this project`
+          `Product name "${dto.name}" already exists in this project`,
         );
       }
       // Restore soft-deleted product
@@ -123,14 +140,14 @@ export class ProductService {
     // Return product with relations if needed
     return this.productRepository.findOne({
       where: { id: savedProduct.id },
-      relations: ['brand', 'category', 'project', 'stock', 'stock.branch']
+      relations: ["brand", "category", "project", "stock", "stock.branch"],
     });
   }
 
   private async assignStockToBranches(
     product: Product,
     project: Project,
-    stockItems: StockDto[]
+    stockItems: StockDto[],
   ): Promise<void> {
     if (!stockItems.length) return;
 
@@ -141,7 +158,7 @@ export class ProductService {
         // Assign to all branches in the project
         if (!project.branches?.length) {
           throw new BadRequestException(
-            'Project has no branches to assign stock to'
+            "Project has no branches to assign stock to",
           );
         }
 
@@ -158,7 +175,7 @@ export class ProductService {
         // Assign to specific branch
         if (!stockItem.branch_id) {
           throw new BadRequestException(
-            'branch_id is required unless all_branches is true'
+            "branch_id is required unless all_branches is true",
           );
         }
 
@@ -168,7 +185,7 @@ export class ProductService {
 
         if (!branch) {
           throw new NotFoundException(
-            `Branch with ID ${stockItem.branch_id} not found in this project`
+            `Branch with ID ${stockItem.branch_id} not found in this project`,
           );
         }
 
@@ -210,24 +227,32 @@ export class ProductService {
   async findOne(id: string, user: any) {
     const product = await this.productRepository.findOne({
       where: { id },
-      relations: ['brand', 'category', 'stock', 'project'],
+      relations: ["brand", "category", "stock", "project"],
     });
 
-    if (!product) throw new NotFoundException('Product not found');
+    if (!product) throw new NotFoundException("Product not found");
     return product;
   }
   async update(id: string, dto: UpdateProductDto, user: any): Promise<Product> {
     const product = await this.findOne(id, user);
 
     if (dto.brand_id) {
-      const brand = await this.brandRepository.findOne({ where: { id: dto.brand_id } });
-      if (!brand) throw new NotFoundException(`Brand not found in your project`);
+      const brand = await this.brandRepository.findOne({
+        where: { id: dto.brand_id },
+      });
+      if (!brand) {
+        throw new NotFoundException(`Brand not found in your project`);
+      }
       product.brand = brand;
     }
 
     if (dto.category_id) {
-      const category = await this.categoryRepository.findOne({ where: { id: dto.category_id, project_id: product.project.id } });
-      if (!category) throw new NotFoundException(`Category not found in your project`);
+      const category = await this.categoryRepository.findOne({
+        where: { id: dto.category_id, project_id: product.project.id },
+      });
+      if (!category) {
+        throw new NotFoundException(`Category not found in your project`);
+      }
       product.category = category;
     }
 
@@ -235,8 +260,11 @@ export class ProductService {
       const exists = await this.productRepository.findOne({
         where: { name: dto.name, project: { id: product.project.id } },
       });
-      if (exists && exists.id !== product.id)
-        throw new ConflictException(`Another product with name "${dto.name}" exists in your project`);
+      if (exists && exists.id !== product.id) {
+        throw new ConflictException(
+          `Another product with name "${dto.name}" exists in your project`,
+        );
+      }
     }
 
     const { stock, ...productData } = dto;
@@ -246,7 +274,7 @@ export class ProductService {
     if (stock) {
       const project = await this.projectRepository.findOne({
         where: { id: product.project.id },
-        relations: ['branches']
+        relations: ["branches"],
       });
       await this.assignStockToBranches(savedProduct, project, stock);
     }
@@ -257,10 +285,15 @@ export class ProductService {
     const product = await this.findOne(id, user);
     await this.productRepository.remove(product);
   }
-  async findAllForMobile(query: PaginationQueryDto, categoryId: string, brandId: string, user: any) {
-    const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+  async findAllForMobile(
+    query: PaginationQueryDto,
+    categoryId: string,
+    brandId: string,
+    user: any,
+  ) {
+    const { search, sortBy = "name", sortOrder = "ASC" } = query;
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
-    let where: any = {};
+    const where: any = {};
 
     if (search) where.name = ILike(`%${search}%`);
 
@@ -268,9 +301,9 @@ export class ProductService {
       where: {
         category: { id: categoryId },
         brand: { id: brandId },
-        ...where
+        ...where,
       },
-      select: ['id', 'name', 'price', 'image_url'],
+      select: ["id", "name", "price", "image_url"],
       order: { [sortBy]: sortOrder },
     });
 
@@ -280,97 +313,98 @@ export class ProductService {
   async generateImportTemplate(projectId: string): Promise<Buffer> {
     const project = await this.projectRepository.findOne({
       where: { id: projectId },
-      relations: ['branches'],
+      relations: ["branches"],
     });
 
     if (!project) {
       throw new NotFoundException(`Project with ID ${projectId} not found`);
     }
 
-    const availableBranches = project.branches?.map(b => b.name) || [];
-    const branchExample = availableBranches.length > 0
-      ? availableBranches.slice(0, 3).join(', ')
-      : 'Main Branch, Branch 2, Branch 3';
+    const availableBranches = project.branches?.map((b) => b.name) || [];
+    const branchExample =
+      availableBranches.length > 0
+        ? availableBranches.slice(0, 3).join(", ")
+        : "Main Branch, Branch 2, Branch 3";
 
     const sampleProducts = [
       {
-        name: 'iPhone 15 Pro',
-        description: 'Latest iPhone model',
+        name: "iPhone 15 Pro",
+        description: "Latest iPhone model",
         price: 999.99,
         discount: 0,
-        model: 'IP15P-256',
-        sku: 'APP-IP15P-256',
-        image_url: 'https://example.com/iphone.jpg',
-        is_high_priority: 'true',
-        category_name: 'Smartphones',
-        brand_name: 'Apple',
+        model: "IP15P-256",
+        sku: "APP-IP15P-256",
+        image_url: "https://example.com/iphone.jpg",
+        is_high_priority: "true",
+        category_name: "Smartphones",
+        brand_name: "Apple",
         quantity: 100,
-        all_branches: 'true',
-        branches: ''
+        all_branches: "true",
+        branches: "",
       },
       {
-        name: 'Galaxy S24',
-        description: 'Samsung flagship phone',
+        name: "Galaxy S24",
+        description: "Samsung flagship phone",
         price: 899.99,
         discount: 10,
-        model: 'GS24-256',
-        sku: 'SAM-GS24-256',
-        image_url: 'https://example.com/galaxy.jpg',
-        is_high_priority: 'false',
-        category_name: 'Smartphones',
-        brand_name: 'Samsung',
+        model: "GS24-256",
+        sku: "SAM-GS24-256",
+        image_url: "https://example.com/galaxy.jpg",
+        is_high_priority: "false",
+        category_name: "Smartphones",
+        brand_name: "Samsung",
         quantity: 50,
-        all_branches: 'false',
-        branches: branchExample
+        all_branches: "false",
+        branches: branchExample,
       },
       {
-        name: 'Wireless Earbuds',
-        description: 'Noise cancelling',
+        name: "Wireless Earbuds",
+        description: "Noise cancelling",
         price: 199.99,
         discount: 15,
-        model: 'WB-NC',
-        sku: 'SON-WB-NC',
-        image_url: 'https://example.com/earbuds.jpg',
-        is_high_priority: 'true',
-        category_name: 'Audio',
-        brand_name: 'Sony',
+        model: "WB-NC",
+        sku: "SON-WB-NC",
+        image_url: "https://example.com/earbuds.jpg",
+        is_high_priority: "true",
+        category_name: "Audio",
+        brand_name: "Sony",
         quantity: 30,
-        all_branches: 'false',
-        branches: availableBranches[0] || 'Main Branch'
-      }
+        all_branches: "false",
+        branches: availableBranches[0] || "Main Branch",
+      },
     ];
 
     const columns = [
-      { key: 'name', header: 'name' },
-      { key: 'description', header: 'description' },
-      { key: 'price', header: 'price' },
-      { key: 'discount', header: 'discount' },
-      { key: 'model', header: 'model' },
-      { key: 'sku', header: 'sku' },
-      { key: 'image_url', header: 'image_url' },
-      { key: 'is_high_priority', header: 'is_high_priority' },
-      { key: 'category_name', header: 'category_name' },
-      { key: 'brand_name', header: 'brand_name' },
-      { key: 'quantity', header: 'quantity' },
-      { key: 'all_branches', header: 'all_branches' },
-      { key: 'branches', header: 'branches' },
+      { key: "name", header: "name" },
+      { key: "description", header: "description" },
+      { key: "price", header: "price" },
+      { key: "discount", header: "discount" },
+      { key: "model", header: "model" },
+      { key: "sku", header: "sku" },
+      { key: "image_url", header: "image_url" },
+      { key: "is_high_priority", header: "is_high_priority" },
+      { key: "category_name", header: "category_name" },
+      { key: "brand_name", header: "brand_name" },
+      { key: "quantity", header: "quantity" },
+      { key: "all_branches", header: "all_branches" },
+      { key: "branches", header: "branches" },
     ];
 
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('Import Template');
+    const sheet = workbook.addWorksheet("Import Template");
 
     // ✅ Define columns BEFORE adding rows
     sheet.columns = columns;
 
     // Insert data rows
-    sampleProducts.forEach(prod => sheet.addRow(prod));
+    sampleProducts.forEach((prod) => sheet.addRow(prod));
 
     // Apply numeric formats (now works because columns exist)
-    sheet.getColumn('price').numFmt = '#,##0.00';
-    sheet.getColumn('discount').numFmt = '#,##0.00';
-    sheet.getColumn('quantity').numFmt = '0';
+    sheet.getColumn("price").numFmt = "#,##0.00";
+    sheet.getColumn("discount").numFmt = "#,##0.00";
+    sheet.getColumn("quantity").numFmt = "0";
 
-    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
 
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
@@ -381,12 +415,17 @@ export class ProductService {
    */
   async importProducts(
     dto: ImportProductsDto,
-    user: any
-  ): Promise<{ success: number; failed: number; errors: string[]; imagesDownloaded: number }> {
+    user: any,
+  ): Promise<{
+    success: number;
+    failed: number;
+    errors: string[];
+    imagesDownloaded: number;
+  }> {
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
     const project = await this.projectRepository.findOne({
       where: { id: projectId },
-      relations: ['branches']
+      relations: ["branches"],
     });
 
     if (!project) {
@@ -397,7 +436,7 @@ export class ProductService {
       success: 0,
       failed: 0,
       imagesDownloaded: 0,
-      errors: [] as string[]
+      errors: [] as string[],
     };
 
     // Process products one by one
@@ -407,7 +446,10 @@ export class ProductService {
         results.success++;
 
         // Count images downloaded
-        if (dto.products[i].image_url && dto.products[i].image_url.trim() !== '') {
+        if (
+          dto.products[i].image_url &&
+          dto.products[i].image_url.trim() !== ""
+        ) {
           results.imagesDownloaded++;
         }
       } catch (error) {
@@ -419,7 +461,7 @@ export class ProductService {
     return results;
   }
 
-    async cleanupUnusedImages(daysOld: number = 30): Promise<void> {
+  async cleanupUnusedImages(daysOld: number = 30): Promise<void> {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
@@ -428,7 +470,7 @@ export class ProductService {
       where: {
         created_at: new Date(cutoffDate),
       },
-      select: ['id', 'image_url']
+      select: ["id", "image_url"],
     });
 
     // Get all image files in upload directory
@@ -436,9 +478,9 @@ export class ProductService {
 
     // Find unused images
     const usedImages = oldProducts
-      .map(p => p.image_url)
-      .filter(url => url && url.includes('/uploads/products/'))
-      .map(url => path.basename(url));
+      .map((p) => p.image_url)
+      .filter((url) => url && url.includes("/uploads/products/"))
+      .map((url) => path.basename(url));
 
     for (const file of files) {
       if (!usedImages.includes(file)) {
@@ -520,97 +562,108 @@ export class ProductService {
   /**
    * Assign stock to branches
    */
-private async assignStock(product: Product, project: Project, productData: any) {
-  let quantity = parseInt(productData.quantity || '1');
-  if (isNaN(quantity) || quantity <= 0) quantity = 1;
+  private async assignStock(
+    product: Product,
+    project: Project,
+    productData: any,
+  ) {
+    let quantity = parseInt(productData.quantity || "1");
+    if (isNaN(quantity) || quantity <= 0) quantity = 1;
 
-  const stockToInsert: Partial<Stock>[] = [];
-  const availableBranches = project.branches || [];
+    const stockToInsert: Partial<Stock>[] = [];
+    const availableBranches = project.branches || [];
 
-  if (productData.all_branches || ['true','1','yes'].includes((productData.all_branches+'').toLowerCase())) {
-    // All branches
-    for (const branch of availableBranches) {
-      stockToInsert.push({ 
-        branch, 
-        product, 
-        branch_id: branch.id,
-        product_id: product.id,
-        quantity 
-      });
+    if (
+      productData.all_branches ||
+      ["true", "1", "yes"].includes(
+        (productData.all_branches + "").toLowerCase(),
+      )
+    ) {
+      // All branches
+      for (const branch of availableBranches) {
+        stockToInsert.push({
+          branch,
+          product,
+          branch_id: branch.id,
+          product_id: product.id,
+          quantity,
+        });
+      }
+    } else if (productData.branches) {
+      const branchNames = productData.branches
+        .split(",")
+        .map((n: string) => n.trim())
+        .filter((n: string) => n.length > 0);
+
+      for (const branchName of branchNames) {
+        const branch = availableBranches.find(
+          (b) => b.name.toLowerCase() === branchName.toLowerCase(),
+        );
+        if (!branch) {
+          throw new NotFoundException(`Branch "${branchName}" not found`);
+        }
+        stockToInsert.push({
+          branch,
+          product,
+          branch_id: branch.id,
+          product_id: product.id,
+          quantity,
+        });
+      }
     }
-  } else if (productData.branches) {
-    const branchNames = productData.branches
-      .split(',')
-      .map((n: string) => n.trim())
-      .filter((n: string) => n.length > 0);
 
-    for (const branchName of branchNames) {
-      const branch = availableBranches.find(
-        b => b.name.toLowerCase() === branchName.toLowerCase()
-      );
-      if (!branch) throw new NotFoundException(`Branch "${branchName}" not found`);
-      stockToInsert.push({ 
-        branch, 
-        product, 
-        branch_id: branch.id,
+    if (stockToInsert.length > 0) {
+      // Remove old stock for these branches
+      const branchIds = stockToInsert.map((s: any) => s.branch_id);
+      await this.stockRepository.delete({
         product_id: product.id,
-        quantity 
+        branch_id: In(branchIds),
       });
+      // Insert with raw SQL to guarantee IDs are propagated
+      for (const s of stockToInsert) {
+        await this.stockRepository
+          .createQueryBuilder()
+          .insert()
+          .into(Stock)
+          .values({
+            product_id: (s as any).product_id,
+            branch_id: (s as any).branch_id,
+            quantity: (s as any).quantity,
+          })
+          .orIgnore()
+          .execute();
+      }
     }
   }
-
-  if (stockToInsert.length > 0) {
-    // Remove old stock for these branches
-    const branchIds = stockToInsert.map((s: any) => s.branch_id);
-    await this.stockRepository.delete({
-      product_id: product.id,
-      branch_id: In(branchIds),
-    });
-    // Insert with raw SQL to guarantee IDs are propagated
-    for (const s of stockToInsert) {
-      await this.stockRepository
-        .createQueryBuilder()
-        .insert()
-        .into(Stock)
-        .values({
-          product_id: (s as any).product_id,
-          branch_id: (s as any).branch_id,
-          quantity: (s as any).quantity,
-        })
-        .orIgnore()
-        .execute();
-    }
-  }
-}
 
   /**
    * Export products to Excel
    */
   async exportProducts(projectId: string, filters?: any): Promise<Buffer> {
     const queryBuilder = this.productRepository
-      .createQueryBuilder('product')
-      .leftJoinAndSelect('product.brand', 'brand')
-      .leftJoinAndSelect('product.category', 'category')
-      .leftJoinAndSelect('product.stock', 'stock')
-      .leftJoinAndSelect('stock.branch', 'branch')
-      .where('product.project_id = :projectId', { projectId });
+      .createQueryBuilder("product")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("product.category", "category")
+      .leftJoinAndSelect("product.stock", "stock")
+      .leftJoinAndSelect("stock.branch", "branch")
+      .where("product.project_id = :projectId", { projectId });
 
     // Apply filters if provided
     if (filters) {
       if (filters.category_id) {
-        queryBuilder.andWhere('product.category_id = :categoryId', {
-          categoryId: filters.category_id
+        queryBuilder.andWhere("product.category_id = :categoryId", {
+          categoryId: filters.category_id,
         });
       }
       if (filters.brand_id) {
-        queryBuilder.andWhere('product.brand_id = :brandId', {
-          brandId: filters.brand_id
+        queryBuilder.andWhere("product.brand_id = :brandId", {
+          brandId: filters.brand_id,
         });
       }
       if (filters.search) {
         queryBuilder.andWhere(
-          '(product.name ILIKE :search OR product.sku ILIKE :search OR product.model ILIKE :search)',
-          { search: `%${filters.search}%` }
+          "(product.name ILIKE :search OR product.sku ILIKE :search OR product.model ILIKE :search)",
+          { search: `%${filters.search}%` },
         );
       }
     }
@@ -619,309 +672,301 @@ private async assignStock(product: Product, project: Project, productData: any) 
 
     // Create Excel workbook
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Products');
+    const worksheet = workbook.addWorksheet("Products");
 
     // Define columns
     worksheet.columns = [
-      { header: 'ID', key: 'id', width: 36 },
-      { header: 'Name', key: 'name', width: 30 },
-      { header: 'Description', key: 'description', width: 40 },
-      { header: 'Price', key: 'price', width: 15 },
-      { header: 'Discount %', key: 'discount', width: 12 },
-      { header: 'Model', key: 'model', width: 20 },
-      { header: 'SKU', key: 'sku', width: 20 },
-      { header: 'Brand', key: 'brand', width: 20 },
-      { header: 'Category', key: 'category', width: 20 },
-      { header: 'Total Stock', key: 'total_stock', width: 15 },
-      { header: 'Active', key: 'is_active', width: 10 },
-      { header: 'High Priority', key: 'is_high_priority', width: 15 },
-      { header: 'Created At', key: 'created_at', width: 20 },
+      { header: "ID", key: "id", width: 36 },
+      { header: "Name", key: "name", width: 30 },
+      { header: "Description", key: "description", width: 40 },
+      { header: "Price", key: "price", width: 15 },
+      { header: "Discount %", key: "discount", width: 12 },
+      { header: "Model", key: "model", width: 20 },
+      { header: "SKU", key: "sku", width: 20 },
+      { header: "Brand", key: "brand", width: 20 },
+      { header: "Category", key: "category", width: 20 },
+      { header: "Total Stock", key: "total_stock", width: 15 },
+      { header: "Active", key: "is_active", width: 10 },
+      { header: "High Priority", key: "is_high_priority", width: 15 },
+      { header: "Created At", key: "created_at", width: 20 },
     ];
 
     // Style header row
     worksheet.getRow(1).font = { bold: true };
     worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' }
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE0E0E0" },
     };
 
     // Add data rows
-    products.forEach(product => {
-      const totalStock = product.stock?.reduce((sum, s) => sum + s.quantity, 0) || 0;
+    products.forEach((product) => {
+      const totalStock =
+        product.stock?.reduce((sum, s) => sum + s.quantity, 0) || 0;
 
       worksheet.addRow({
         id: product.id,
         name: product.name,
-        description: product.description || '',
+        description: product.description || "",
         price: product.price,
         discount: product.discount,
-        model: product.model || '',
-        sku: product.sku || '',
-        brand: product.brand?.name || '',
+        model: product.model || "",
+        sku: product.sku || "",
+        brand: product.brand?.name || "",
         category: product.category?.name,
         total_stock: totalStock,
-        is_active: product.is_active ? 'Yes' : 'No',
-        is_high_priority: product.is_high_priority ? 'Yes' : 'No',
-        created_at: product.created_at.toISOString().split('T')[0]
+        is_active: product.is_active ? "Yes" : "No",
+        is_high_priority: product.is_high_priority ? "Yes" : "No",
+        created_at: product.created_at.toISOString().split("T")[0],
       });
     });
 
     // Format currency cells
-    worksheet.getColumn('price').numFmt = '#,##0.00';
+    worksheet.getColumn("price").numFmt = "#,##0.00";
 
     // Write to buffer
     const buffer = await workbook.xlsx.writeBuffer();
     return Buffer.from(buffer);
   }
-private async findOrCreateCategory(
-  name: string,
-  project: Project
-): Promise<Category> {
-  let category = await this.categoryRepository.findOne({
-    where: {
-      name: ILike(name),
-      project: { id: project.id }
-    }
-  });
-
-  if (!category) {
-    category = this.categoryRepository.create({
-      name,
-      project
+  private async findOrCreateCategory(
+    name: string,
+    project: Project,
+  ): Promise<Category> {
+    let category = await this.categoryRepository.findOne({
+      where: {
+        name: ILike(name),
+        project: { id: project.id },
+      },
     });
-    category = await this.categoryRepository.save(category);
+
+    if (!category) {
+      category = this.categoryRepository.create({
+        name,
+        project,
+      });
+      category = await this.categoryRepository.save(category);
+    }
+
+    return category;
   }
+  private async findOrCreateBrand(
+    name: string,
+    category: Category,
+    project: Project,
+  ): Promise<Brand> {
+    let brand = await this.brandRepository.findOne({
+      where: {
+        name: ILike(name),
+        project: { id: project.id },
+      },
+      relations: ["categories"],
+    });
 
-  return category;
-}
-private async findOrCreateBrand(
-  name: string,
-  category: Category,
-  project: Project
-): Promise<Brand> {
-  let brand = await this.brandRepository.findOne({
-    where: {
-      name: ILike(name),
-      project: { id: project.id }
-    },
-    relations: ['categories']
-  });
+    if (!brand) {
+      brand = this.brandRepository.create({
+        name,
+        project,
+        categories: [category],
+      });
+    } else {
+      const alreadyLinked = brand.categories?.some((c) => c.id === category.id);
 
-  if (!brand) {
-    brand = this.brandRepository.create({
-      name,
+      if (!alreadyLinked) {
+        brand.categories = [...(brand.categories || []), category];
+      }
+    }
+
+    return this.brandRepository.save(brand);
+  }
+  private async processImportRow(
+    productData: ImportProductRowDto,
+    project: Project,
+  ): Promise<void> {
+    /**
+     * 1️⃣ Category (auto-create)
+     */
+    const category = await this.findOrCreateCategory(
+      productData.category_name,
       project,
-      categories: [category]
-    });
-  } else {
-    const alreadyLinked = brand.categories?.some(
-      c => c.id === category.id
     );
 
-    if (!alreadyLinked) {
-      brand.categories = [...(brand.categories || []), category];
-    }
-  }
-
-  return this.brandRepository.save(brand);
-}
-private async processImportRow(
-  productData: ImportProductRowDto,
-  project: Project
-): Promise<void> {
-
-  /**
-   * 1️⃣ Category (auto-create)
-   */
-  const category = await this.findOrCreateCategory(
-    productData.category_name,
-    project
-  );
-
-  /**
-   * 2️⃣ Brand (auto-create + auto-assign to category)
-   */
-  let brand: Brand | undefined;
-  if (productData.brand_name) {
-    brand = await this.findOrCreateBrand(
-      productData.brand_name,
-      category,
-      project
-    );
-  }
-
-  /**
-   * 3️⃣ Prevent duplicate product (including soft-deleted)
-   */
-  let product = await this.productRepository.findOne({
-    where: {
-      name: productData.name,
-      project: { id: project.id }
-    },
-    withDeleted: true
-  });
-
-  const isUpdate = !!product;
-  if (product && !product.deleted_at) {
-    throw new ConflictException(
-      `Product "${productData.name}" already exists`
-    );
-  }
-
-  /**
-   * 4️⃣ Create or Restore product
-   */
-  if (!product) {
-    product = this.productRepository.create({
-      // Excel → Product
-      name: productData.name,                  // Product Name
-      model: productData.device_name,           // Device Name
-      sku: productData.sku,                     // SKU/Reference
-      description: productData.description,     // Device Description
-      price: productData.price,                 // Device Price
-      is_high_priority: productData.product_priority || false,
-      image_url: productData.image_url,         // Device Image URL
-      discount: 0,
-      is_active: true,
-      project,
-      category,
-      brand
-    });
-  } else {
-    // Restore soft-deleted product
-    product.deleted_at = null;
-    this.productRepository.merge(product, {
-      model: productData.device_name,
-      sku: productData.sku,
-      description: productData.description,
-      price: productData.price,
-      is_high_priority: productData.product_priority || false,
-      image_url: productData.image_url,
-      category,
-      brand
-    });
-  }
-
-  const savedProduct = await this.productRepository.save(product);
-
-  /**
-   * 5️⃣ Stock
-   */
-  await this.assignStock(savedProduct, project, productData);
-}
-async importAndUpdateProducts(rows: any[], projectId: string) {
-  const project = await this.projectRepository.findOne({
-    where: { id: projectId },
-    relations: ['branches'],
-  });
-
-  if (!project) throw new NotFoundException(`Project ${projectId} not found`);
-
-  const result = {
-    created: 0,
-    updated: 0,
-    failed: 0,
-    errors: [] as string[],
-  };
-
-  for (let i = 0; i < rows.length; i++) {
-    try {
-      const updated = await this.processUpsertProduct(rows[i], project);
-      console.log(rows,project)
-      updated ? result.updated++ : result.created++;
-    } catch (err) {
-      result.failed++;
-      result.errors.push(`Row ${i + 1}: ${err.message}`);
-    }
-  }
-
-  return result;
-}
-
-private async processUpsertRow(row: any, project: Project) {
-  const map = (keys: string[], def?: any) =>
-    keys.find(k => row[k] !== undefined) ? row[keys.find(k => row[k] !== undefined)!] : def;
-
-  /** Mapping */
-  const name = map(['product_name', 'name']);
-const model = map(
-  ['device_name', 'product_name2', 'model'],
-  map(['product_name', 'name']) // fallback
-);
-const imageUrlRaw = map(['device_image_url', 'image_url']);
-
-// Remove :8080 if present
-const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, '') : undefined;
-
-  const price = parseFloat(map(['device_price', 'price'], '0'));
-  const isHighPriority = ['true', '1', 'yes'].includes(
-    (map(['product_priority', 'priority'], '') + '').toLowerCase()
-  );
-
-  /** Category */
-  const category = await this.findOrCreateCategory(
-    map(['category_name']),
-    project
-  );
-
-  /** Brand */
-  const brand = map(['brand_name'])
-    ? await this.findOrCreateBrand(
-        map(['brand_name']),
+    /**
+     * 2️⃣ Brand (auto-create + auto-assign to category)
+     */
+    let brand: Brand | undefined;
+    if (productData.brand_name) {
+      brand = await this.findOrCreateBrand(
+        productData.brand_name,
         category,
-        project
-      )
-    : undefined;
+        project,
+      );
+    }
 
-  /** Find product */
-let product = await this.productRepository.findOne({
-  where: [
-    { name:`${name} ${model}`, project: { id: project.id } },
-  ],
-});
+    /**
+     * 3️⃣ Prevent duplicate product (including soft-deleted)
+     */
+    let product = await this.productRepository.findOne({
+      where: {
+        name: productData.name,
+        project: { id: project.id },
+      },
+      withDeleted: true,
+    });
 
+    const isUpdate = !!product;
+    if (product && !product.deleted_at) {
+      throw new ConflictException(
+        `Product "${productData.name}" already exists`,
+      );
+    }
 
-  /** CREATE */
-  if (!product) {
-    product = this.productRepository.create({
-      name:`${name} ${model}`,
-      model,
-      description: map(['device_description', 'description']),
-      price,
-      image_url: imageUrl,
-      is_high_priority: isHighPriority,
+    /**
+     * 4️⃣ Create or Restore product
+     */
+    if (!product) {
+      product = this.productRepository.create({
+        // Excel → Product
+        name: productData.name, // Product Name
+        model: productData.device_name, // Device Name
+        sku: productData.sku, // SKU/Reference
+        description: productData.description, // Device Description
+        price: productData.price, // Device Price
+        is_high_priority: productData.product_priority || false,
+        image_url: productData.image_url, // Device Image URL
+        discount: 0,
+        is_active: true,
+        project,
+        category,
+        brand,
+      });
+    } else {
+      // Restore soft-deleted product
+      product.deleted_at = null;
+      this.productRepository.merge(product, {
+        model: productData.device_name,
+        sku: productData.sku,
+        description: productData.description,
+        price: productData.price,
+        is_high_priority: productData.product_priority || false,
+        image_url: productData.image_url,
+        category,
+        brand,
+      });
+    }
+
+    const savedProduct = await this.productRepository.save(product);
+
+    /**
+     * 5️⃣ Stock
+     */
+    await this.assignStock(savedProduct, project, productData);
+  }
+  async importAndUpdateProducts(rows: any[], projectId: string) {
+    const project = await this.projectRepository.findOne({
+      where: { id: projectId },
+      relations: ["branches"],
+    });
+
+    if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+
+    const result = {
+      created: 0,
+      updated: 0,
+      failed: 0,
+      errors: [] as string[],
+    };
+
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const updated = await this.processUpsertProduct(rows[i], project);
+        console.log(rows, project);
+        updated ? result.updated++ : result.created++;
+      } catch (err) {
+        result.failed++;
+        result.errors.push(`Row ${i + 1}: ${err.message}`);
+      }
+    }
+
+    return result;
+  }
+
+  private async processUpsertRow(row: any, project: Project) {
+    const map = (keys: string[], def?: any) =>
+      keys.find((k) => row[k] !== undefined)
+        ? row[keys.find((k) => row[k] !== undefined)!]
+        : def;
+
+    /** Mapping */
+    const name = map(["product_name", "name"]);
+    const model = map(
+      ["device_name", "product_name2", "model"],
+      map(["product_name", "name"]), // fallback
+    );
+    const imageUrlRaw = map(["device_image_url", "image_url"]);
+
+    // Remove :8080 if present
+    const imageUrl = imageUrlRaw ? imageUrlRaw.replace(/:\d+/, "") : undefined;
+
+    const price = parseFloat(map(["device_price", "price"], "0"));
+    const isHighPriority = ["true", "1", "yes"].includes(
+      (map(["product_priority", "priority"], "") + "").toLowerCase(),
+    );
+
+    /** Category */
+    const category = await this.findOrCreateCategory(
+      map(["category_name"]),
       project,
-      category,
-      brand,
-      is_active: true,
+    );
+
+    /** Brand */
+    const brand = map(["brand_name"])
+      ? await this.findOrCreateBrand(map(["brand_name"]), category, project)
+      : undefined;
+
+    /** Find product */
+    let product = await this.productRepository.findOne({
+      where: [{ name: `${name} ${model}`, project: { id: project.id } }],
     });
 
-    await this.productRepository.save(product);
-    row._updated = false;
+    /** CREATE */
+    if (!product) {
+      product = this.productRepository.create({
+        name: `${name} ${model}`,
+        model,
+        description: map(["device_description", "description"]),
+        price,
+        image_url: imageUrl,
+        is_high_priority: isHighPriority,
+        project,
+        category,
+        brand,
+        is_active: true,
+      });
+
+      await this.productRepository.save(product);
+      row._updated = false;
+    } else {
+      /** UPDATE */
+      this.productRepository.merge(product, {
+        model,
+        price,
+        image_url: imageUrl,
+        is_high_priority: isHighPriority,
+        category,
+        brand,
+      });
+
+      await this.productRepository.save(product);
+      row._updated = true;
+    }
   }
-
-  /** UPDATE */
-  else {
-    this.productRepository.merge(product, {
-      model,
-      price,
-      image_url: imageUrl,
-      is_high_priority: isHighPriority,
-      category,
-      brand,
-    });
-
-    await this.productRepository.save(product);
-    row._updated = true;
-  }
-
-
-}
-private async processUpsertProduct(row: any, project: Project): Promise<boolean> {
+  private async processUpsertProduct(
+    row: any,
+    project: Project,
+  ): Promise<boolean> {
     const map = (keys: string[], def?: any) => {
       for (const k of keys) {
-        if (row[k] !== undefined && row[k] !== null && row[k] !== '') {
+        if (row[k] !== undefined && row[k] !== null && row[k] !== "") {
           return row[k];
         }
       }
@@ -929,21 +974,31 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
     };
 
     // Clean and map values
-    const name = map(['name', 'product_name'])?.toString().trim() || map(['name', 'product_name_2',"product_name2"])?.toString().trim();
-    const description = map(['description', 'device_description'])?.toString().trim();
-    const price = parseFloat(map(['price', 'device_price'], '0'));
-    const quantity = parseInt(map(['quantity', 'stock', 'stock_quantity'], '1'));
-    const model = map(['model', 'device_model', 'device_name'], '')?.toString().trim();
-    const extraSku = map(['Extra sku', 'extra_sku', 'sku'])?.toString().trim();
-    const sacoSku = map(['Saco SKU', 'saco_sku'])?.toString().trim();
-    const imageUrlRaw = map(['image_url', 'device_image_url'])?.toString();
+    const name =
+      map(["name", "product_name"])?.toString().trim() ||
+      map(["name", "product_name_2", "product_name2"])?.toString().trim();
+    const description = map(["description", "device_description"])
+      ?.toString()
+      .trim();
+    const price = parseFloat(map(["price", "device_price"], "0"));
+    const quantity = parseInt(
+      map(["quantity", "stock", "stock_quantity"], "1"),
+    );
+    const model = map(["model", "device_model", "device_name"], "")
+      ?.toString()
+      .trim();
+    const extraSku = map(["Extra sku", "extra_sku", "sku"])?.toString().trim();
+    const sacoSku = map(["Saco SKU", "saco_sku"])?.toString().trim();
+    const imageUrlRaw = map(["image_url", "device_image_url"])?.toString();
 
     // Download and save image if URL exists
     let savedImagePath: string = null;
-    if (imageUrlRaw && imageUrlRaw.trim() !== '' &&
-        imageUrlRaw.toLowerCase() !== 'null' &&
-        imageUrlRaw.toLowerCase() !== 'undefined') {
-
+    if (
+      imageUrlRaw &&
+      imageUrlRaw.trim() !== "" &&
+      imageUrlRaw.toLowerCase() !== "null" &&
+      imageUrlRaw.toLowerCase() !== "undefined"
+    ) {
       console.log(`Processing image for product ${name}: ${imageUrlRaw}`);
       savedImagePath = await this.downloadAndSaveImage(imageUrlRaw);
 
@@ -954,36 +1009,43 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       }
     }
 
-    const isHighPriority = ['true', '1', 'yes'].includes((map(['is_high_priority', 'product_priority'], '') + '').toLowerCase());
-    const categoryName = map(['category_name', 'category'])?.toString().trim();
-    const brandName = map(['brand_name', 'brand'])?.toString().trim();
-    const allBranches = ['true', '1', 'yes'].includes((map(['all_branches'], 'false') + '').toLowerCase());
-    const branchesRaw = map(['branches'], '')?.toString();
-    const branchNames = branchesRaw ?
-      branchesRaw.split(',')
-        .map((b: string) => b.trim())
-        .filter((b: string) => b.length > 0) :
-      [];
+    const isHighPriority = ["true", "1", "yes"].includes(
+      (map(["is_high_priority", "product_priority"], "") + "").toLowerCase(),
+    );
+    const categoryName = map(["category_name", "category"])?.toString().trim();
+    const brandName = map(["brand_name", "brand"])?.toString().trim();
+    const allBranches = ["true", "1", "yes"].includes(
+      (map(["all_branches"], "false") + "").toLowerCase(),
+    );
+    const branchesRaw = map(["branches"], "")?.toString();
+    const branchNames = branchesRaw
+      ? branchesRaw
+          .split(",")
+          .map((b: string) => b.trim())
+          .filter((b: string) => b.length > 0)
+      : [];
 
     // Validate required fields
     if (!name) {
-      throw new Error('Product name is required');
+      throw new Error("Product name is required");
     }
 
     if (!categoryName) {
-      throw new Error('Category name is required');
+      throw new Error("Category name is required");
     }
 
     const productDisplayName = model ? `${name} ${model}` : name;
-    const isSacoActive = sacoSku && sacoSku.toLowerCase() !== 'not actv';
-    const finalSku = isSacoActive ?
-      [extraSku, sacoSku]
-        .filter(s => s && s.toLowerCase() !== 'not actv')
-        .join(' - ') || null :
-      extraSku || null;
+    const isSacoActive = sacoSku && sacoSku.toLowerCase() !== "not actv";
+    const finalSku = isSacoActive
+      ? [extraSku, sacoSku]
+          .filter((s) => s && s.toLowerCase() !== "not actv")
+          .join(" - ") || null
+      : extraSku || null;
 
     const category = await this.findOrCreateCategory(categoryName, project);
-    const brand = brandName ? await this.findOrCreateBrand(brandName, category, project) : undefined;
+    const brand = brandName
+      ? await this.findOrCreateBrand(brandName, category, project)
+      : undefined;
 
     let product = null;
 
@@ -992,9 +1054,9 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       product = await this.productRepository.findOne({
         where: {
           sku: finalSku,
-          project: { id: project.id }
+          project: { id: project.id },
         },
-        withDeleted: true
+        withDeleted: true,
       });
     }
 
@@ -1003,9 +1065,9 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       product = await this.productRepository.findOne({
         where: {
           name: productDisplayName,
-          project: { id: project.id }
+          project: { id: project.id },
         },
-        withDeleted: true
+        withDeleted: true,
       });
     }
 
@@ -1014,9 +1076,9 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       product = await this.productRepository.findOne({
         where: {
           name: name,
-          project: { id: project.id }
+          project: { id: project.id },
         },
-        withDeleted: true
+        withDeleted: true,
       });
     }
 
@@ -1039,7 +1101,9 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
       });
 
       product = await this.productRepository.save(product);
-      console.log(`Created product: ${productDisplayName} ${savedImagePath ? '(with image)' : '(no image)'}`);
+      console.log(
+        `Created product: ${productDisplayName} ${savedImagePath ? "(with image)" : "(no image)"}`,
+      );
     } else {
       // UPDATE existing product
       const updateData: any = {
@@ -1048,7 +1112,10 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
         sku: finalSku,
         description: description || product.description,
         price: price !== 0 ? price : product.price,
-        is_high_priority: isHighPriority !== undefined ? isHighPriority : product.is_high_priority,
+        is_high_priority:
+          isHighPriority !== undefined
+            ? isHighPriority
+            : product.is_high_priority,
         category,
         brand,
         deleted_at: null, // RESTORE if soft-deleted
@@ -1066,79 +1133,86 @@ private async processUpsertProduct(row: any, project: Project): Promise<boolean>
     }
 
     // Assign stock (will default to 1 if quantity is 0 or missing)
-    await this.assignStockWithBranches(product, project, quantity > 0 ? quantity : 1, allBranches, branchNames);
+    await this.assignStockWithBranches(
+      product,
+      project,
+      quantity > 0 ? quantity : 1,
+      allBranches,
+      branchNames,
+    );
 
     return isUpdate;
   }
 
+  private async assignStockWithBranches(
+    product: Product,
+    project: Project,
+    quantity: number,
+    allBranches: boolean,
+    branchNames: string[],
+  ) {
+    let finalQuantity = quantity;
+    if (isNaN(finalQuantity) || finalQuantity <= 0) finalQuantity = 1;
 
-private async assignStockWithBranches(
-  product: Product,
-  project: Project,
-  quantity: number,
-  allBranches: boolean,
-  branchNames: string[]
-) {
-  let finalQuantity = quantity;
-  if (isNaN(finalQuantity) || finalQuantity <= 0) finalQuantity = 1;
+    const stockToInsert: Partial<Stock>[] = [];
+    const availableBranches = project.branches || [];
 
-  const stockToInsert: Partial<Stock>[] = [];
-  const availableBranches = project.branches || [];
-
-  if (allBranches) {
-    for (const branch of availableBranches) {
-      stockToInsert.push({ 
-        branch, 
-        product, 
-        branch_id: branch.id,
-        product_id: product.id,
-        quantity: finalQuantity 
-      });
+    if (allBranches) {
+      for (const branch of availableBranches) {
+        stockToInsert.push({
+          branch,
+          product,
+          branch_id: branch.id,
+          product_id: product.id,
+          quantity: finalQuantity,
+        });
+      }
+    } else if (branchNames.length > 0) {
+      for (const branchName of branchNames) {
+        const branch = availableBranches.find(
+          (b) => b.name.toLowerCase() === branchName.toLowerCase(),
+        );
+        if (!branch) {
+          throw new NotFoundException(`Branch "${branchName}" not found`);
+        }
+        stockToInsert.push({
+          branch,
+          product,
+          branch_id: branch.id,
+          product_id: product.id,
+          quantity: finalQuantity,
+        });
+      }
     }
-  } else if (branchNames.length > 0) {
-    for (const branchName of branchNames) {
-      const branch = availableBranches.find(
-        b => b.name.toLowerCase() === branchName.toLowerCase()
-      );
-      if (!branch) throw new NotFoundException(`Branch "${branchName}" not found`);
-      stockToInsert.push({ 
-        branch, 
-        product, 
-        branch_id: branch.id,
+
+    if (stockToInsert.length > 0) {
+      // Remove old stock for these branches
+      const branchIds = stockToInsert.map((s: any) => s.branch_id);
+      await this.stockRepository.delete({
         product_id: product.id,
-        quantity: finalQuantity 
+        branch_id: In(branchIds),
       });
+      // Insert with raw SQL to guarantee IDs are propagated
+      for (const s of stockToInsert) {
+        await this.stockRepository
+          .createQueryBuilder()
+          .insert()
+          .into(Stock)
+          .values({
+            product_id: (s as any).product_id,
+            branch_id: (s as any).branch_id,
+            quantity: (s as any).quantity,
+          })
+          .orIgnore()
+          .execute();
+      }
     }
   }
-
-  if (stockToInsert.length > 0) {
-    // Remove old stock for these branches
-    const branchIds = stockToInsert.map((s: any) => s.branch_id);
-    await this.stockRepository.delete({
-      product_id: product.id,
-      branch_id: In(branchIds),
-    });
-    // Insert with raw SQL to guarantee IDs are propagated
-    for (const s of stockToInsert) {
-      await this.stockRepository
-        .createQueryBuilder()
-        .insert()
-        .into(Stock)
-        .values({
-          product_id: (s as any).product_id,
-          branch_id: (s as any).branch_id,
-          quantity: (s as any).quantity,
-        })
-        .orIgnore()
-        .execute();
-    }
-  }
-}
 
   async importAndUpdateProductsBatch(
     rows: any[],
     projectId: string,
-    rowIndices: number[]
+    rowIndices: number[],
   ): Promise<{
     created: number;
     updated: number;
@@ -1148,7 +1222,7 @@ private async assignStockWithBranches(
   }> {
     const project = await this.projectRepository.findOne({
       where: { id: projectId },
-      relations: ['branches'],
+      relations: ["branches"],
     });
 
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
@@ -1167,8 +1241,8 @@ private async assignStockWithBranches(
         const isUpdate = await this.processUpsertProduct(rows[i], project);
 
         // Count images that were successfully downloaded
-        const imageUrl = rows[i]['image_url'] || rows[i]['device_image_url'];
-        if (imageUrl && imageUrl.trim() !== '') {
+        const imageUrl = rows[i]["image_url"] || rows[i]["device_image_url"];
+        if (imageUrl && imageUrl.trim() !== "") {
           result.imagesDownloaded++;
         }
 
@@ -1197,7 +1271,12 @@ private async assignStockWithBranches(
    * Download image from URL and save locally
    */
   private async downloadAndSaveImage(imageUrl: string): Promise<string> {
-    if (!imageUrl || imageUrl.trim() === '' || imageUrl.toLowerCase() === 'null' || imageUrl.toLowerCase() === 'undefined') {
+    if (
+      !imageUrl ||
+      imageUrl.trim() === "" ||
+      imageUrl.toLowerCase() === "null" ||
+      imageUrl.toLowerCase() === "undefined"
+    ) {
       return null;
     }
 
@@ -1206,22 +1285,23 @@ private async assignStockWithBranches(
 
       // Clean the URL - remove port 8080 if present
       let cleanUrl = imageUrl;
-      if (imageUrl.includes(':8080')) {
-        cleanUrl = imageUrl.replace(':8080', '');
+      if (imageUrl.includes(":8080")) {
+        cleanUrl = imageUrl.replace(":8080", "");
       }
 
       // Encode spaces in URL
-      cleanUrl = cleanUrl.replace(/ /g, '%20');
+      cleanUrl = cleanUrl.replace(/ /g, "%20");
 
       // Use axios with timeout and proper headers
       const response = await axios({
-        method: 'GET',
+        method: "GET",
         url: cleanUrl,
-        responseType: 'arraybuffer',
+        responseType: "arraybuffer",
         timeout: 10000, // 10 second timeout
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
       });
 
       if (!response.data || response.data.length === 0) {
@@ -1230,26 +1310,28 @@ private async assignStockWithBranches(
       }
 
       // Determine file extension
-      let fileExtension = '.png'; // default
-      const contentType = response.headers['content-type'];
+      let fileExtension = ".png"; // default
+      const contentType = response.headers["content-type"];
       if (contentType) {
-        if (contentType.includes('jpeg') || contentType.includes('jpg')) {
-          fileExtension = '.jpg';
-        } else if (contentType.includes('png')) {
-          fileExtension = '.png';
-        } else if (contentType.includes('gif')) {
-          fileExtension = '.gif';
-        } else if (contentType.includes('webp')) {
-          fileExtension = '.webp';
+        if (contentType.includes("jpeg") || contentType.includes("jpg")) {
+          fileExtension = ".jpg";
+        } else if (contentType.includes("png")) {
+          fileExtension = ".png";
+        } else if (contentType.includes("gif")) {
+          fileExtension = ".gif";
+        } else if (contentType.includes("webp")) {
+          fileExtension = ".webp";
         }
       } else {
         // Try to get extension from URL
         const urlObj = new URL(cleanUrl);
         const pathname = urlObj.pathname;
-        const lastDotIndex = pathname.lastIndexOf('.');
+        const lastDotIndex = pathname.lastIndexOf(".");
         if (lastDotIndex !== -1) {
           const ext = pathname.substring(lastDotIndex).toLowerCase();
-          if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].includes(ext)) {
+          if (
+            [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"].includes(ext)
+          ) {
             fileExtension = ext;
           }
         }
@@ -1266,7 +1348,6 @@ private async assignStockWithBranches(
       const savedUrl = `/uploads/products/${fileName}`;
       console.log(`Image saved: ${savedUrl}`);
       return savedUrl;
-
     } catch (error) {
       console.error(`Error downloading image from ${imageUrl}:`, error.message);
 
@@ -1274,79 +1355,91 @@ private async assignStockWithBranches(
       try {
         return await this.downloadWithHttpModule(imageUrl);
       } catch (fallbackError) {
-        console.error(`Fallback download also failed for ${imageUrl}:`, fallbackError.message);
+        console.error(
+          `Fallback download also failed for ${imageUrl}:`,
+          fallbackError.message,
+        );
         return null;
       }
     }
   }
 
+  private async downloadWithHttpModule(url: string): Promise<string> {
+    try {
+      const cleanedUrl = url.replace(":8080", "").replace(/ /g, "%20");
 
-private async downloadWithHttpModule(url: string): Promise<string> {
-  try {
-    const cleanedUrl = url.replace(':8080', '').replace(/ /g, '%20');
+      const response = await axios({
+        method: "GET",
+        url: cleanedUrl,
+        responseType: "arraybuffer",
+        timeout: 10000,
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
+      });
 
-    const response = await axios({
-      method: 'GET',
-      url: cleanedUrl,
-      responseType: 'arraybuffer',
-      timeout: 10000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      if (!response.data || response.data.length === 0) {
+        throw new Error("Empty image");
       }
-    });
 
-    if (!response.data || response.data.length === 0) {
-      throw new Error('Empty image');
-    }
-
-    // Determine file extension
-    let fileExtension = '.png';
-    const contentType = response.headers['content-type'];
-    if (contentType) {
-      if (contentType.includes('jpeg') || contentType.includes('jpg')) {
-        fileExtension = '.jpg';
-      } else if (contentType.includes('png')) {
-        fileExtension = '.png';
-      } else if (contentType.includes('gif')) {
-        fileExtension = '.gif';
+      // Determine file extension
+      let fileExtension = ".png";
+      const contentType = response.headers["content-type"];
+      if (contentType) {
+        if (contentType.includes("jpeg") || contentType.includes("jpg")) {
+          fileExtension = ".jpg";
+        } else if (contentType.includes("png")) {
+          fileExtension = ".png";
+        } else if (contentType.includes("gif")) {
+          fileExtension = ".gif";
+        }
       }
+
+      const fileName = `${uuidv4()}${fileExtension}`;
+      const filePath = path.join(this.uploadPath, fileName);
+      await fs.promises.writeFile(filePath, response.data);
+
+      return `/uploads/products/${fileName}`;
+    } catch (error) {
+      throw error;
     }
-
-    const fileName = `${uuidv4()}${fileExtension}`;
-    const filePath = path.join(this.uploadPath, fileName);
-    await fs.promises.writeFile(filePath, response.data);
-
-    return `/uploads/products/${fileName}`;
-  } catch (error) {
-    throw error;
   }
-}
   private async processImportRowWithImage(
     productData: ImportProductRowDto,
-    project: Project
+    project: Project,
   ): Promise<void> {
-    const category = await this.findOrCreateCategory(productData.category_name, project);
+    const category = await this.findOrCreateCategory(
+      productData.category_name,
+      project,
+    );
 
     let brand: Brand | undefined;
     if (productData.brand_name) {
-      brand = await this.findOrCreateBrand(productData.brand_name, category, project);
+      brand = await this.findOrCreateBrand(
+        productData.brand_name,
+        category,
+        project,
+      );
     }
 
     let product = await this.productRepository.findOne({
       where: {
         name: productData.name,
-        project: { id: project.id }
+        project: { id: project.id },
       },
-      withDeleted: true
+      withDeleted: true,
     });
 
     if (product && !product.deleted_at) {
-      throw new ConflictException(`Product "${productData.name}" already exists`);
+      throw new ConflictException(
+        `Product "${productData.name}" already exists`,
+      );
     }
 
     // Download and save image if URL exists
     let savedImagePath: string = null;
-    if (productData.image_url && productData.image_url.trim() !== '') {
+    if (productData.image_url && productData.image_url.trim() !== "") {
       savedImagePath = await this.downloadAndSaveImage(productData.image_url);
     }
 
@@ -1363,7 +1456,7 @@ private async downloadWithHttpModule(url: string): Promise<string> {
         is_active: true,
         project,
         category,
-        brand
+        brand,
       });
     } else {
       // Restore soft-deleted product
@@ -1376,7 +1469,7 @@ private async downloadWithHttpModule(url: string): Promise<string> {
         is_high_priority: productData.product_priority || false,
         image_url: savedImagePath,
         category,
-        brand
+        brand,
       });
     }
 
@@ -1390,7 +1483,7 @@ private async downloadWithHttpModule(url: string): Promise<string> {
   async cleanupProductNames(projectId: string) {
     const products = await this.productRepository.find({
       where: { project: { id: projectId } },
-      relations: ['project'],
+      relations: ["project"],
     });
 
     const results = {
@@ -1411,13 +1504,16 @@ private async downloadWithHttpModule(url: string): Promise<string> {
 
         if (existing && existing.id !== product.id) {
           // 1. Transfer Stock safely
-          const stocks = await this.stockRepository.find({ 
-            where: { product: { id: product.id } } 
+          const stocks = await this.stockRepository.find({
+            where: { product: { id: product.id } },
           });
-          
+
           for (const s of stocks) {
             const existingStock = await this.stockRepository.findOne({
-              where: { product: { id: existing.id }, branch: { id: s.branch_id } }
+              where: {
+                product: { id: existing.id },
+                branch: { id: s.branch_id },
+              },
             });
 
             if (existingStock) {
@@ -1433,12 +1529,15 @@ private async downloadWithHttpModule(url: string): Promise<string> {
           // 2. Transfer Sales
           try {
             await this.productRepository.manager.update(
-              'sale', // Entity name/table
+              "sale", // Entity name/table
               { productId: product.id }, // Match by productId
-              { product: existing }
+              { product: existing },
             );
           } catch (e) {
-            console.error(`Failed to transfer sales for product ${product.id}:`, e.message);
+            console.error(
+              `Failed to transfer sales for product ${product.id}:`,
+              e.message,
+            );
           }
 
           // 3. Delete this one as it's a duplicate
@@ -1460,14 +1559,14 @@ private async downloadWithHttpModule(url: string): Promise<string> {
 
   private getCleanProductName(name: string): string {
     const trimmed = name.trim();
-    const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+    const words = trimmed.split(/\s+/).filter((w) => w.length > 0);
     if (words.length < 2) return trimmed;
 
     // Case 1: Exact duplicate halves: "iPhone 15 iPhone 15" -> "iPhone 15"
     if (words.length % 2 === 0) {
       const mid = words.length / 2;
-      const firstHalf = words.slice(0, mid).join(' ');
-      const secondHalf = words.slice(mid).join(' ');
+      const firstHalf = words.slice(0, mid).join(" ");
+      const secondHalf = words.slice(mid).join(" ");
       if (firstHalf.toLowerCase() === secondHalf.toLowerCase()) {
         return firstHalf;
       }
@@ -1480,6 +1579,6 @@ private async downloadWithHttpModule(url: string): Promise<string> {
         cleanedWords.push(words[i]);
       }
     }
-    return cleanedWords.join(' ');
+    return cleanedWords.join(" ");
   }
 }

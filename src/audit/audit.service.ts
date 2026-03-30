@@ -1,14 +1,19 @@
 // audit.service.ts
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { CreateAuditDto, UpdateAuditDto } from 'dto/audit.dto';
-import { Audit, DiscountReason } from 'entities/audit.entity';
-import { Branch } from 'entities/branch.entity';
-import { Product } from 'entities/products/product.entity';
-import { User } from 'entities/user.entity';
-import { Competitor } from 'entities/competitor.entity';
-import { AuditCompetitor } from 'entities/audit-competitor.entity';
-import { Repository, LessThanOrEqual, In, DataSource, Between } from 'typeorm';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { CreateAuditDto, UpdateAuditDto } from "dto/audit.dto";
+import { Audit, DiscountReason } from "entities/audit.entity";
+import { Branch } from "entities/branch.entity";
+import { Product } from "entities/products/product.entity";
+import { User } from "entities/user.entity";
+import { Competitor } from "entities/competitor.entity";
+import { AuditCompetitor } from "entities/audit-competitor.entity";
+import { Repository, LessThanOrEqual, In, DataSource, Between } from "typeorm";
 
 @Injectable()
 export class AuditsService {
@@ -17,8 +22,10 @@ export class AuditsService {
     @InjectRepository(Branch) public readonly branchRepo: Repository<Branch>,
     @InjectRepository(User) public readonly userRepo: Repository<User>,
     @InjectRepository(Product) public readonly productRepo: Repository<Product>,
-    @InjectRepository(Competitor) public readonly competitorRepo: Repository<Competitor>,
-    @InjectRepository(AuditCompetitor) public readonly auditCompetitorRepo: Repository<AuditCompetitor>,
+    @InjectRepository(Competitor)
+    public readonly competitorRepo: Repository<Competitor>,
+    @InjectRepository(AuditCompetitor)
+    public readonly auditCompetitorRepo: Repository<AuditCompetitor>,
     private dataSource: DataSource,
   ) {}
 
@@ -34,26 +41,26 @@ export class AuditsService {
       const [promoter, product] = await Promise.all([
         this.userRepo.findOne({
           where: { id: promoterId },
-          relations: ['branch', 'branch.project'],
+          relations: ["branch", "branch.project"],
         }),
         this.productRepo.findOne({
           where: { id: dto.product_id },
-          relations: ['brand', 'category'],
+          relations: ["brand", "category"],
         }),
       ]);
 
-      if (!promoter) throw new NotFoundException('Promoter not found');
-      if (!product) throw new NotFoundException('Product not found');
+      if (!promoter) throw new NotFoundException("Promoter not found");
+      if (!product) throw new NotFoundException("Product not found");
 
       // -------------------------------
       // Load branch
       // -------------------------------
       const branch = await this.branchRepo.findOne({
         where: { id: dto.branch_id },
-        relations: ['project'],
+        relations: ["project"],
       });
 
-      if (!branch) throw new NotFoundException('Branch not found');
+      if (!branch) throw new NotFoundException("Branch not found");
 
       // -------------------------------
       // Prevent duplicate audit
@@ -76,7 +83,7 @@ export class AuditsService {
         is_available: dto.is_available,
         current_price: dto.current_price,
         current_discount: dto.current_discount || 0,
-        audit_date: dto.audit_date || new Date().toISOString().split('T')[0],
+        audit_date: dto.audit_date || new Date().toISOString().split("T")[0],
 
         product_name: product.name,
         product_brand: product.brand?.name || null,
@@ -85,7 +92,8 @@ export class AuditsService {
         branch,
         promoter,
         product,
-        projectId: dto.projectId || promoter.project_id || branch.project?.id || null,
+        projectId:
+          dto.projectId || promoter.project_id || branch.project?.id || null,
       };
 
       // Create audit instance
@@ -111,7 +119,7 @@ export class AuditsService {
 
         if (missingIds.length > 0) {
           throw new NotFoundException({
-            message: 'One or more competitors not found',
+            message: "One or more competitors not found",
             invalid_competitors: missingIds,
           });
         }
@@ -123,7 +131,7 @@ export class AuditsService {
 
         if (duplicates.length > 0) {
           throw new BadRequestException({
-            message: 'Duplicate competitor IDs',
+            message: "Duplicate competitor IDs",
             duplicate_ids: duplicates,
           });
         }
@@ -176,7 +184,10 @@ export class AuditsService {
 
           // Set discount reason for competitor
           if (comp.discount_reason) {
-            auditCompetitor.setDiscountReason(comp.discount_reason, comp.discount_details);
+            auditCompetitor.setDiscountReason(
+              comp.discount_reason,
+              comp.discount_details,
+            );
           }
 
           await queryRunner.manager.save(AuditCompetitor, auditCompetitor);
@@ -194,14 +205,14 @@ export class AuditsService {
       const fullAudit = await queryRunner.manager.findOne(Audit, {
         where: { id: savedAudit.id },
         relations: [
-          'product',
-          'product.brand',
-          'product.category',
-          'branch',
-          'branch.project',
-          'promoter',
-          'auditCompetitors',
-          'auditCompetitors.competitor',
+          "product",
+          "product.brand",
+          "product.category",
+          "branch",
+          "branch.project",
+          "promoter",
+          "auditCompetitors",
+          "auditCompetitors.competitor",
         ],
       });
 
@@ -212,9 +223,9 @@ export class AuditsService {
     } catch (err) {
       await queryRunner.rollbackTransaction();
 
-      if (err?.code === '23505') {
+      if (err?.code === "23505") {
         throw new ConflictException(
-          'Cannot create another audit for the same product in this branch today.',
+          "Cannot create another audit for the same product in this branch today.",
         );
       }
 
@@ -232,42 +243,44 @@ export class AuditsService {
     }
   }
 
-
   private async preventDuplicateAuditToday(
     promoterId: string,
     productId: string,
     branchId: string,
-    auditDate?: string
+    auditDate?: string,
   ): Promise<void> {
-    const today = auditDate || new Date().toISOString().split('T')[0];
+    const today = auditDate || new Date().toISOString().split("T")[0];
 
     const existingAudit = await this.repo.findOne({
       where: {
         promoterId,
         productId,
         branchId,
-        audit_date: today
-      }
+        audit_date: today,
+      },
     });
 
     if (existingAudit) {
       throw new ConflictException(
-        `You have already audited this product today (${today}). Please wait until tomorrow.`
+        `You have already audited this product today (${today}). Please wait until tomorrow.`,
       );
     }
   }
 
-  private async getHistoricalCompetitors(productId: string, branchId: string): Promise<any[]> {
-    const today = new Date().toISOString().split('T')[0];
+  private async getHistoricalCompetitors(
+    productId: string,
+    branchId: string,
+  ): Promise<any[]> {
+    const today = new Date().toISOString().split("T")[0];
 
     const previousAudits = await this.repo.find({
       where: {
         productId,
         branchId,
-        audit_date: LessThanOrEqual(today)
+        audit_date: LessThanOrEqual(today),
       },
-      order: { audit_date: 'DESC' },
-      take: 3
+      order: { audit_date: "DESC" },
+      take: 3,
     });
 
     const competitors: any[] = [];
@@ -276,7 +289,7 @@ export class AuditsService {
     for (const audit of previousAudits) {
       const auditCompetitors = await this.auditCompetitorRepo.find({
         where: { audit_id: audit.id },
-        relations: ['competitor']
+        relations: ["competitor"],
       });
 
       for (const ac of auditCompetitors) {
@@ -290,7 +303,7 @@ export class AuditsService {
             origin: ac.origin,
             discount_reason: ac.discount_reason,
             discount_details: ac.discount_details,
-            observed_at: ac.observed_at
+            observed_at: ac.observed_at,
           });
           seenCompetitorIds.add(ac.competitor_id);
         }
@@ -302,16 +315,16 @@ export class AuditsService {
 
   private mergeCompetitors(
     newCompetitors: any[],
-    historicalCompetitors: any[]
+    historicalCompetitors: any[],
   ): any[] {
     const merged = [...historicalCompetitors];
-    const seenIds = new Set(historicalCompetitors.map(c => c.competitor_id));
+    const seenIds = new Set(historicalCompetitors.map((c) => c.competitor_id));
 
     for (const newComp of newCompetitors) {
       if (newComp.competitor_id && !seenIds.has(newComp.competitor_id)) {
         merged.push({
           ...newComp,
-          observed_at: newComp.observed_at || new Date()
+          observed_at: newComp.observed_at || new Date(),
         });
         seenIds.add(newComp.competitor_id);
       }
@@ -330,14 +343,21 @@ export class AuditsService {
 
       // Update basic fields
       if (dto.is_available !== undefined) audit.is_available = dto.is_available;
-      if (dto.current_price !== undefined) audit.current_price = dto.current_price;
-      if (dto.current_discount !== undefined) audit.current_discount = dto.current_discount;
+      if (dto.current_price !== undefined) {
+        audit.current_price = dto.current_price;
+      }
+      if (dto.current_discount !== undefined) {
+        audit.current_discount = dto.current_discount;
+      }
       if (dto.audit_date !== undefined) audit.audit_date = dto.audit_date;
 
       // Update discount reason for main audit if changed
       if (dto.discount_reason !== undefined) {
         audit.setDiscountReason(dto.discount_reason, dto.discount_details);
-      } else if (dto.discount_details !== undefined && audit.discount_reason === DiscountReason.OTHER) {
+      } else if (
+        dto.discount_details !== undefined &&
+        audit.discount_reason === DiscountReason.OTHER
+      ) {
         // Update details only if reason is "Other"
         audit.discount_details = dto.discount_details;
       }
@@ -345,7 +365,9 @@ export class AuditsService {
       // تحديث المنافسين
       if (dto.competitors !== undefined) {
         // حذف المنافسين الحاليين
-        await queryRunner.manager.delete(AuditCompetitor, { audit_id: audit.id });
+        await queryRunner.manager.delete(AuditCompetitor, {
+          audit_id: audit.id,
+        });
 
         let competitorsCount = 0;
         let availableCompetitorsCount = 0;
@@ -353,7 +375,7 @@ export class AuditsService {
         // إضافة المنافسين الجدد
         for (const compDto of dto.competitors) {
           const competitor = await this.competitorRepo.findOne({
-            where: { id: compDto.competitor_id }
+            where: { id: compDto.competitor_id },
           });
 
           if (!competitor) continue;
@@ -365,10 +387,13 @@ export class AuditsService {
             competitor_id: compDto.competitor_id,
             price: compDto.price,
             discount: compDto.discount,
-            is_available: compDto.is_available !== undefined ? compDto.is_available : true,
+            is_available:
+              compDto.is_available !== undefined ? compDto.is_available : true,
             discount_reason: compDto.discount_reason,
             discount_details: compDto.discount_details,
-            observed_at: compDto.observed_at ? new Date(compDto.observed_at) : new Date(),
+            observed_at: compDto.observed_at
+              ? new Date(compDto.observed_at)
+              : new Date(),
             audit_date: audit.audit_date,
           });
 
@@ -379,7 +404,10 @@ export class AuditsService {
 
           // Set discount reason for competitor
           if (compDto.discount_reason) {
-            auditCompetitor.setDiscountReason(compDto.discount_reason, compDto.discount_details);
+            auditCompetitor.setDiscountReason(
+              compDto.discount_reason,
+              compDto.discount_details,
+            );
           }
 
           await queryRunner.manager.save(AuditCompetitor, auditCompetitor);
@@ -389,8 +417,6 @@ export class AuditsService {
             availableCompetitorsCount++;
           }
         }
-
-
       }
 
       // Calculate competitor counts
@@ -398,12 +424,13 @@ export class AuditsService {
       await queryRunner.commitTransaction();
 
       return this.findOne(id);
-
     } catch (err) {
       await queryRunner.rollbackTransaction();
 
-      if (err?.code === '23505') {
-        throw new ConflictException('Cannot update: An audit for the same product in this branch on the same date already exists.');
+      if (err?.code === "23505") {
+        throw new ConflictException(
+          "Cannot update: An audit for the same product in this branch on the same date already exists.",
+        );
       }
 
       throw new BadRequestException(`Failed to update audit: ${err.message}`);
@@ -416,16 +443,16 @@ export class AuditsService {
     const audit = await this.repo.findOne({
       where: { id },
       relations: [
-        'promoter',
-        'branch',
-        'product',
-        'reviewed_by',
-        'auditCompetitors',
-        'auditCompetitors.competitor'
+        "promoter",
+        "branch",
+        "product",
+        "reviewed_by",
+        "auditCompetitors",
+        "auditCompetitors.competitor",
       ],
     });
 
-    if (!audit) throw new NotFoundException('Audit not found');
+    if (!audit) throw new NotFoundException("Audit not found");
 
     // Calculate competitor counts
 
@@ -436,10 +463,10 @@ export class AuditsService {
   async loadAuditCompetitors(auditId: string): Promise<any[]> {
     const auditCompetitors = await this.auditCompetitorRepo.find({
       where: { audit_id: auditId },
-      relations: ['competitor']
+      relations: ["competitor"],
     });
 
-    return auditCompetitors.map(ac => ({
+    return auditCompetitors.map((ac) => ({
       competitor_id: ac.competitor_id,
       competitor: ac.competitor,
       price: ac.price,
@@ -448,20 +475,20 @@ export class AuditsService {
       origin: ac.origin,
       discount_reason: ac.discount_reason,
       discount_details: ac.discount_details,
-      observed_at: ac.observed_at
+      observed_at: ac.observed_at,
     }));
   }
 
   // دالة لتحميل المنافسين لمراجعات متعددة
   async loadCompetitorsForAudits(audits: Audit[]): Promise<void> {
-    const auditIds = audits.map(a => a.id);
+    const auditIds = audits.map((a) => a.id);
 
     if (auditIds.length === 0) return;
 
     const auditCompetitors = await this.auditCompetitorRepo
-      .createQueryBuilder('ac')
-      .leftJoinAndSelect('ac.competitor', 'competitor')
-      .where('ac.audit_id IN (:...auditIds)', { auditIds })
+      .createQueryBuilder("ac")
+      .leftJoinAndSelect("ac.competitor", "competitor")
+      .where("ac.audit_id IN (:...auditIds)", { auditIds })
       .getMany();
 
     const competitorsByAuditId = auditCompetitors.reduce((acc, ac) => {
@@ -475,13 +502,13 @@ export class AuditsService {
         origin: ac.origin,
         discount_reason: ac.discount_reason,
         discount_details: ac.discount_details,
-        observed_at: ac.observed_at
+        observed_at: ac.observed_at,
       });
       return acc;
     }, {});
 
     // إضافة المنافسين لكل مراجعة
-    audits.forEach(audit => {
+    audits.forEach((audit) => {
       audit.auditCompetitors = competitorsByAuditId[audit.id] || [];
     });
   }
@@ -496,7 +523,7 @@ export class AuditsService {
       search?: string;
       page?: number;
       limit?: number;
-    }
+    },
   ): Promise<{
     products: any[];
     total: number;
@@ -506,52 +533,59 @@ export class AuditsService {
   }> {
     const promoter = await this.userRepo.findOne({
       where: { id: promoterId },
-      relations: ['branch', 'project'],
+      relations: ["branch", "project"],
     });
 
-    if (!promoter) throw new NotFoundException('Promoter not found');
+    if (!promoter) throw new NotFoundException("Promoter not found");
 
     if (!branchId) {
-      throw new BadRequestException('Promoter is not assigned to any branch or project');
+      throw new BadRequestException(
+        "Promoter is not assigned to any branch or project",
+      );
     }
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split("T")[0];
     const page = filters?.page || 1;
     const limit = filters?.limit || 10;
     const skip = (page - 1) * limit;
 
     // بناء الاستعلام للمنتجات
-    const queryBuilder = this.productRepo.createQueryBuilder('product')
-      .leftJoinAndSelect('product.brand', 'brand')
-      .leftJoinAndSelect('product.category', 'category')
-      .leftJoin('product.stock', 'stock')
-      .leftJoin('stock.branch', 'branchStock')
-      .leftJoin('product.project', 'project')
-      .addSelect('project.id');
+    const queryBuilder = this.productRepo
+      .createQueryBuilder("product")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("product.category", "category")
+      .leftJoin("product.stock", "stock")
+      .leftJoin("stock.branch", "branchStock")
+      .leftJoin("product.project", "project")
+      .addSelect("project.id");
 
     // تصفية حسب الفرع
     if (branchId) {
-      queryBuilder.andWhere('branchStock.id = :branchId', { branchId });
+      queryBuilder.andWhere("branchStock.id = :branchId", { branchId });
     }
 
     if (filters?.brand) {
-      queryBuilder.andWhere('brand.name = :brand', { brand: filters.brand });
+      queryBuilder.andWhere("brand.name = :brand", { brand: filters.brand });
     }
 
     if (filters?.category) {
-      queryBuilder.andWhere('category.name = :category', { category: filters.category });
+      queryBuilder.andWhere("category.name = :category", {
+        category: filters.category,
+      });
     }
 
     if (filters?.search) {
       queryBuilder.andWhere(
-        '(product.name ILIKE :search OR brand.name ILIKE :search OR category.name ILIKE :search)',
-        { search: `%${filters.search}%` }
+        "(product.name ILIKE :search OR brand.name ILIKE :search OR category.name ILIKE :search)",
+        { search: `%${filters.search}%` },
       );
     }
 
     // إضافة تصفية للمشروع إذا كان المروج مرتبطًا بمشروع
     if (promoter.project) {
-      queryBuilder.andWhere('project.id = :projectId', { projectId: promoter.project.id || promoter.project_id});
+      queryBuilder.andWhere("project.id = :projectId", {
+        projectId: promoter.project.id || promoter.project_id,
+      });
     }
 
     // حساب العدد الكلي
@@ -559,19 +593,16 @@ export class AuditsService {
     const total = await totalQuery.getCount();
 
     // تطبيق التقسيم للصفحات
-    const allProducts = await queryBuilder
-      .skip(skip)
-      .take(limit)
-      .getMany();
+    const allProducts = await queryBuilder.skip(skip).take(limit).getMany();
 
     // جلب المراجعات اليومية
     const todayAudits = await this.repo.find({
       where: {
         promoterId,
         branchId,
-        audit_date: today
+        audit_date: today,
       },
-      relations: ['product']
+      relations: ["product"],
     });
 
     // تحميل المنافسين للمراجعات اليومية
@@ -579,28 +610,30 @@ export class AuditsService {
 
     // إنشاء خريطة للمراجعات اليومية
     const todayAuditMap = new Map<string, Audit>();
-    todayAudits.forEach(audit => {
+    todayAudits.forEach((audit) => {
       todayAuditMap.set(audit.productId, audit);
     });
 
     // دمج حالة المراجعة مع المنتجات
-    const productsWithStatus = allProducts.map(product => {
+    const productsWithStatus = allProducts.map((product) => {
       const todayAudit = todayAuditMap.get(product.id);
 
       return {
         ...product,
         audited_today: !!todayAudit,
-        latest_audit: todayAudit ? {
-          id: todayAudit.id,
-          is_available: todayAudit.is_available,
-          current_price: todayAudit.current_price,
-          current_discount: todayAudit.current_discount,
-          discount_reason: todayAudit.discount_reason,
-          discount_details: todayAudit.discount_details,
-          competitors: todayAudit.auditCompetitors || [],
+        latest_audit: todayAudit
+          ? {
+              id: todayAudit.id,
+              is_available: todayAudit.is_available,
+              current_price: todayAudit.current_price,
+              current_discount: todayAudit.current_discount,
+              discount_reason: todayAudit.discount_reason,
+              discount_details: todayAudit.discount_details,
+              competitors: todayAudit.auditCompetitors || [],
 
-          created_at: todayAudit.created_at
-        } : undefined
+              created_at: todayAudit.created_at,
+            }
+          : undefined,
       };
     });
 
@@ -609,25 +642,29 @@ export class AuditsService {
       total,
       page,
       limit,
-      totalPages: Math.ceil(total / limit)
+      totalPages: Math.ceil(total / limit),
     };
   }
 
   // دالة إضافية للحصول على تحليل المنافسين
-  async getCompetitorAnalysis(productId: string, branchId: string, days: number = 30): Promise<any> {
-    const endDate = new Date().toISOString().split('T')[0];
+  async getCompetitorAnalysis(
+    productId: string,
+    branchId: string,
+    days: number = 30,
+  ): Promise<any> {
+    const endDate = new Date().toISOString().split("T")[0];
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    const startDateStr = startDate.toISOString().split('T')[0];
+    const startDateStr = startDate.toISOString().split("T")[0];
 
     const audits = await this.repo.find({
       where: {
         productId,
         branchId,
-        audit_date: Between(startDateStr, endDate)
+        audit_date: Between(startDateStr, endDate),
       },
-      relations: ['auditCompetitors', 'auditCompetitors.competitor'],
-      order: { audit_date: 'DESC' }
+      relations: ["auditCompetitors", "auditCompetitors.competitor"],
+      order: { audit_date: "DESC" },
     });
 
     const analysis = {
@@ -635,25 +672,35 @@ export class AuditsService {
       average_price: null as number | null,
       average_discount: null as number | null,
       competitor_trends: {} as Record<string, any>,
-      availability_rate: null as number | null
+      availability_rate: null as number | null,
     };
 
     if (audits.length > 0) {
-      const prices = audits.filter(a => a.current_price !== null).map(a => a.current_price!);
-      const discounts = audits.filter(a => a.current_discount !== null).map(a => a.current_discount!);
+      const prices = audits
+        .filter((a) => a.current_price !== null)
+        .map((a) => a.current_price!);
+      const discounts = audits
+        .filter((a) => a.current_discount !== null)
+        .map((a) => a.current_discount!);
 
-      analysis.average_price = prices.length > 0 ?
-        prices.reduce((sum, price) => sum + price, 0) / prices.length : null;
-      analysis.average_discount = discounts.length > 0 ?
-        discounts.reduce((sum, discount) => sum + discount, 0) / discounts.length : null;
-      analysis.availability_rate = audits.filter(a => a.is_available).length / audits.length;
+      analysis.average_price =
+        prices.length > 0
+          ? prices.reduce((sum, price) => sum + price, 0) / prices.length
+          : null;
+      analysis.average_discount =
+        discounts.length > 0
+          ? discounts.reduce((sum, discount) => sum + discount, 0) /
+            discounts.length
+          : null;
+      analysis.availability_rate =
+        audits.filter((a) => a.is_available).length / audits.length;
     }
 
     // تحليل المنافسين
     const competitorStats = new Map<string, any>();
 
-    audits.forEach(audit => {
-      audit.auditCompetitors?.forEach(comp => {
+    audits.forEach((audit) => {
+      audit.auditCompetitors?.forEach((comp) => {
         const competitorId = comp.competitor_id;
         if (!competitorStats.has(competitorId)) {
           competitorStats.set(competitorId, {
@@ -662,7 +709,7 @@ export class AuditsService {
             available_count: 0,
             average_price: 0,
             price_sum: 0,
-            price_count: 0
+            price_count: 0,
           });
         }
 
@@ -679,9 +726,13 @@ export class AuditsService {
     });
 
     // حساب المعدلات
-    competitorStats.forEach(stats => {
-      stats.availability_rate = stats.total_mentions > 0 ? stats.available_count / stats.total_mentions : 0;
-      stats.average_price = stats.price_count > 0 ? stats.price_sum / stats.price_count : null;
+    competitorStats.forEach((stats) => {
+      stats.availability_rate =
+        stats.total_mentions > 0
+          ? stats.available_count / stats.total_mentions
+          : 0;
+      stats.average_price =
+        stats.price_count > 0 ? stats.price_sum / stats.price_count : null;
     });
 
     analysis.competitor_trends = Object.fromEntries(competitorStats);

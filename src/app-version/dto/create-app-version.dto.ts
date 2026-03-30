@@ -1,4 +1,10 @@
-import { IsBoolean, IsNotEmpty, IsObject, IsString, IsOptional } from 'class-validator';
+import {
+  IsBoolean,
+  IsNotEmpty,
+  IsObject,
+  IsString,
+  IsOptional,
+} from "class-validator";
 
 export class CreateAppVersionDto {
   @IsString()

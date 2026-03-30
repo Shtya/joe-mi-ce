@@ -1,13 +1,21 @@
-import { Injectable, NotFoundException, InternalServerErrorException, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { EntranceLetter, EEntranceLetterStatus } from '../../entities/entrance-letter.entity';
-import { CreateEntranceLetterDto } from '../../dto/entrance-letter/create-entrance-letter.dto';
-import { UpdateEntranceLetterStatusDto } from '../../dto/entrance-letter/update-entrance-letter-status.dto';
-import { User } from '../../entities/user.entity';
-import { Project } from '../../entities/project.entity';
-import { Branch } from '../../entities/branch.entity';
-import { ERole } from '../../enums/Role.enum';
+import {
+  Injectable,
+  NotFoundException,
+  InternalServerErrorException,
+  ForbiddenException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import {
+  EntranceLetter,
+  EEntranceLetterStatus,
+} from "../../entities/entrance-letter.entity";
+import { CreateEntranceLetterDto } from "../../dto/entrance-letter/create-entrance-letter.dto";
+import { UpdateEntranceLetterStatusDto } from "../../dto/entrance-letter/update-entrance-letter-status.dto";
+import { User } from "../../entities/user.entity";
+import { Project } from "../../entities/project.entity";
+import { Branch } from "../../entities/branch.entity";
+import { ERole } from "../../enums/Role.enum";
 
 @Injectable()
 export class EntranceLetterService {
@@ -24,17 +32,25 @@ export class EntranceLetterService {
 
   async create(supervisorId: string, dto: CreateEntranceLetterDto) {
     try {
-      const supervisor = await this.userRepo.findOne({ where: { id: supervisorId } });
-      if (!supervisor) throw new NotFoundException('Supervisor not found');
+      const supervisor = await this.userRepo.findOne({
+        where: { id: supervisorId },
+      });
+      if (!supervisor) throw new NotFoundException("Supervisor not found");
 
-      const promoter = await this.userRepo.findOne({ where: { id: dto.promoterId } });
-      if (!promoter) throw new NotFoundException('Promoter not found');
+      const promoter = await this.userRepo.findOne({
+        where: { id: dto.promoterId },
+      });
+      if (!promoter) throw new NotFoundException("Promoter not found");
 
-      const project = await this.projectRepo.findOne({ where: { id: dto.projectId } });
-      if (!project) throw new NotFoundException('Project not found');
+      const project = await this.projectRepo.findOne({
+        where: { id: dto.projectId },
+      });
+      if (!project) throw new NotFoundException("Project not found");
 
-      const branch = await this.branchRepo.findOne({ where: { id: dto.branchId } });
-      if (!branch) throw new NotFoundException('Branch not found');
+      const branch = await this.branchRepo.findOne({
+        where: { id: dto.branchId },
+      });
+      if (!branch) throw new NotFoundException("Branch not found");
 
       const entranceLetter = this.entranceLetterRepo.create({
         supervisor,
@@ -47,49 +63,75 @@ export class EntranceLetterService {
       return await this.entranceLetterRepo.save(entranceLetter);
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
-      throw new InternalServerErrorException('Failed to create entrance letter request');
+      throw new InternalServerErrorException(
+        "Failed to create entrance letter request",
+      );
     }
   }
 
   async findAll(user: any, status?: EEntranceLetterStatus) {
-    const query = this.entranceLetterRepo.createQueryBuilder('letter')
-      .leftJoinAndSelect('letter.supervisor', 'supervisor')
-      .leftJoinAndSelect('letter.promoter', 'promoter')
-      .leftJoinAndSelect('letter.project', 'project')
-      .leftJoinAndSelect('letter.branch', 'branch')
-      .leftJoinAndSelect('letter.processedBy', 'processedBy');
+    const query = this.entranceLetterRepo
+      .createQueryBuilder("letter")
+      .leftJoinAndSelect("letter.supervisor", "supervisor")
+      .leftJoinAndSelect("letter.promoter", "promoter")
+      .leftJoinAndSelect("letter.project", "project")
+      .leftJoinAndSelect("letter.branch", "branch")
+      .leftJoinAndSelect("letter.processedBy", "processedBy");
 
     if (user.role === ERole.SUPERVISOR) {
-      query.andWhere('letter.supervisor_id = :supervisorId', { supervisorId: user.id });
+      query.andWhere("letter.supervisor_id = :supervisorId", {
+        supervisorId: user.id,
+      });
     }
 
     if (status) {
-      query.andWhere('letter.status = :status', { status });
+      query.andWhere("letter.status = :status", { status });
     }
 
     const letters = await query.getMany();
-    return letters.map(letter => this.mapToResponse(letter));
+    return letters.map((letter) => this.mapToResponse(letter));
   }
 
   async findOne(id: string) {
     const letter = await this.entranceLetterRepo.findOne({
       where: { id },
-      relations: ['supervisor', 'promoter', 'project', 'branch', 'processedBy', 'branch.city'],
+      relations: [
+        "supervisor",
+        "promoter",
+        "project",
+        "branch",
+        "processedBy",
+        "branch.city",
+      ],
     });
-    if (!letter) throw new NotFoundException('Entrance letter request not found');
+    if (!letter) {
+      throw new NotFoundException("Entrance letter request not found");
+    }
     return this.mapToResponse(letter);
   }
 
-  async updateStatus(id: string, adminId: string, dto: UpdateEntranceLetterStatusDto) {
+  async updateStatus(
+    id: string,
+    adminId: string,
+    dto: UpdateEntranceLetterStatusDto,
+  ) {
     try {
       const letter = await this.entranceLetterRepo.findOne({
         where: { id },
-        relations: ['supervisor', 'promoter', 'project', 'branch', 'processedBy'],
+        relations: [
+          "supervisor",
+          "promoter",
+          "project",
+          "branch",
+          "processedBy",
+        ],
       });
-      if (!letter) throw new NotFoundException('Entrance letter request not found');
+      if (!letter) {
+        throw new NotFoundException("Entrance letter request not found");
+      }
 
       const admin = await this.userRepo.findOne({ where: { id: adminId } });
-      if (!admin) throw new NotFoundException('Admin not found');
+      if (!admin) throw new NotFoundException("Admin not found");
 
       letter.status = dto.status;
       letter.processedBy = admin;
@@ -99,7 +141,9 @@ export class EntranceLetterService {
       return this.findOne(saved.id);
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
-      throw new InternalServerErrorException('Failed to update entrance letter status');
+      throw new InternalServerErrorException(
+        "Failed to update entrance letter status",
+      );
     }
   }
 
@@ -129,10 +173,12 @@ export class EntranceLetterService {
         name: letter.branch?.name,
         city: letter.branch?.city?.name,
       },
-      processedBy: letter.processedBy ? {
-        id: letter.processedBy.id,
-        name: letter.processedBy.name,
-      } : null,
+      processedBy: letter.processedBy
+        ? {
+            id: letter.processedBy.id,
+            name: letter.processedBy.name,
+          }
+        : null,
     };
   }
 }

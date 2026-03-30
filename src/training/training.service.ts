@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Training } from '../../entities/training.entity';
-import { CreateTrainingDto, UpdateTrainingDto } from '../../dto/training.dto';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Training } from "../../entities/training.entity";
+import { CreateTrainingDto, UpdateTrainingDto } from "../../dto/training.dto";
 
 @Injectable()
 export class TrainingService {
@@ -14,7 +14,7 @@ export class TrainingService {
   async getByProject(projectId: string): Promise<Training[]> {
     return await this.trainingRepo.find({
       where: { projectId },
-      order: { created_at: 'DESC' },
+      order: { created_at: "DESC" },
     });
   }
 
@@ -26,7 +26,11 @@ export class TrainingService {
     return training;
   }
 
-  async create(projectId: string, dto: CreateTrainingDto, filename?: string): Promise<Training> {
+  async create(
+    projectId: string,
+    dto: CreateTrainingDto,
+    filename?: string,
+  ): Promise<Training> {
     const training = this.trainingRepo.create({
       ...dto,
       projectId,
@@ -35,7 +39,11 @@ export class TrainingService {
     return await this.trainingRepo.save(training);
   }
 
-  async update(id: string, dto: UpdateTrainingDto, filename?: string): Promise<Training> {
+  async update(
+    id: string,
+    dto: UpdateTrainingDto,
+    filename?: string,
+  ): Promise<Training> {
     const training = await this.findOne(id);
     Object.assign(training, dto);
     if (filename) {
@@ -50,8 +58,7 @@ export class TrainingService {
     return { success: true };
   }
 
-
   async findAll() {
-      return await this.trainingRepo.find();
+    return await this.trainingRepo.find();
   }
 }

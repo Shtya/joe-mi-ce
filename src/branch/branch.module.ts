@@ -1,22 +1,32 @@
 // branch.module.ts
-import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { BranchService } from './branch.service';
-import { BranchController } from './branch.controller';
-import { Branch } from 'entities/branch.entity';
-import { Chain } from 'entities/locations/chain.entity';
-import { City } from 'entities/locations/city.entity';
-import { Project } from 'entities/project.entity';
-import { JwtService } from '@nestjs/jwt';
-import { User } from 'entities/user.entity';
-import { SalesTarget } from 'entities/sales-target.entity';
-import { Journey, CheckIn } from 'entities/all_plans.entity';
-import { UsersService } from 'src/users/users.service';
-
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { BranchService } from "./branch.service";
+import { BranchController } from "./branch.controller";
+import { Branch } from "entities/branch.entity";
+import { Chain } from "entities/locations/chain.entity";
+import { City } from "entities/locations/city.entity";
+import { Project } from "entities/project.entity";
+import { JwtService } from "@nestjs/jwt";
+import { User } from "entities/user.entity";
+import { SalesTarget } from "entities/sales-target.entity";
+import { Journey, CheckIn } from "entities/all_plans.entity";
+import { UsersService } from "src/users/users.service";
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Branch, Project, City, Chain, User, SalesTarget, Journey, CheckIn])],
+  imports: [
+    TypeOrmModule.forFeature([
+      Branch,
+      Project,
+      City,
+      Chain,
+      User,
+      SalesTarget,
+      Journey,
+      CheckIn,
+    ]),
+  ],
   controllers: [BranchController],
-  providers: [BranchService ,UsersService],
+  providers: [BranchService, UsersService],
 })
 export class BranchModule {}

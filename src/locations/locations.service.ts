@@ -1,15 +1,29 @@
 // --- File: locations/locations.service.ts ---
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Not, Repository } from 'typeorm';
-import { Country } from 'entities/locations/country.entity';
-import { City } from 'entities/locations/city.entity';
-import { Region } from 'entities/locations/region.entity';
-import { Chain } from 'entities/locations/chain.entity';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { In, Not, Repository } from "typeorm";
+import { Country } from "entities/locations/country.entity";
+import { City } from "entities/locations/city.entity";
+import { Region } from "entities/locations/region.entity";
+import { Chain } from "entities/locations/chain.entity";
 
-import { BulkCreateCountriesDto, BulkCreateCitiesDto, BulkCreateRegionsDto, BulkCreateChainsDto, UpdateCountryDto, UpdateRegionDto, UpdateCityDto, UpdateChainDto, CreateChainDto } from 'dto/locations.dto';
-import { UsersService } from 'src/users/users.service';
-import { Project } from 'entities/project.entity';
+import {
+  BulkCreateCountriesDto,
+  BulkCreateCitiesDto,
+  BulkCreateRegionsDto,
+  BulkCreateChainsDto,
+  UpdateCountryDto,
+  UpdateRegionDto,
+  UpdateCityDto,
+  UpdateChainDto,
+  CreateChainDto,
+} from "dto/locations.dto";
+import { UsersService } from "src/users/users.service";
+import { Project } from "entities/project.entity";
 
 @Injectable()
 export class LocationsService {
@@ -29,17 +43,19 @@ export class LocationsService {
     @InjectRepository(Project)
     public readonly projectRepo: Repository<Project>,
 
-    public readonly userService:UsersService
+    public readonly userService: UsersService,
   ) {}
 
   // --------- COUNTRY (bulk create) ---------
   async bulkCreateCountries(dto: BulkCreateCountriesDto): Promise<Country[]> {
     const existing = await this.countryRepo.find({
-      where: { name: In(dto.countries.map(c => c.name)) },
+      where: { name: In(dto.countries.map((c) => c.name)) },
     });
 
     if (existing.length > 0) {
-      throw new ConflictException(`Countries already exist: ${existing.map(c => c.name).join(', ')}`);
+      throw new ConflictException(
+        `Countries already exist: ${existing.map((c) => c.name).join(", ")}`,
+      );
     }
 
     return this.countryRepo.save(dto.countries);
@@ -47,27 +63,33 @@ export class LocationsService {
 
   // --------- REGION (bulk create) ---------
   async bulkCreateRegions(dto: BulkCreateRegionsDto): Promise<Region[]> {
-    const countryIds = [...new Set(dto.regions.map(r => r.countryId))];
+    const countryIds = [...new Set(dto.regions.map((r) => r.countryId))];
     const countries = await this.countryRepo.findBy({ id: In(countryIds) });
 
     if (countries.length !== countryIds.length) {
-      const missing = countryIds.filter(id => !countries.some(c => c.id === id));
-      throw new ConflictException(`Countries not found: ${missing.join(', ')}`);
+      const missing = countryIds.filter(
+        (id) => !countries.some((c) => c.id === id),
+      );
+      throw new ConflictException(`Countries not found: ${missing.join(", ")}`);
     }
 
     const existing = await this.regionRepo
-      .createQueryBuilder('region')
-      .where('region.name IN (:...names)', { names: dto.regions.map(r => r.name) })
-      .andWhere('region.countryId IN (:...countryIds)', { countryIds })
+      .createQueryBuilder("region")
+      .where("region.name IN (:...names)", {
+        names: dto.regions.map((r) => r.name),
+      })
+      .andWhere("region.countryId IN (:...countryIds)", { countryIds })
       .getMany();
 
     if (existing.length > 0) {
-      throw new ConflictException(`Regions already exist: ${existing.map(r => r.name).join(', ')}`);
+      throw new ConflictException(
+        `Regions already exist: ${existing.map((r) => r.name).join(", ")}`,
+      );
     }
 
-    const regions = dto.regions.map(regionDto => ({
+    const regions = dto.regions.map((regionDto) => ({
       ...regionDto,
-      country: countries.find(c => c.id === regionDto.countryId),
+      country: countries.find((c) => c.id === regionDto.countryId),
     }));
 
     return this.regionRepo.save(regions);
@@ -75,44 +97,54 @@ export class LocationsService {
 
   // --------- CITY (bulk create) ---------
   async bulkCreateCities(dto: BulkCreateCitiesDto): Promise<City[]> {
-    const regionIds = [...new Set(dto.cities.map(c => c.regionId))];
+    const regionIds = [...new Set(dto.cities.map((c) => c.regionId))];
     const regions = await this.regionRepo.findBy({ id: In(regionIds) });
 
     if (regions.length !== regionIds.length) {
-      const missing = regionIds.filter(id => !regions.some(r => r.id === id));
-      throw new ConflictException(`Regions not found: ${missing.join(', ')}`);
+      const missing = regionIds.filter(
+        (id) => !regions.some((r) => r.id === id),
+      );
+      throw new ConflictException(`Regions not found: ${missing.join(", ")}`);
     }
 
     const existingCities = await this.cityRepo
-      .createQueryBuilder('city')
-      .where('city.name IN (:...names)', { names: dto.cities.map(c => c.name) })
-      .andWhere('city.regionId IN (:...regionIds)', { regionIds })
+      .createQueryBuilder("city")
+      .where("city.name IN (:...names)", {
+        names: dto.cities.map((c) => c.name),
+      })
+      .andWhere("city.regionId IN (:...regionIds)", { regionIds })
       .getMany();
 
     if (existingCities.length > 0) {
-      throw new ConflictException(`Cities already exist: ${existingCities.map(c => c.name).join(', ')}`);
+      throw new ConflictException(
+        `Cities already exist: ${existingCities.map((c) => c.name).join(", ")}`,
+      );
     }
 
-    const cities = dto.cities.map(cityDto => ({
+    const cities = dto.cities.map((cityDto) => ({
       ...cityDto,
-      region: regions.find(r => r.id === cityDto.regionId),
+      region: regions.find((r) => r.id === cityDto.regionId),
     }));
 
     return this.cityRepo.save(cities);
   }
 
   // --------- CHAIN (bulk create) ---------
-  async bulkCreateChains(dto: BulkCreateChainsDto, userId:string): Promise<Chain[]> {
-    const projectId = await this.userService.resolveProjectIdFromUser(userId)
-    const project = await this.projectRepo.findOne({ where: { id: projectId } })
-    if (!project) throw new NotFoundException('Project not found');
-    
+  async bulkCreateChains(
+    dto: BulkCreateChainsDto,
+    userId: string,
+  ): Promise<Chain[]> {
+    const projectId = await this.userService.resolveProjectIdFromUser(userId);
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
+    if (!project) throw new NotFoundException("Project not found");
 
     // 1. Check for duplicates in the input array
-    const names = dto.chains.map(c => c.name);
+    const names = dto.chains.map((c) => c.name);
     const uniqueNames = new Set(names);
     if (uniqueNames.size !== names.length) {
-      throw new ConflictException('Duplicate chain names in input');
+      throw new ConflictException("Duplicate chain names in input");
     }
 
     // 2. Check for existing chains in the DB (same project)
@@ -124,43 +156,59 @@ export class LocationsService {
     });
 
     if (existing.length > 0) {
-      const existingNames = existing.map(c => c.name).join(', ');
-      throw new ConflictException(`Chains already exist in this project: ${existingNames}`);
+      const existingNames = existing.map((c) => c.name).join(", ");
+      throw new ConflictException(
+        `Chains already exist in this project: ${existingNames}`,
+      );
     }
 
     // 3. Save
-    const entities = dto.chains.map(chainDto => this.chainRepo.create({
-      ...chainDto,
-      project,
-    }));
+    const entities = dto.chains.map((chainDto) =>
+      this.chainRepo.create({
+        ...chainDto,
+        project,
+      }),
+    );
     return this.chainRepo.save(entities);
   }
-  async createChainsWithProject(dto: CreateChainDto, userId:string): Promise<Chain> {
-    const projectId = await this.userService.resolveProjectIdFromUser(userId)
-    const project = await this.projectRepo.findOne({ where: { id: projectId } })
-    if (!project) throw new NotFoundException('Project not found');
-    
+  async createChainsWithProject(
+    dto: CreateChainDto,
+    userId: string,
+  ): Promise<Chain> {
+    const projectId = await this.userService.resolveProjectIdFromUser(userId);
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
+    if (!project) throw new NotFoundException("Project not found");
 
     const existing = await this.chainRepo.find({
-      where: { name: dto.name  , project},
+      where: { name: dto.name, project },
     });
 
     if (existing.length > 0) {
-      throw new ConflictException(`Chains already exist: ${existing.map(c => c.name).join(', ')}`);
+      throw new ConflictException(
+        `Chains already exist: ${existing.map((c) => c.name).join(", ")}`,
+      );
     }
 
-    return this.chainRepo.save({project,...dto});
+    return this.chainRepo.save({ project, ...dto });
   }
   // ===================== Updates (Edit) =====================
 
   // COUNTRY
   async updateCountry(id: string, dto: UpdateCountryDto): Promise<Country> {
     const country = await this.countryRepo.findOne({ where: { id } });
-    if (!country) throw new NotFoundException('Country not found');
+    if (!country) throw new NotFoundException("Country not found");
 
     if (dto.name) {
-      const dup = await this.countryRepo.findOne({ where: { name: dto.name, id: Not(id) } });
-      if (dup) throw new ConflictException(`Country already exists with name: ${dto.name}`);
+      const dup = await this.countryRepo.findOne({
+        where: { name: dto.name, id: Not(id) },
+      });
+      if (dup) {
+        throw new ConflictException(
+          `Country already exists with name: ${dto.name}`,
+        );
+      }
     }
 
     const merged = this.countryRepo.merge(country, dto);
@@ -169,14 +217,23 @@ export class LocationsService {
 
   // REGION
   async updateRegion(id: string, dto: UpdateRegionDto): Promise<Region> {
-    const region = await this.regionRepo.findOne({ where: { id }, relations: ['country'] });
-    if (!region) throw new NotFoundException('Region not found');
+    const region = await this.regionRepo.findOne({
+      where: { id },
+      relations: ["country"],
+    });
+    if (!region) throw new NotFoundException("Region not found");
 
     // If countryId changes, verify it
     let targetCountryId = region.country?.id;
     if (dto.countryId && dto.countryId !== targetCountryId) {
-      const newCountry = await this.countryRepo.findOne({ where: { id: dto.countryId } });
-      if (!newCountry) throw new NotFoundException(`Country not found with id: ${dto.countryId}`);
+      const newCountry = await this.countryRepo.findOne({
+        where: { id: dto.countryId },
+      });
+      if (!newCountry) {
+        throw new NotFoundException(
+          `Country not found with id: ${dto.countryId}`,
+        );
+      }
       region.country = newCountry;
       targetCountryId = newCountry.id;
     }
@@ -185,26 +242,46 @@ export class LocationsService {
     if (dto.name || dto.countryId) {
       const nameToCheck = dto.name ?? region.name;
       const dup = await this.regionRepo.findOne({
-        where: { name: nameToCheck, country: { id: targetCountryId }, id: Not(id) },
-        relations: ['country'],
+        where: {
+          name: nameToCheck,
+          country: { id: targetCountryId },
+          id: Not(id),
+        },
+        relations: ["country"],
       });
-      if (dup) throw new ConflictException(`Region "${nameToCheck}" already exists for this country`);
+      if (dup) {
+        throw new ConflictException(
+          `Region "${nameToCheck}" already exists for this country`,
+        );
+      }
     }
 
-    const merged = this.regionRepo.merge(region, { ...dto, country: region.country });
+    const merged = this.regionRepo.merge(region, {
+      ...dto,
+      country: region.country,
+    });
     return this.regionRepo.save(merged);
   }
 
   // CITY
   async updateCity(id: string, dto: UpdateCityDto): Promise<City> {
-    const city = await this.cityRepo.findOne({ where: { id }, relations: ['region'] });
-    if (!city) throw new NotFoundException('City not found');
+    const city = await this.cityRepo.findOne({
+      where: { id },
+      relations: ["region"],
+    });
+    if (!city) throw new NotFoundException("City not found");
 
     // If regionId changes, verify it
     let targetRegionId = city.region?.id;
     if (dto.regionId && dto.regionId !== targetRegionId) {
-      const newRegion = await this.regionRepo.findOne({ where: { id: dto.regionId } });
-      if (!newRegion) throw new NotFoundException(`Region not found with id: ${dto.regionId}`);
+      const newRegion = await this.regionRepo.findOne({
+        where: { id: dto.regionId },
+      });
+      if (!newRegion) {
+        throw new NotFoundException(
+          `Region not found with id: ${dto.regionId}`,
+        );
+      }
       city.region = newRegion;
       targetRegionId = newRegion.id;
     }
@@ -213,10 +290,18 @@ export class LocationsService {
     if (dto.name || dto.regionId) {
       const nameToCheck = dto.name ?? city.name;
       const dup = await this.cityRepo.findOne({
-        where: { name: nameToCheck, region: { id: targetRegionId }, id: Not(id) },
-        relations: ['region'],
+        where: {
+          name: nameToCheck,
+          region: { id: targetRegionId },
+          id: Not(id),
+        },
+        relations: ["region"],
       });
-      if (dup) throw new ConflictException(`City "${nameToCheck}" already exists for this region`);
+      if (dup) {
+        throw new ConflictException(
+          `City "${nameToCheck}" already exists for this region`,
+        );
+      }
     }
 
     const merged = this.cityRepo.merge(city, { ...dto, region: city.region });
@@ -226,20 +311,26 @@ export class LocationsService {
   // CHAIN
   async updateChain(id: string, dto: UpdateChainDto): Promise<Chain> {
     const chain = await this.chainRepo.findOne({ where: { id } });
-    if (!chain) throw new NotFoundException('Chain not found');
+    if (!chain) throw new NotFoundException("Chain not found");
 
     if (dto.name) {
-      const dup = await this.chainRepo.findOne({ where: { name: dto.name, id: Not(id) } });
-      if (dup) throw new ConflictException(`Chain already exists with name: ${dto.name}`);
+      const dup = await this.chainRepo.findOne({
+        where: { name: dto.name, id: Not(id) },
+      });
+      if (dup) {
+        throw new ConflictException(
+          `Chain already exists with name: ${dto.name}`,
+        );
+      }
     }
 
     const merged = this.chainRepo.merge(chain, dto);
     return this.chainRepo.save(merged);
   }
 
-  async assignProjectToChains(): Promise<{ updated: number, errors: any[] }> {
+  async assignProjectToChains(): Promise<{ updated: number; errors: any[] }> {
     const chains = await this.chainRepo.find({
-      relations: ['branches', 'branches.project'],
+      relations: ["branches", "branches.project"],
     });
 
     let updatedCount = 0;
@@ -247,19 +338,22 @@ export class LocationsService {
 
     for (const chain of chains) {
       // Find a branch that has a project assigned
-      const branchWithProject = chain.branches.find(b => b.project);
+      const branchWithProject = chain.branches.find((b) => b.project);
 
       if (branchWithProject) {
         // If chain has no project, or we want to enforce consistency (user asked to "check the branch project id to be thet same")
         // The request says "assign a project id to the chains automatic by check the branch project id to be thet same"
         // So we update the chain's project to match the branch's project.
-        if (!chain.project || chain.project.id !== branchWithProject.project.id) {
+        if (
+          !chain.project ||
+          chain.project.id !== branchWithProject.project.id
+        ) {
           try {
             chain.project = branchWithProject.project;
             await this.chainRepo.save(chain);
             updatedCount++;
           } catch (err) {
-              errors.push({ id: chain.id, name: chain.name, error: err.message });
+            errors.push({ id: chain.id, name: chain.name, error: err.message });
           }
         }
       }

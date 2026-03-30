@@ -1,9 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Project } from 'entities/project.entity';
-import { Shift } from 'entities/employee/shift.entity';
-import { CreateShiftDto, UpdateShiftDto } from 'dto/shift.dto';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Project } from "entities/project.entity";
+import { Shift } from "entities/employee/shift.entity";
+import { CreateShiftDto, UpdateShiftDto } from "dto/shift.dto";
 
 @Injectable()
 export class ShiftService {
@@ -16,13 +20,15 @@ export class ShiftService {
   ) {}
 
   async create(dto: CreateShiftDto): Promise<Shift> {
-    const project = await this.projectRepo.findOne({ where: { id: dto.projectId } });
-    if (!project) throw new NotFoundException('Project not found');
+    const project = await this.projectRepo.findOne({
+      where: { id: dto.projectId },
+    });
+    if (!project) throw new NotFoundException("Project not found");
 
     // ✅ التحقق من التداخل الزمني مع الشيفتات الموجودة لهذا المشروع
     const overlappingShift = await this.shiftRepo
-      .createQueryBuilder('shift')
-      .where('shift.project_id = :projectId', { projectId: dto.projectId })
+      .createQueryBuilder("shift")
+      .where("shift.project_id = :projectId", { projectId: dto.projectId })
       .andWhere(
         `
           shift.startTime < :endTime AND
@@ -35,15 +41,16 @@ export class ShiftService {
       )
       .getOne();
 
-
-
     const shift = this.shiftRepo.create({ ...dto, project });
     return this.shiftRepo.save(shift);
   }
 
   async findOne(id: string): Promise<Shift> {
-    const shift = await this.shiftRepo.findOne({ where: { id }, relations: ['project'] });
-    if (!shift) throw new NotFoundException('Shift not found');
+    const shift = await this.shiftRepo.findOne({
+      where: { id },
+      relations: ["project"],
+    });
+    if (!shift) throw new NotFoundException("Shift not found");
     return shift;
   }
 
@@ -56,9 +63,9 @@ export class ShiftService {
     const newProjectId = dto.projectId ?? shift.project.id;
 
     const overlappingShift = await this.shiftRepo
-      .createQueryBuilder('s')
-      .where('s.project_id = :projectId', { projectId: newProjectId })
-      .andWhere('s.id != :id', { id }) // تجاهل الشيفت الحالي
+      .createQueryBuilder("s")
+      .where("s.project_id = :projectId", { projectId: newProjectId })
+      .andWhere("s.id != :id", { id }) // تجاهل الشيفت الحالي
       .andWhere(
         `(
         (s.startTime <= :startTime AND s.endTime > :startTime) OR
@@ -73,18 +80,21 @@ export class ShiftService {
       .getOne();
 
     if (overlappingShift) {
-      throw new ConflictException(`This shift overlaps with an existing shift: [${overlappingShift.startTime} - ${overlappingShift.endTime}]`);
+      throw new ConflictException(
+        `This shift overlaps with an existing shift: [${overlappingShift.startTime} - ${overlappingShift.endTime}]`,
+      );
     }
 
     // تحديث المشروع إذا تم تغييره
     if (dto.projectId && dto.projectId !== shift.project.id) {
-      const project = await this.projectRepo.findOne({ where: { id: dto.projectId } });
-      if (!project) throw new NotFoundException('Project not found');
+      const project = await this.projectRepo.findOne({
+        where: { id: dto.projectId },
+      });
+      if (!project) throw new NotFoundException("Project not found");
       shift.project = project;
     }
 
     Object.assign(shift, dto);
     return this.shiftRepo.save(shift);
   }
- 
 }

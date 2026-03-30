@@ -1,148 +1,250 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Patch, Request } from '@nestjs/common';
-import { LocationsService } from './locations.service';
-import { CreateCountryDto, CreateCityDto, CreateRegionDto, CreateChainDto, BulkCreateCountriesDto, BulkCreateCitiesDto, BulkCreateRegionsDto, BulkCreateChainsDto, UpdateChainDto, UpdateCityDto, UpdateRegionDto, UpdateCountryDto } from 'dto/locations.dto';
-import { PaginationQueryDto } from 'dto/pagination.dto';
-import { CRUD } from 'common/crud.service';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { Permissions } from 'decorators/permissions.decorators';
-import { EPermission } from 'enums/Permissions.enum';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Patch,
+  Request,
+} from "@nestjs/common";
+import { LocationsService } from "./locations.service";
+import {
+  CreateCountryDto,
+  CreateCityDto,
+  CreateRegionDto,
+  CreateChainDto,
+  BulkCreateCountriesDto,
+  BulkCreateCitiesDto,
+  BulkCreateRegionsDto,
+  BulkCreateChainsDto,
+  UpdateChainDto,
+  UpdateCityDto,
+  UpdateRegionDto,
+  UpdateCountryDto,
+} from "dto/locations.dto";
+import { PaginationQueryDto } from "dto/pagination.dto";
+import { CRUD } from "common/crud.service";
+import { AuthGuard } from "src/auth/auth.guard";
+import { Permissions } from "decorators/permissions.decorators";
+import { EPermission } from "enums/Permissions.enum";
 
 @UseGuards(AuthGuard)
-@Controller('')
+@Controller("")
 export class LocationsController {
   constructor(private readonly locationsService: LocationsService) {}
 
   // Bulk Create Endpoints
-  @Post('countries')
+  @Post("countries")
   @Permissions(EPermission.LOCATION_CREATE)
   bulkCreateCountries(@Body() dto: BulkCreateCountriesDto) {
     return this.locationsService.bulkCreateCountries(dto);
   }
 
-  @Post('regions')
+  @Post("regions")
   @Permissions(EPermission.LOCATION_CREATE)
   bulkCreateRegions(@Body() dto: BulkCreateRegionsDto) {
     return this.locationsService.bulkCreateRegions(dto);
   }
 
-  @Post('cities')
+  @Post("cities")
   @Permissions(EPermission.LOCATION_CREATE)
   bulkCreateCities(@Body() dto: BulkCreateCitiesDto) {
     return this.locationsService.bulkCreateCities(dto);
   }
 
-  @Post('chains')
+  @Post("chains")
   @Permissions(EPermission.LOCATION_CREATE)
   bulkCreateChains(@Body() dto: BulkCreateChainsDto, @Request() req: any) {
-    return this.locationsService.bulkCreateChains(dto,req.user.id); 
+    return this.locationsService.bulkCreateChains(dto, req.user.id);
   }
-  @Post('chains/project')
+  @Post("chains/project")
   @Permissions(EPermission.LOCATION_CREATE)
-  bulkCreateChainsWithProject(@Body() dto: CreateChainDto, @Request() req: any) {
-    return this.locationsService.createChainsWithProject(dto,req.user.id); 
+  bulkCreateChainsWithProject(
+    @Body() dto: CreateChainDto,
+    @Request() req: any,
+  ) {
+    return this.locationsService.createChainsWithProject(dto, req.user.id);
   }
 
-  @Post('chains/assign-project')
+  @Post("chains/assign-project")
   @Permissions(EPermission.LOCATION_UPDATE)
   assignProjectToChains() {
     return this.locationsService.assignProjectToChains();
   }
   // Get Regions by Country
-  @Get('countries/:countryId/regions')
+  @Get("countries/:countryId/regions")
   @Permissions(EPermission.LOCATION_READ)
-  getRegionsByCountry(@Param('countryId') countryId: string, @Query() query: PaginationQueryDto) {
-    return CRUD.findAll(this.locationsService.regionRepo, 'region', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['country'], ['name'], { country: { id: countryId } });
+  getRegionsByCountry(
+    @Param("countryId") countryId: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return CRUD.findAll(
+      this.locationsService.regionRepo,
+      "region",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ["country"],
+      ["name"],
+      { country: { id: countryId } },
+    );
   }
 
   // Get Cities by Region
-  @Get('regions/:regionId/cities')
+  @Get("regions/:regionId/cities")
   @Permissions(EPermission.LOCATION_READ)
-  getCitiesByRegion(@Param('regionId') regionId: string, @Query() query: PaginationQueryDto) {
-    return CRUD.findAll(this.locationsService.cityRepo, 'city', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['region'], ['name'], { region: { id: regionId } });
+  getCitiesByRegion(
+    @Param("regionId") regionId: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    return CRUD.findAll(
+      this.locationsService.cityRepo,
+      "city",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ["region"],
+      ["name"],
+      { region: { id: regionId } },
+    );
   }
 
   // Country
-  @Get('countries')
+  @Get("countries")
   @Permissions(EPermission.LOCATION_READ)
   findAllCountries(@Query() query: PaginationQueryDto) {
-    return CRUD.findAll(this.locationsService.countryRepo, 'country', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['regions'], ['name'], query.filters);
+    return CRUD.findAll(
+      this.locationsService.countryRepo,
+      "country",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ["regions"],
+      ["name"],
+      query.filters,
+    );
   }
 
-  @Get('countries/:id')
+  @Get("countries/:id")
   @Permissions(EPermission.LOCATION_READ)
-  findCountry(@Param(':id') id: string) {
-    return CRUD.findOne(this.locationsService.countryRepo, 'country', id, ['regions']);
+  findCountry(@Param(":id") id: string) {
+    return CRUD.findOne(this.locationsService.countryRepo, "country", id, [
+      "regions",
+    ]);
   }
 
-  @Delete('countries/:id')
+  @Delete("countries/:id")
   @Permissions(EPermission.LOCATION_DELETE)
-  deleteCountry(@Param('id') id: string) {
-    return CRUD.delete(this.locationsService.countryRepo, 'country', id);
+  deleteCountry(@Param("id") id: string) {
+    return CRUD.delete(this.locationsService.countryRepo, "country", id);
   }
 
   // Regions
-  @Get('regions')
+  @Get("regions")
   @Permissions(EPermission.LOCATION_READ)
   findAllRegions(@Query() query) {
-    return CRUD.findAll(this.locationsService.regionRepo, 'region', query.search, query.page, query.limit, query.sortBy, query.sortOrder, ['country'], ['name'], query.filters);
+    return CRUD.findAll(
+      this.locationsService.regionRepo,
+      "region",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      ["country"],
+      ["name"],
+      query.filters,
+    );
   }
 
-  @Delete('regions/:id')
+  @Delete("regions/:id")
   @Permissions(EPermission.LOCATION_DELETE)
-  deleteRegion(@Param('id') id: string) {
-    return CRUD.delete(this.locationsService.regionRepo, 'region', id);
+  deleteRegion(@Param("id") id: string) {
+    return CRUD.delete(this.locationsService.regionRepo, "region", id);
   }
 
   // Cities
-  @Get('cities')
+  @Get("cities")
   @Permissions(EPermission.LOCATION_READ)
   findAllCities(@Query() query: PaginationQueryDto) {
-    return CRUD.findAll(this.locationsService.cityRepo, 'city', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['name'], query.filters);
+    return CRUD.findAll(
+      this.locationsService.cityRepo,
+      "city",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      [],
+      ["name"],
+      query.filters,
+    );
   }
 
-  @Delete('cities/:id')
+  @Delete("cities/:id")
   @Permissions(EPermission.LOCATION_DELETE)
-  deleteCity(@Param('id') id: string) {
-    return CRUD.delete(this.locationsService.cityRepo, 'city', id);
+  deleteCity(@Param("id") id: string) {
+    return CRUD.delete(this.locationsService.cityRepo, "city", id);
   }
 
   // Chains
-  @Get('chains')
+  @Get("chains")
   @Permissions(EPermission.LOCATION_READ)
-  async findAllChains(@Query() query: PaginationQueryDto,@Request() req: any) {
+  async findAllChains(@Query() query: PaginationQueryDto, @Request() req: any) {
     const userId = req.user.id;
-    const projectId = await this.locationsService.userService.resolveProjectIdFromUser(userId);
-    console.log(projectId)
-    return CRUD.findAll(this.locationsService.chainRepo, 'chain', query.search, query.page, query.limit, query.sortBy, query.sortOrder, [], ['name'], { ...query.filters, project: { id: projectId } });
+    const projectId =
+      await this.locationsService.userService.resolveProjectIdFromUser(userId);
+    console.log(projectId);
+    return CRUD.findAll(
+      this.locationsService.chainRepo,
+      "chain",
+      query.search,
+      query.page,
+      query.limit,
+      query.sortBy,
+      query.sortOrder,
+      [],
+      ["name"],
+      { ...query.filters, project: { id: projectId } },
+    );
   }
 
-  @Delete('chains/:id')
+  @Delete("chains/:id")
   @Permissions(EPermission.LOCATION_DELETE)
-  deleteChain(@Param('id') id: string) {
-    return CRUD.delete(this.locationsService.chainRepo, 'chain', id);
+  deleteChain(@Param("id") id: string) {
+    return CRUD.delete(this.locationsService.chainRepo, "chain", id);
   }
 
-  @Patch('chains/:id')
+  @Patch("chains/:id")
   @Permissions(EPermission.LOCATION_UPDATE)
-  updateChain(@Param('id') id: string, @Body() dto: UpdateChainDto) {
+  updateChain(@Param("id") id: string, @Body() dto: UpdateChainDto) {
     return this.locationsService.updateChain(id, dto);
   }
 
-  @Patch('cities/:id')
+  @Patch("cities/:id")
   @Permissions(EPermission.LOCATION_UPDATE)
-  updateCity(@Param('id') id: string, @Body() dto: UpdateCityDto) {
+  updateCity(@Param("id") id: string, @Body() dto: UpdateCityDto) {
     return this.locationsService.updateCity(id, dto);
   }
 
-  @Patch('regions/:id')
+  @Patch("regions/:id")
   @Permissions(EPermission.LOCATION_UPDATE)
-  updateRegion(@Param('id') id: string, @Body() dto: UpdateRegionDto) {
+  updateRegion(@Param("id") id: string, @Body() dto: UpdateRegionDto) {
     return this.locationsService.updateRegion(id, dto);
   }
 
-  @Patch('countries/:id')
+  @Patch("countries/:id")
   @Permissions(EPermission.LOCATION_UPDATE)
-  updateCountry(@Param('id') id: string, @Body() dto: UpdateCountryDto) {
+  updateCountry(@Param("id") id: string, @Body() dto: UpdateCountryDto) {
     return this.locationsService.updateCountry(id, dto);
   }
 }

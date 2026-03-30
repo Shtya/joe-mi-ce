@@ -1,16 +1,20 @@
 // sale.service.ts
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, In, Repository } from 'typeorm';
-import { CreateSaleDto, UpdateSaleDto } from 'dto/sale.dto';
-import { User } from 'entities/user.entity';
-import { Branch } from 'entities/branch.entity';
-import { Sale } from 'entities/products/sale.entity';
-import { Product } from 'entities/products/product.entity';
-import { Stock } from 'entities/products/stock.entity';
-import { SalesTarget, SalesTargetStatus } from 'entities/sales-target.entity';
-import { Journey } from 'entities/all_plans.entity';
-import { CRUD } from 'common/crud.service';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Brackets, In, Repository } from "typeorm";
+import { CreateSaleDto, UpdateSaleDto } from "dto/sale.dto";
+import { User } from "entities/user.entity";
+import { Branch } from "entities/branch.entity";
+import { Sale } from "entities/products/sale.entity";
+import { Product } from "entities/products/product.entity";
+import { Stock } from "entities/products/stock.entity";
+import { SalesTarget, SalesTargetStatus } from "entities/sales-target.entity";
+import { Journey } from "entities/all_plans.entity";
+import { CRUD } from "common/crud.service";
 
 @Injectable()
 export class SaleService {
@@ -20,25 +24,30 @@ export class SaleService {
     @InjectRepository(Stock) public stockRepo: Repository<Stock>,
     @InjectRepository(User) public userRepo: Repository<User>,
     @InjectRepository(Branch) public branchRepo: Repository<Branch>,
-    @InjectRepository(SalesTarget) public salesTargetRepo: Repository<SalesTarget>,
+    @InjectRepository(SalesTarget)
+    public salesTargetRepo: Repository<SalesTarget>,
   ) {}
 
   async create(dto: CreateSaleDto) {
-    const product = await this.productRepo.findOne({ where: { id: dto.productId } });
-    if (!product) throw new NotFoundException('Product not found');
+    const product = await this.productRepo.findOne({
+      where: { id: dto.productId },
+    });
+    if (!product) throw new NotFoundException("Product not found");
 
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
-    const branch = await this.branchRepo.findOne({ where: { id: dto.branchId }, relations: ["project"] });
-    if (!branch) throw new NotFoundException('Branch not found');
-
+    const branch = await this.branchRepo.findOne({
+      where: { id: dto.branchId },
+      relations: ["project"],
+    });
+    if (!branch) throw new NotFoundException("Branch not found");
 
     let stock = await this.stockRepo.findOne({
-      where: { product: { id: product.id }, branch: { id: branch.id } }
+      where: { product: { id: product.id }, branch: { id: branch.id } },
     });
 
-    if(!dto.isFromOrigin){
+    if (!dto.isFromOrigin) {
       if (!stock) {
         // Auto-create stock record with 0 quantity if it doesn't exist
         stock = this.stockRepo.create({
@@ -46,25 +55,21 @@ export class SaleService {
           branch: { id: branch.id },
           product_id: product.id,
           branch_id: branch.id,
-          quantity: 0
+          quantity: 0,
         });
         await this.stockRepo.save(stock);
       }
 
       if (stock.quantity < dto.quantity) {
-        throw new BadRequestException('Not enough stock available');
-      }
-      else{
-       stock.quantity -= dto.quantity;
-       await this.stockRepo.save(stock);
+        throw new BadRequestException("Not enough stock available");
+      } else {
+        stock.quantity -= dto.quantity;
+        await this.stockRepo.save(stock);
       }
     }
-    
 
-const discount = product.discount ?? 0;
-const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
-
-
+    const discount = product.discount ?? 0;
+    const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
 
     // Create sale
     const sale = this.saleRepo.create({
@@ -72,7 +77,7 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       price: dto.price,
       quantity: dto.quantity,
       total_amount: totalAmount,
-      status: dto.status || 'completed',
+      status: dto.status || "completed",
       product,
       user,
       branch,
@@ -93,13 +98,19 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
   async update(id: string, dto: UpdateSaleDto) {
     const sale = await this.saleRepo.findOne({
       where: { id },
-      relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
+      relations: [
+        "product",
+        "branch",
+        "user",
+        "product.brand",
+        "product.category",
+      ],
     });
 
-    if (!sale) throw new NotFoundException('Sale not found');
+    if (!sale) throw new NotFoundException("Sale not found");
 
-    if (sale.status === 'returned' || sale.status === 'cancelled') {
-      throw new BadRequestException('Cannot update returned or cancelled sale');
+    if (sale.status === "returned" || sale.status === "cancelled") {
+      throw new BadRequestException("Cannot update returned or cancelled sale");
     }
 
     const stock = await this.stockRepo.findOne({
@@ -107,36 +118,41 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     });
 
     if (!stock) {
-      throw new NotFoundException('Stock not found for this branch');
+      throw new NotFoundException("Stock not found for this branch");
     }
 
     let stockAdjustment = 0;
     let amountAdjustment = 0;
 
-   if(!sale.isFromOrigin){
-    if (dto.quantity !== undefined && dto.quantity !== sale.quantity) {
-      const quantityDiff = dto.quantity - sale.quantity;
+    if (!sale.isFromOrigin) {
+      if (dto.quantity !== undefined && dto.quantity !== sale.quantity) {
+        const quantityDiff = dto.quantity - sale.quantity;
 
-      if (quantityDiff > 0 && stock.quantity < quantityDiff) {
-        throw new BadRequestException('Not enough stock available for quantity increase');
+        if (quantityDiff > 0 && stock.quantity < quantityDiff) {
+          throw new BadRequestException(
+            "Not enough stock available for quantity increase",
+          );
+        }
+
+        stockAdjustment = -quantityDiff; // Negative because we subtract from stock
       }
-
-      stockAdjustment = -quantityDiff; // Negative because we subtract from stock
     }
-  }
     // Handle price changes
     const oldTotalAmount = sale.total_amount;
-    const newTotalAmount = dto.price !== undefined ? dto.price * (dto.quantity || sale.quantity) : oldTotalAmount;
+    const newTotalAmount =
+      dto.price !== undefined
+        ? dto.price * (dto.quantity || sale.quantity)
+        : oldTotalAmount;
 
     if (dto.price !== undefined || dto.quantity !== undefined) {
       amountAdjustment = newTotalAmount - oldTotalAmount;
     }
 
-    if(!sale.isFromOrigin){
-    if (stockAdjustment !== 0) {
-      stock.quantity += stockAdjustment;
-      await this.stockRepo.save(stock);
-    }
+    if (!sale.isFromOrigin) {
+      if (stockAdjustment !== 0) {
+        stock.quantity += stockAdjustment;
+        await this.stockRepo.save(stock);
+      }
     }
 
     // Update sale
@@ -155,7 +171,13 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     // Transform the response to match the get method structure
     const updatedSale = await this.saleRepo.findOne({
       where: { id },
-      relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
+      relations: [
+        "product",
+        "branch",
+        "user",
+        "product.brand",
+        "product.category",
+      ],
     });
 
     // Calculate product amounts
@@ -168,61 +190,73 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       total_records: 1,
       current_page: 1,
       per_page: 1,
-      branch: updatedSale.branch ? {
-        id: updatedSale.branch.id,
-        name: updatedSale.branch.name,
-        city: updatedSale.branch.city
-      } : null,
-      user: updatedSale.user ? {
-        id: updatedSale.user.id,
-        name: updatedSale.user.name
-      } : null,
-      records: [{
-        id: updatedSale.id,
-        quantity: quantity,
-        total_amount: updatedSale.total_amount,
-        created_at: updatedSale.created_at,
-        status: updatedSale.status,
-        discount: discount,
-        product: {
-          id: updatedSale.product?.id || null,
-          name: updatedSale.product?.name || null,
-          sku: updatedSale.product?.sku || null,
-          price: unitPrice,
-          // All three amount types matching the optimized structure
-          unit_amount: unitPrice, // Unit price (same as product price)
-          total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
-          discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
-          brand_name: updatedSale.product?.brand?.name || null,
-          category_name: updatedSale.product?.category?.name || null
-        }
-        // Note: branch and user are removed from individual records as per optimized structure
-      }]
+      branch: updatedSale.branch
+        ? {
+            id: updatedSale.branch.id,
+            name: updatedSale.branch.name,
+            city: updatedSale.branch.city,
+          }
+        : null,
+      user: updatedSale.user
+        ? {
+            id: updatedSale.user.id,
+            name: updatedSale.user.name,
+          }
+        : null,
+      records: [
+        {
+          id: updatedSale.id,
+          quantity: quantity,
+          total_amount: updatedSale.total_amount,
+          created_at: updatedSale.created_at,
+          status: updatedSale.status,
+          discount: discount,
+          product: {
+            id: updatedSale.product?.id || null,
+            name: updatedSale.product?.name || null,
+            sku: updatedSale.product?.sku || null,
+            price: unitPrice,
+            // All three amount types matching the optimized structure
+            unit_amount: unitPrice, // Unit price (same as product price)
+            total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
+            discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
+            brand_name: updatedSale.product?.brand?.name || null,
+            category_name: updatedSale.product?.category?.name || null,
+          },
+          // Note: branch and user are removed from individual records as per optimized structure
+        },
+      ],
     };
   }
   async delete(id: string) {
     const sale = await this.saleRepo.findOne({
       where: { id },
-      relations: ['product', 'branch', 'user', 'product.brand', 'product.category']
+      relations: [
+        "product",
+        "branch",
+        "user",
+        "product.brand",
+        "product.category",
+      ],
     });
 
-    if (!sale) throw new NotFoundException('Sale not found');
+    if (!sale) throw new NotFoundException("Sale not found");
 
-    if (sale.status === 'returned' || sale.status === 'cancelled') {
-      throw new BadRequestException('Sale is already returned or cancelled');
+    if (sale.status === "returned" || sale.status === "cancelled") {
+      throw new BadRequestException("Sale is already returned or cancelled");
     }
 
     const stock = await this.stockRepo.findOne({
-      where: { product: { id: sale.product.id },},
+      where: { product: { id: sale.product.id } },
     });
 
     if (!stock) {
-      throw new NotFoundException('Stock not found for this branch');
+      throw new NotFoundException("Stock not found for this branch");
     }
 
-    if(!sale.isFromOrigin){
-    stock.quantity += sale.quantity;
-    await this.stockRepo.save(stock);
+    if (!sale.isFromOrigin) {
+      stock.quantity += sale.quantity;
+      await this.stockRepo.save(stock);
     }
 
     // Update sales target progress
@@ -233,34 +267,42 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       total_records: 1,
       current_page: 1,
       per_page: 1,
-      branch: sale.branch ? {
-        id: sale.branch.id,
-        name: sale.branch.name,
-        city: sale.branch.city
-      } : null,
-      user: sale.user ? {
-        id: sale.user.id,
-        name: sale.user.name
-      } : null,
-      records: [{
-        id: sale.id,
-        quantity: sale.quantity,
-        total_amount: sale.total_amount,
-        created_at: sale.created_at,
-        status: sale.status,
-        discount: sale.product?.discount || 0,
-        product: {
-          id: sale.product?.id || null,
-          name: sale.product?.name || null,
-          sku: sale.product?.sku || null,
-          price: sale.product?.price || 0,
-          unit_amount: sale.product?.price || 0,
-          total_amount: (sale.product?.price || 0) * sale.quantity,
-          discounted_amount: ((sale.product?.price || 0) - (sale.product?.discount || 0)) * sale.quantity,
-          brand_name: sale.product?.brand?.name || null,
-          category_name: sale.product?.category?.name || null
-        }
-      }]
+      branch: sale.branch
+        ? {
+            id: sale.branch.id,
+            name: sale.branch.name,
+            city: sale.branch.city,
+          }
+        : null,
+      user: sale.user
+        ? {
+            id: sale.user.id,
+            name: sale.user.name,
+          }
+        : null,
+      records: [
+        {
+          id: sale.id,
+          quantity: sale.quantity,
+          total_amount: sale.total_amount,
+          created_at: sale.created_at,
+          status: sale.status,
+          discount: sale.product?.discount || 0,
+          product: {
+            id: sale.product?.id || null,
+            name: sale.product?.name || null,
+            sku: sale.product?.sku || null,
+            price: sale.product?.price || 0,
+            unit_amount: sale.product?.price || 0,
+            total_amount: (sale.product?.price || 0) * sale.quantity,
+            discounted_amount:
+              ((sale.product?.price || 0) - (sale.product?.discount || 0)) *
+              sale.quantity,
+            brand_name: sale.product?.brand?.name || null,
+            category_name: sale.product?.category?.name || null,
+          },
+        },
+      ],
     };
 
     // Soft delete the sale after preparing response
@@ -272,24 +314,34 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
   async restore(id: string) {
     const sale = await this.saleRepo.findOne({
       where: { id },
-      relations: ['product', 'branch', 'user', 'product.brand', 'product.category'],
-      withDeleted: true
+      relations: [
+        "product",
+        "branch",
+        "user",
+        "product.brand",
+        "product.category",
+      ],
+      withDeleted: true,
     });
 
-    if (!sale) throw new NotFoundException('Sale not found');
-    if (!sale.deleted_at) throw new BadRequestException('Sale is not deleted');
+    if (!sale) throw new NotFoundException("Sale not found");
+    if (!sale.deleted_at) throw new BadRequestException("Sale is not deleted");
 
     const stock = await this.stockRepo.findOne({
       where: { product: { id: sale.product.id } },
     });
 
     if (!stock) {
-      throw new NotFoundException('Stock not found for this branch to restore quantity');
+      throw new NotFoundException(
+        "Stock not found for this branch to restore quantity",
+      );
     }
 
     if (!sale.isFromOrigin) {
       if (stock.quantity < sale.quantity) {
-        throw new BadRequestException('Insufficient stock to restore this sale');
+        throw new BadRequestException(
+          "Insufficient stock to restore this sale",
+        );
       }
       stock.quantity -= sale.quantity;
       await this.stockRepo.save(stock);
@@ -306,47 +358,55 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       total_records: 1,
       current_page: 1,
       per_page: 1,
-      branch: sale.branch ? {
-        id: sale.branch.id,
-        name: sale.branch.name,
-        city: sale.branch.city
-      } : null,
-      user: sale.user ? {
-        id: sale.user.id,
-        name: sale.user.name
-      } : null,
-      records: [{
-        id: sale.id,
-        quantity: sale.quantity,
-        total_amount: sale.total_amount,
-        created_at: sale.created_at,
-        status: sale.status,
-        discount: sale.product?.discount || 0,
-        product: {
-          id: sale.product?.id || null,
-          name: sale.product?.name || null,
-          sku: sale.product?.sku || null,
-          price: sale.product?.price || 0,
-          unit_amount: sale.product?.price || 0,
-          total_amount: (sale.product?.price || 0) * sale.quantity,
-          discounted_amount: ((sale.product?.price || 0) - (sale.product?.discount || 0)) * sale.quantity,
-          brand_name: sale.product?.brand?.name || null,
-          category_name: sale.product?.category?.name || null
-        }
-      }]
+      branch: sale.branch
+        ? {
+            id: sale.branch.id,
+            name: sale.branch.name,
+            city: sale.branch.city,
+          }
+        : null,
+      user: sale.user
+        ? {
+            id: sale.user.id,
+            name: sale.user.name,
+          }
+        : null,
+      records: [
+        {
+          id: sale.id,
+          quantity: sale.quantity,
+          total_amount: sale.total_amount,
+          created_at: sale.created_at,
+          status: sale.status,
+          discount: sale.product?.discount || 0,
+          product: {
+            id: sale.product?.id || null,
+            name: sale.product?.name || null,
+            sku: sale.product?.sku || null,
+            price: sale.product?.price || 0,
+            unit_amount: sale.product?.price || 0,
+            total_amount: (sale.product?.price || 0) * sale.quantity,
+            discounted_amount:
+              ((sale.product?.price || 0) - (sale.product?.discount || 0)) *
+              sale.quantity,
+            brand_name: sale.product?.brand?.name || null,
+            category_name: sale.product?.category?.name || null,
+          },
+        },
+      ],
     };
   }
 
   async cancelOrReturn(id: string) {
     const sale = await this.saleRepo.findOne({
       where: { id },
-      relations: ['product', 'branch']
+      relations: ["product", "branch"],
     });
 
-    if (!sale) throw new NotFoundException('Sale not found');
+    if (!sale) throw new NotFoundException("Sale not found");
 
-    if (sale.status === 'cancelled' || sale.status === 'returned') {
-      throw new BadRequestException('Sale is already cancelled or returned');
+    if (sale.status === "cancelled" || sale.status === "returned") {
+      throw new BadRequestException("Sale is already cancelled or returned");
     }
 
     const stock = await this.stockRepo.findOne({
@@ -354,34 +414,36 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     });
 
     if (!stock) {
-      throw new NotFoundException('Stock not found for this branch to return quantity');
+      throw new NotFoundException(
+        "Stock not found for this branch to return quantity",
+      );
     }
 
-    if(!sale.isFromOrigin){
-    stock.quantity += sale.quantity;
-    await this.stockRepo.save(stock);
+    if (!sale.isFromOrigin) {
+      stock.quantity += sale.quantity;
+      await this.stockRepo.save(stock);
     }
 
     // Update sale status
-    sale.status = 'returned';
+    sale.status = "returned";
     await this.saleRepo.save(sale);
 
     // Deduct amount from sales target progress
     await this.updateSalesTargetProgress(sale.branch.id, -sale.total_amount);
 
-    return { message: 'Sale returned successfully', sale };
+    return { message: "Sale returned successfully", sale };
   }
 
   async cancelSale(id: string) {
     const sale = await this.saleRepo.findOne({
       where: { id },
-      relations: ['product', 'branch']
+      relations: ["product", "branch"],
     });
 
-    if (!sale) throw new NotFoundException('Sale not found');
+    if (!sale) throw new NotFoundException("Sale not found");
 
-    if (sale.status === 'cancelled' || sale.status === 'returned') {
-      throw new BadRequestException('Sale is already cancelled or returned');
+    if (sale.status === "cancelled" || sale.status === "returned") {
+      throw new BadRequestException("Sale is already cancelled or returned");
     }
 
     const stock = await this.stockRepo.findOne({
@@ -389,25 +451,28 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     });
 
     if (!stock) {
-      throw new NotFoundException('Stock not found for this branch');
+      throw new NotFoundException("Stock not found for this branch");
     }
 
-    if(!sale.isFromOrigin){
-    stock.quantity += sale.quantity;
-    await this.stockRepo.save(stock);
+    if (!sale.isFromOrigin) {
+      stock.quantity += sale.quantity;
+      await this.stockRepo.save(stock);
     }
 
     // Update sale status
-    sale.status = 'cancelled';
+    sale.status = "cancelled";
     await this.saleRepo.save(sale);
 
     // Deduct amount from sales target progress
     await this.updateSalesTargetProgress(sale.branch.id, -sale.total_amount);
 
-    return { message: 'Sale cancelled successfully', sale };
+    return { message: "Sale cancelled successfully", sale };
   }
 
-  private async updateSalesTargetProgress(branchId: string, amount: number): Promise<void> {
+  private async updateSalesTargetProgress(
+    branchId: string,
+    amount: number,
+  ): Promise<void> {
     try {
       const currentTarget = await this.salesTargetRepo.findOne({
         where: {
@@ -417,7 +482,8 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       });
 
       if (currentTarget) {
-        currentTarget.currentAmount = Number(currentTarget.currentAmount) + Number(amount);
+        currentTarget.currentAmount =
+          Number(currentTarget.currentAmount) + Number(amount);
 
         if (currentTarget.currentAmount < 0) {
           currentTarget.currentAmount = 0;
@@ -427,21 +493,25 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
         await this.salesTargetRepo.save(currentTarget);
       }
     } catch (error) {
-      console.error('Failed to update sales target progress:', error);
+      console.error("Failed to update sales target progress:", error);
     }
   }
 
-  async getSalesWithTargetProgress(branchId: string, startDate?: Date, endDate?: Date) {
+  async getSalesWithTargetProgress(
+    branchId: string,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
     const query = this.saleRepo
-      .createQueryBuilder('sale')
-      .leftJoinAndSelect('sale.branch', 'branch')
-      .leftJoinAndSelect('sale.product', 'product')
-      .leftJoinAndSelect('sale.user', 'user')
-      .where('branch.id = :branchId', { branchId })
-      .andWhere('sale.status != :cancelled', { cancelled: 'cancelled' });
+      .createQueryBuilder("sale")
+      .leftJoinAndSelect("sale.branch", "branch")
+      .leftJoinAndSelect("sale.product", "product")
+      .leftJoinAndSelect("sale.user", "user")
+      .where("branch.id = :branchId", { branchId })
+      .andWhere("sale.status != :cancelled", { cancelled: "cancelled" });
 
     if (startDate && endDate) {
-      query.andWhere('sale.createdAt BETWEEN :startDate AND :endDate', {
+      query.andWhere("sale.createdAt BETWEEN :startDate AND :endDate", {
         startDate,
         endDate,
       });
@@ -460,55 +530,66 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
 
     return {
       sales,
-      currentTarget: currentTarget ? {
-        id: currentTarget.id,
-        name: currentTarget.name,
-        targetAmount: currentTarget.targetAmount,
-        currentAmount: currentTarget.currentAmount,
-        progressPercentage: currentTarget.progressPercentage,
-        remainingAmount: currentTarget.remainingAmount,
-        startDate: currentTarget.startDate,
-        endDate: currentTarget.endDate,
-      } : null,
+      currentTarget: currentTarget
+        ? {
+            id: currentTarget.id,
+            name: currentTarget.name,
+            targetAmount: currentTarget.targetAmount,
+            currentAmount: currentTarget.currentAmount,
+            progressPercentage: currentTarget.progressPercentage,
+            remainingAmount: currentTarget.remainingAmount,
+            startDate: currentTarget.startDate,
+            endDate: currentTarget.endDate,
+          }
+        : null,
       periodSales: totalSales,
       period: startDate && endDate ? { startDate, endDate } : null,
     };
   }
 
-  async getSalesPerformanceByBranch(branchId: string, period: 'day' | 'week' | 'month' | 'quarter' = 'month') {
+  async getSalesPerformanceByBranch(
+    branchId: string,
+    period: "day" | "week" | "month" | "quarter" = "month",
+  ) {
     const now = new Date();
     let startDate: Date;
-    let endDate: Date = now;
-    const branch = await this.branchRepo.find({where:{id:branchId}})
-    if(!branch){
-      throw new NotFoundException("the branch is not found")
+    const endDate: Date = now;
+    const branch = await this.branchRepo.find({ where: { id: branchId } });
+    if (!branch) {
+      throw new NotFoundException("the branch is not found");
     }
     switch (period) {
-      case 'day':
+      case "day":
         startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         break;
-      case 'week':
+      case "week":
         startDate = new Date(now);
         startDate.setDate(now.getDate() - now.getDay());
         break;
-      case 'month':
+      case "month":
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
-      case 'quarter':
+      case "quarter":
         const quarter = Math.floor(now.getMonth() / 3);
         startDate = new Date(now.getFullYear(), quarter * 3, 1);
         break;
     }
 
     const sales = await this.saleRepo
-      .createQueryBuilder('sale')
-      .where('sale.branchId = :branchId', { branchId })
-      .andWhere('sale.created_at BETWEEN :startDate AND :endDate', { startDate, endDate })
-      .andWhere('sale.status != :status', { status: 'cancelled' })
-      .select(['SUM(sale.total_amount) as totalSales', 'COUNT(sale.id) as totalTransactions'])
+      .createQueryBuilder("sale")
+      .where("sale.branchId = :branchId", { branchId })
+      .andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+        startDate,
+        endDate,
+      })
+      .andWhere("sale.status != :status", { status: "cancelled" })
+      .select([
+        "SUM(sale.total_amount) as totalSales",
+        "COUNT(sale.id) as totalTransactions",
+      ])
       .getRawOne();
 
-      console.log(sales)
+    console.log(sales);
     const currentTarget = await this.salesTargetRepo.findOne({
       where: {
         branch: { id: branchId },
@@ -522,10 +603,14 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     if (currentTarget) {
       const today = new Date();
       const end = new Date(currentTarget.endDate);
-      daysRemaining = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      daysRemaining = Math.ceil(
+        (end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24),
+      );
 
       if (daysRemaining > 0) {
-        dailyAverageRequired = (currentTarget.targetAmount - currentTarget.currentAmount) / daysRemaining;
+        dailyAverageRequired =
+          (currentTarget.targetAmount - currentTarget.currentAmount) /
+          daysRemaining;
       }
     }
 
@@ -535,17 +620,21 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
       endDate,
       totalSales: parseFloat(sales.totalSales) || 0,
       totalTransactions: parseInt(sales.totalTransactions) || 0,
-      currentTarget: currentTarget ? {
-        targetAmount: currentTarget.targetAmount,
-        currentAmount: currentTarget.currentAmount,
-        progressPercentage: currentTarget.progressPercentage,
-        daysRemaining,
-        dailyAverageRequired,
-      } : null,
+      currentTarget: currentTarget
+        ? {
+            targetAmount: currentTarget.targetAmount,
+            currentAmount: currentTarget.currentAmount,
+            progressPercentage: currentTarget.progressPercentage,
+            daysRemaining,
+            dailyAverageRequired,
+          }
+        : null,
     };
   }
 
-  async bulkCreateSales(salesData: CreateSaleDto[]): Promise<{ success: Sale[]; failures: any[] }> {
+  async bulkCreateSales(
+    salesData: CreateSaleDto[],
+  ): Promise<{ success: Sale[]; failures: any[] }> {
     const success: Sale[] = [];
     const failures: any[] = [];
 
@@ -564,55 +653,61 @@ const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
     return { success, failures };
   }
 
-// sale.service.ts
-// sale.service.ts
-async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Date) {
-  const query = this.saleRepo
-    .createQueryBuilder('sale')
-    .leftJoinAndSelect('sale.product', 'product')
-    .leftJoinAndSelect('product.brand', 'brand')
-    .leftJoinAndSelect('product.category', 'category')
-    .where('sale.branchId = :branchId', { branchId })
-    .andWhere('sale.status != :status', { status: 'cancelled' });
+  // sale.service.ts
+  // sale.service.ts
+  async getSalesSummaryByProduct(
+    branchId: string,
+    startDate?: Date,
+    endDate?: Date,
+  ) {
+    const query = this.saleRepo
+      .createQueryBuilder("sale")
+      .leftJoinAndSelect("sale.product", "product")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("product.category", "category")
+      .where("sale.branchId = :branchId", { branchId })
+      .andWhere("sale.status != :status", { status: "cancelled" });
 
-  if (startDate && endDate) {
-    query.andWhere('sale.createdAt BETWEEN :startDate AND :endDate', {
-      startDate,
-      endDate,
-    });
+    if (startDate && endDate) {
+      query.andWhere("sale.createdAt BETWEEN :startDate AND :endDate", {
+        startDate,
+        endDate,
+      });
+    }
+
+    const results = await query
+      .select([
+        "product.id as productId",
+        "product.name as productName",
+        "product.sku as productSku",
+        "brand.name as brandName",
+        "category.name as categoryName",
+        "SUM(sale.quantity) as totalQuantity",
+        "SUM(sale.total_amount) as totalRevenue",
+        "AVG(sale.price) as averagePrice",
+        "COUNT(sale.id) as totalSales",
+      ])
+      .groupBy(
+        "product.id, product.name, product.sku, brand.name, category.name",
+      )
+      .orderBy("totalRevenue", "DESC")
+      .getRawMany();
+
+    // Format the response with null handling
+    const formattedResults = results.map((item) => ({
+      product_id: item.productid,
+      product_name: item.productname,
+      product_sku: item.productsku,
+      brand_name: item.brandname || null, // Handle null brand
+      category_name: item.categoryname || null, // Handle null category
+      total_quantity: Number(item.totalquantity) || 0,
+      total_revenue: Number(item.totalrevenue) || 0,
+      average_price: Number(item.averageprice) || 0,
+      total_sales: Number(item.totalsales) || 0,
+    }));
+
+    return formattedResults;
   }
-
-  const results = await query
-    .select([
-      'product.id as productId',
-      'product.name as productName',
-      'product.sku as productSku',
-      'brand.name as brandName',
-      'category.name as categoryName',
-      'SUM(sale.quantity) as totalQuantity',
-      'SUM(sale.total_amount) as totalRevenue',
-      'AVG(sale.price) as averagePrice',
-      'COUNT(sale.id) as totalSales',
-    ])
-    .groupBy('product.id, product.name, product.sku, brand.name, category.name')
-    .orderBy('totalRevenue', 'DESC')
-    .getRawMany();
-
-  // Format the response with null handling
-  const formattedResults = results.map(item => ({
-    product_id: item.productid,
-    product_name: item.productname,
-    product_sku: item.productsku,
-    brand_name: item.brandname || null, // Handle null brand
-    category_name: item.categoryname || null, // Handle null category
-    total_quantity: Number(item.totalquantity) || 0,
-    total_revenue: Number(item.totalrevenue) || 0,
-    average_price: Number(item.averageprice) || 0,
-    total_sales: Number(item.totalsales) || 0,
-  }));
-
-  return formattedResults;
-}
 
   async getInvoiceSummaryByUser(
     userId: string | null = null,
@@ -620,22 +715,22 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     filters?: any,
     startDate?: Date,
     endDate?: Date,
-    brandId?: string
+    brandId?: string,
   ) {
     // 1. Fetch all matching sales using the optimized method to get ALL the extra totals/branch/user/target data
-    // We use a high limit to get all records for grouping in memory, as invoice summary typically 
+    // We use a high limit to get all records for grouping in memory, as invoice summary typically
     // covers a specific period and needs all items to group correctly.
     const baseData = await this.findSalesByUserOptimized(
       userId,
       search,
       1,
-      100000, 
+      100000,
       undefined,
-      'DESC',
+      "DESC",
       filters,
       startDate,
       endDate,
-      brandId
+      brandId,
     );
 
     // 2. Group the records
@@ -644,8 +739,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     for (const record of baseData.records) {
       if (!record.product) continue;
 
-      let key = record.product.id;
-
+      const key = record.product.id;
 
       if (!groupedMap.has(key)) {
         // Deep clone the first record to act as the base for the group
@@ -654,14 +748,17 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
         // Accumulate quantities and amounts for existing group
         const existing = groupedMap.get(key);
         existing.quantity += record.quantity;
-        
+
         // Sum total_amount, accommodating string or number types
-        existing.total_amount = (Number(existing.total_amount) + Number(record.total_amount)).toFixed(2);
-        
+        existing.total_amount = (
+          Number(existing.total_amount) + Number(record.total_amount)
+        ).toFixed(2);
+
         // Sum nested product amounts
         if (existing.product && record.product) {
           existing.product.total_amount += record.product.total_amount;
-          existing.product.discounted_amount += record.product.discounted_amount;
+          existing.product.discounted_amount +=
+            record.product.discounted_amount;
         }
       }
     }
@@ -674,7 +771,7 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       total_records: groupedRecords.length,
       current_page: 1,
       per_page: groupedRecords.length,
-      records: groupedRecords
+      records: groupedRecords,
     };
   }
   async findSalesWithBrand(
@@ -683,12 +780,12 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     page: any = 1,
     limit: any = 10,
     sortBy?: string,
-    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    sortOrder: "ASC" | "DESC" = "DESC",
     relations: string[] = [],
     searchFields: string[] = [],
-    filters?: any
+    filters?: any,
   ) {
-    console.log(relations)
+    console.log(relations);
     const result = await CRUD.findAll2(
       this.saleRepo,
       entityName,
@@ -699,13 +796,13 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
       sortOrder,
       relations,
       searchFields,
-      filters
+      filters,
     );
-    console.log(result)
+    console.log(result);
     // Extract all product IDs from the sales
     const productIds = result.records
-      .map(sale => sale.product?.id)
-      .filter(id => id)
+      .map((sale) => sale.product?.id)
+      .filter((id) => id)
       .filter((id, index, array) => array.indexOf(id) === index); // Remove duplicates
 
     // Fetch products with their brands
@@ -713,24 +810,24 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     if (productIds.length > 0) {
       productsWithBrands = await this.productRepo.find({
         where: { id: In(productIds) },
-        relations: ['brand']
+        relations: ["brand"],
       });
     }
 
     // Create a map for quick lookup
     const productMap = new Map();
-    productsWithBrands.forEach(product => {
+    productsWithBrands.forEach((product) => {
       productMap.set(product.id, product);
     });
 
     // Enhance the sales records with brand information
-    const enhancedRecords = result.records.map(sale => {
+    const enhancedRecords = result.records.map((sale) => {
       if (sale.product && sale.product.id) {
         const productWithBrand = productMap.get(sale.product.id);
         if (productWithBrand) {
           return {
             ...sale,
-            product: productWithBrand
+            product: productWithBrand,
           };
         }
       }
@@ -739,22 +836,26 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
 
     return {
       ...result,
-      records: enhancedRecords
+      records: enhancedRecords,
     };
   }
 
   // Also add a method for single sale with brand
   async findOneWithBrand(id: string) {
-    const sale = await CRUD.findOne(this.saleRepo, 'sale', id, ['product', 'user', 'branch']);
+    const sale = await CRUD.findOne(this.saleRepo, "sale", id, [
+      "product",
+      "user",
+      "branch",
+    ]);
 
     if (sale.product) {
       const productWithBrand = await this.productRepo.findOne({
         where: { id: sale.product.id },
-        relations: ['brand']
+        relations: ["brand"],
       });
       return {
         ...sale,
-        product: productWithBrand
+        product: productWithBrand,
       };
     }
 
@@ -767,495 +868,573 @@ async getSalesSummaryByProduct(branchId: string, startDate?: Date, endDate?: Dat
     page: any = 1,
     limit: any = 10,
     sortBy?: string,
-    sortOrder: 'ASC' | 'DESC' = 'DESC',
+    sortOrder: "ASC" | "DESC" = "DESC",
     filters?: any,
     startDate?: Date,
     endDate?: Date,
     brandId?: string,
-
   ) {
-  const pageNumber = Number(page) || 1;
-  const limitNumber = Number(limit) || 10;
-  const skip = (pageNumber - 1) * limitNumber;
+    const pageNumber = Number(page) || 1;
+    const limitNumber = Number(limit) || 10;
+    const skip = (pageNumber - 1) * limitNumber;
 
-  // Create query builder with all needed relations including category
-  const qb = this.saleRepo.createQueryBuilder('sale')
-    .leftJoinAndSelect('sale.product', 'product')
-    .leftJoinAndSelect('product.category', 'category')
-    .leftJoinAndSelect('product.brand', 'brand')
-    .leftJoinAndSelect('sale.branch', 'branch')
-    .leftJoinAndSelect('sale.user', 'user')
-    .leftJoinAndSelect('user.role', 'role')
-    .select([
-      'sale.id',
-      'sale.quantity',
-      'sale.total_amount',
-      'sale.created_at',
-      'sale.status',
-      'product.id',
-      'product.name',
-      'product.sku',
-      'sale.price', // Add product price to calculate amounts
-      'product.discount', // Added discount field if available
-      'brand.id',
-      'brand.name',
-      'category.id',
-      'category.name',
-      'branch.id',
-      'branch.name',
-      'branch.city',
-      'user.id',
-      'user.name',
-      'role.name'
-    ])
-    .skip(skip)
-    .take(limitNumber);
+    // Create query builder with all needed relations including category
+    const qb = this.saleRepo
+      .createQueryBuilder("sale")
+      .leftJoinAndSelect("sale.product", "product")
+      .leftJoinAndSelect("product.category", "category")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("sale.branch", "branch")
+      .leftJoinAndSelect("sale.user", "user")
+      .leftJoinAndSelect("user.role", "role")
+      .select([
+        "sale.id",
+        "sale.quantity",
+        "sale.total_amount",
+        "sale.created_at",
+        "sale.status",
+        "product.id",
+        "product.name",
+        "product.sku",
+        "sale.price", // Add product price to calculate amounts
+        "product.discount", // Added discount field if available
+        "brand.id",
+        "brand.name",
+        "category.id",
+        "category.name",
+        "branch.id",
+        "branch.name",
+        "branch.city",
+        "user.id",
+        "user.name",
+        "role.name",
+      ])
+      .skip(skip)
+      .take(limitNumber);
 
-  if (userId) {
-     qb.andWhere('user.id = :userId', { userId });
-  }
-  if(brandId){
-    qb.andWhere('brand.id = :brandId', { brandId });
-  }
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+    if (brandId) {
+      qb.andWhere("brand.id = :brandId", { brandId });
+    }
 
-  // Apply search if provided
-  if (search) {
-    qb.andWhere(
-      new Brackets(subQb => {
-        subQb.where('product.name ILIKE :search', { search: `%${search}%` })
+    // Apply search if provided
+    if (search) {
+      qb.andWhere(
+        new Brackets((subQb) => {
+          subQb.where("product.name ILIKE :search", { search: `%${search}%` });
+        }),
+      );
+    }
 
-      })
-    );
-  }
+    // Apply precise datetime filtering
+    if (startDate && endDate) {
+      qb.andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+        startDate,
+        endDate,
+      });
+    } else if (startDate) {
+      qb.andWhere("sale.created_at >= :startDate", { startDate });
+    } else if (endDate) {
+      qb.andWhere("sale.created_at <= :endDate", { endDate });
+    }
 
-  // Apply precise datetime filtering
-  if (startDate && endDate) {
-    qb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', {
-      startDate,
-      endDate
-    });
-  } else if (startDate) {
-    qb.andWhere('sale.created_at >= :startDate', { startDate });
-  } else if (endDate) {
-    qb.andWhere('sale.created_at <= :endDate', { endDate });
-  }
-
-  // Apply additional filters
-  if (filters) {
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== null && value !== undefined && value !== '') {
-        if (key.includes('.')) {
-          // Handle nested filters like branch.id, product.name, category.name, etc.
-          const [relation, field] = key.split('.');
-          qb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, {
-            [key.replace('.', '_')]: value
-          });
-        } else {
-          qb.andWhere(`sale.${key} = :${key}`, { [key]: value });
+    // Apply additional filters
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") {
+          if (key.includes(".")) {
+            // Handle nested filters like branch.id, product.name, category.name, etc.
+            const [relation, field] = key.split(".");
+            qb.andWhere(`${relation}.${field} = :${key.replace(".", "_")}`, {
+              [key.replace(".", "_")]: value,
+            });
+          } else {
+            qb.andWhere(`sale.${key} = :${key}`, { [key]: value });
+          }
         }
+      });
+    }
+
+    // Apply sorting
+    const sortField = sortBy || "sale.created_at";
+    const order =
+      sortOrder && sortOrder.toUpperCase() === "ASC" ? "ASC" : "DESC";
+    qb.orderBy(sortField, order);
+
+    const [records, total_records] = await qb.getManyAndCount();
+
+    // --- Resolve User and Branch Info (with fallbacks) ---
+    let userInfo = null;
+    let branchInfo = null;
+    let branchToUse = null;
+
+    // 1. Resolve User
+    if (userId) {
+      const user = await this.userRepo.findOne({
+        where: { id: userId },
+        relations: ["role", "branch", "branch.project"],
+      });
+      if (user) {
+        userInfo = { id: user.id, name: user.name };
       }
-    });
-  }
 
-  // Apply sorting
-  const sortField = sortBy || 'sale.created_at';
-  const order = sortOrder && sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
-  qb.orderBy(sortField, order);
+      // Prioritize branch from the last checked-in journey
+      const lastCheckinJourney = await this.saleRepo.manager
+        .createQueryBuilder(Journey, "journey")
+        .innerJoin("journey.checkin", "checkin")
+        .leftJoinAndSelect("journey.branch", "branch")
+        .leftJoinAndSelect("branch.project", "project")
+        .where("journey.user.id = :userId", { userId })
+        .orderBy("checkin.checkInTime", "DESC")
+        .getOne();
 
-  const [records, total_records] = await qb.getManyAndCount();
-
-  // --- Resolve User and Branch Info (with fallbacks) ---
-  let userInfo = null;
-  let branchInfo = null;
-  let branchToUse = null;
-
-  // 1. Resolve User
-  if (userId) {
-    const user = await this.userRepo.findOne({
-      where: { id: userId },
-      relations: ['role', 'branch', 'branch.project']
-    });
-    if (user) {
-      userInfo = { id: user.id, name: user.name };
+      if (lastCheckinJourney?.branch) {
+        branchToUse = lastCheckinJourney.branch;
+      } else if (user?.branch) {
+        branchToUse = user.branch;
+      }
     }
 
-    // Prioritize branch from the last checked-in journey
-    const lastCheckinJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
-      .innerJoin('journey.checkin', 'checkin')
-      .leftJoinAndSelect('journey.branch', 'branch')
-      .leftJoinAndSelect('branch.project', 'project')
-      .where('journey.user.id = :userId', { userId })
-      .orderBy('checkin.checkInTime', 'DESC')
-      .getOne();
-
-    if (lastCheckinJourney?.branch) {
-      branchToUse = lastCheckinJourney.branch;
-    } else if (user?.branch) {
-      branchToUse = user.branch;
+    if (branchToUse) {
+      branchInfo = {
+        id: branchToUse.id,
+        name: branchToUse.name,
+        city: branchToUse.city || null,
+      };
     }
-  }
 
-  if (branchToUse) {
-    branchInfo = {
-      id: branchToUse.id,
-      name: branchToUse.name,
-      city: branchToUse.city || null
-    };
-  }
+    // --- Fetch Check-In Data Logic ---
+    const checkInMap = new Map<string, any>();
+    if (records.length > 0) {
+      const userIds = [
+        ...new Set(records.map((r) => r.user?.id).filter(Boolean)),
+      ];
+      const dates = [
+        ...new Set(
+          records.map((r) =>
+            r.created_at instanceof Date
+              ? r.created_at.toISOString().split("T")[0]
+              : new Date(r.created_at).toISOString().split("T")[0],
+          ),
+        ),
+      ];
 
-  // --- Fetch Check-In Data Logic ---
-  const checkInMap = new Map<string, any>();
-  if (records.length > 0) {
-    const userIds = [...new Set(records.map(r => r.user?.id).filter(Boolean))];
-    const dates = [...new Set(records.map(r => r.created_at instanceof Date ? r.created_at.toISOString().split('T')[0] : new Date(r.created_at).toISOString().split('T')[0]))];
-
-    if (userIds.length > 0 && dates.length > 0) {
-        const journeyQb = this.salesTargetRepo.manager.createQueryBuilder(Journey, 'journey')
-            .leftJoinAndSelect('journey.checkin', 'checkin')
-            .leftJoinAndSelect('journey.branch', 'branch')
-            .innerJoin('journey.user', 'user')
-            .where('user.id IN (:...userIds)', { userIds })
-            .andWhere('journey.date IN (:...dates)', { dates });
+      if (userIds.length > 0 && dates.length > 0) {
+        const journeyQb = this.salesTargetRepo.manager
+          .createQueryBuilder(Journey, "journey")
+          .leftJoinAndSelect("journey.checkin", "checkin")
+          .leftJoinAndSelect("journey.branch", "branch")
+          .innerJoin("journey.user", "user")
+          .where("user.id IN (:...userIds)", { userIds })
+          .andWhere("journey.date IN (:...dates)", { dates });
 
         const journeys = await journeyQb.getMany();
 
-        journeys.forEach(j => {
-            if (j.user && j.date && j.checkin) {
-                const key = `${j.user.id}_${j.date}`;
-                checkInMap.set(key, {
-                    ...j.checkin,
-                    branch: j.branch
-                });
-            }
+        journeys.forEach((j) => {
+          if (j.user && j.date && j.checkin) {
+            const key = `${j.user.id}_${j.date}`;
+            checkInMap.set(key, {
+              ...j.checkin,
+              branch: j.branch,
+            });
+          }
         });
-    }
-  }
-
-  // Target Calculation Logic (Only if specific userId is provided)
-  let targetPerformance = null;
-  if (userId) {
-    // If we don't have branchToUse with project relation yet, fetch it
-    if (branchToUse && !branchToUse.project) {
-       branchToUse = await this.branchRepo.findOne({
-           where: { id: branchToUse.id },
-           relations: ['project']
-       });
+      }
     }
 
-  // Use branch.project as the source of truth for the project context
-  if (branchToUse && branchToUse.project) {
-     const project = branchToUse.project;
-     const targetType = project.salesTargetType || 'quarterly'; // Default if null, though entity default is quarterly
+    // Target Calculation Logic (Only if specific userId is provided)
+    let targetPerformance = null;
+    if (userId) {
+      // If we don't have branchToUse with project relation yet, fetch it
+      if (branchToUse && !branchToUse.project) {
+        branchToUse = await this.branchRepo.findOne({
+          where: { id: branchToUse.id },
+          relations: ["project"],
+        });
+      }
 
-     const now = new Date();
-     let periodStart: Date;
-     let periodEnd: Date;
+      // Use branch.project as the source of truth for the project context
+      if (branchToUse && branchToUse.project) {
+        const project = branchToUse.project;
+        const targetType = project.salesTargetType || "quarterly"; // Default if null, though entity default is quarterly
 
-     if (targetType === 'monthly') {
-       periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-       periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-     } else {
-       // Quarterly
-       const quarter = Math.floor(now.getMonth() / 3);
-       periodStart = new Date(now.getFullYear(), quarter * 3, 1);
-       periodEnd = new Date(now.getFullYear(), quarter * 3 + 3, 0);
-     }
+        const now = new Date();
+        let periodStart: Date;
+        let periodEnd: Date;
 
-     // 1. Fetch Active Target for the Branch
-     const activeTarget = await this.salesTargetRepo.findOne({
-       where: {
-         branch: { id: branchToUse.id },
-         status: SalesTargetStatus.ACTIVE,
-         // Ideally ensure target dates overlap with current period, but status ACTIVE is a good proxy
-       }
-     });
+        if (targetType === "monthly") {
+          periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        } else {
+          // Quarterly
+          const quarter = Math.floor(now.getMonth() / 3);
+          periodStart = new Date(now.getFullYear(), quarter * 3, 1);
+          periodEnd = new Date(now.getFullYear(), quarter * 3 + 3, 0);
+        }
 
-     // 2. Calculate User's Total Sales in this Period for this Branch
-     // Using query builder on saleRepo
-     const userTotalQb = this.saleRepo
-       .createQueryBuilder('sale')
-       .select('SUM(sale.total_amount)', 'userTotal')
-       .where('sale.user.id = :userId', { userId })
-       .andWhere('sale.branch.id = :branchId', { branchId: branchToUse.id })
-       .andWhere('sale.created_at BETWEEN :start AND :end', { 
-         start: periodStart.toISOString(), 
-         end: periodEnd.toISOString() 
-       })
-       .andWhere('sale.status != :cancelled', { cancelled: 'cancelled' });
+        // 1. Fetch Active Target for the Branch
+        const activeTarget = await this.salesTargetRepo.findOne({
+          where: {
+            branch: { id: branchToUse.id },
+            status: SalesTargetStatus.ACTIVE,
+            // Ideally ensure target dates overlap with current period, but status ACTIVE is a good proxy
+          },
+        });
 
-     if (brandId) {
-       userTotalQb.leftJoin('sale.product', 'p').leftJoin('p.brand', 'b');
-       userTotalQb.andWhere('b.id = :brandId', { brandId });
-     }
+        // 2. Calculate User's Total Sales in this Period for this Branch
+        // Using query builder on saleRepo
+        const userTotalQb = this.saleRepo
+          .createQueryBuilder("sale")
+          .select("SUM(sale.total_amount)", "userTotal")
+          .where("sale.user.id = :userId", { userId })
+          .andWhere("sale.branch.id = :branchId", { branchId: branchToUse.id })
+          .andWhere("sale.created_at BETWEEN :start AND :end", {
+            start: periodStart.toISOString(),
+            end: periodEnd.toISOString(),
+          })
+          .andWhere("sale.status != :cancelled", { cancelled: "cancelled" });
 
-     const { userTotal } = await userTotalQb.getRawOne();
+        if (brandId) {
+          userTotalQb.leftJoin("sale.product", "p").leftJoin("p.brand", "b");
+          userTotalQb.andWhere("b.id = :brandId", { brandId });
+        }
 
-      targetPerformance = {
-        periodType: targetType,
-        periodStart: periodStart,
-        periodEnd: periodEnd,
-        userTotalSales: parseFloat(userTotal) || 0,
-        branchTarget: activeTarget ? {
-          id: activeTarget.id,
-          name: activeTarget.name,
-          targetAmount: Number(activeTarget.targetAmount),
-          currentAmount: Number(activeTarget.currentAmount), // Branch Total Achievement
-          status: activeTarget.status,
-          userContributionPercentage: activeTarget.currentAmount > 0 
-            ? ((parseFloat(userTotal) || 0) / Number(activeTarget.currentAmount) * 100).toFixed(2)
-            : 0
-        } : null
-      };
-  } else {
-      console.log('No branch or project found for user or sales records. Target performance skip.');
-  }
-  } // End if (userId)
+        const { userTotal } = await userTotalQb.getRawOne();
 
-  // Transform the data - branch and user only appear once at the top level
-  const optimizedRecords = records.map(sale => {
-    /*
+        targetPerformance = {
+          periodType: targetType,
+          periodStart: periodStart,
+          periodEnd: periodEnd,
+          userTotalSales: parseFloat(userTotal) || 0,
+          branchTarget: activeTarget
+            ? {
+                id: activeTarget.id,
+                name: activeTarget.name,
+                targetAmount: Number(activeTarget.targetAmount),
+                currentAmount: Number(activeTarget.currentAmount), // Branch Total Achievement
+                status: activeTarget.status,
+                userContributionPercentage:
+                  activeTarget.currentAmount > 0
+                    ? (
+                        ((parseFloat(userTotal) || 0) /
+                          Number(activeTarget.currentAmount)) *
+                        100
+                      ).toFixed(2)
+                    : 0,
+              }
+            : null,
+        };
+      } else {
+        console.log(
+          "No branch or project found for user or sales records. Target performance skip.",
+        );
+      }
+    } // End if (userId)
+
+    // Transform the data - branch and user only appear once at the top level
+    const optimizedRecords = records.map((sale) => {
+      /*
     ### 3. Bug Fix: Stock Null Pointer Exception
 
     - **SaleService**: Fixed a `TypeError` in `create` when trying to access `stock.quantity` if a stock record was missing for the product/branch. It now throws a `NotFoundException` with a clear message.
     */
-    // Use sale.price/discount if available (as user requested in select), fallback to product
-    const unitPrice = sale.price !== undefined ? sale.price : (sale.product?.price || 0);
-    const quantity = sale.quantity || 0;
-    // sale.discount might be stored as numeric value or undefined. 
-    // IF sale.discount is in the entity. If not, maybe user meant product.discount?
-    // User added 'sale.discount' to select in Step 202. Assuming Sale entity has 'discount'.
-    const discount = sale.product?.discount || 0;
+      // Use sale.price/discount if available (as user requested in select), fallback to product
+      const unitPrice =
+        sale.price !== undefined ? sale.price : sale.product?.price || 0;
+      const quantity = sale.quantity || 0;
+      // sale.discount might be stored as numeric value or undefined.
+      // IF sale.discount is in the entity. If not, maybe user meant product.discount?
+      // User added 'sale.discount' to select in Step 202. Assuming Sale entity has 'discount'.
+      const discount = sale.product?.discount || 0;
 
-    // Attach CheckIn Info
-    const dateStr = sale.created_at instanceof Date ? sale.created_at.toISOString().split('T')[0] : new Date(sale.created_at).toISOString().split('T')[0];
-    const checkInKey = `${sale.user?.id}_${dateStr}`;
-    const checkIn = checkInMap.get(checkInKey);
+      // Attach CheckIn Info
+      const dateStr =
+        sale.created_at instanceof Date
+          ? sale.created_at.toISOString().split("T")[0]
+          : new Date(sale.created_at).toISOString().split("T")[0];
+      const checkInKey = `${sale.user?.id}_${dateStr}`;
+      const checkIn = checkInMap.get(checkInKey);
+
+      return {
+        id: sale.id,
+        quantity: quantity,
+        total_amount: sale.total_amount,
+        created_at: sale.created_at,
+        status: sale.status,
+        discount: discount,
+        user_type: sale.user?.role?.name || null, // Added User Type
+        check_in: checkIn
+          ? {
+              checkInTime: checkIn.checkInTime,
+              checkOutTime: checkIn.checkOutTime,
+              checkInImage: checkIn.checkInDocument,
+              checkInDocument: checkIn.checkInDocument,
+              checkOutDocument: checkIn.checkOutDocument,
+              image: checkIn.image,
+              branch_id: checkIn.branch?.id || null,
+              branch_name: checkIn.branch?.name || null,
+            }
+          : null,
+        product: {
+          id: sale.product?.id || null,
+          name: sale.product?.name || null,
+          sku: sale.product?.sku || null,
+          price: unitPrice,
+          // All three amount types
+          unit_amount: unitPrice, // Unit price (same as product price)
+          total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
+          discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
+          brand_name: sale.product?.brand?.name || null,
+          category_name: sale.product?.category?.name || null,
+        },
+        // Remove branch and user from individual records
+      };
+    });
+
+    // --- Aggregation for Totals ---
+    // Create a separate query for totals using the same filters but without pagination
+    const totalsQb = this.saleRepo
+      .createQueryBuilder("sale")
+      .leftJoin("sale.product", "product")
+      .leftJoin("sale.branch", "branch")
+      .leftJoin("sale.user", "user")
+      .select("SUM(sale.quantity)", "totalQuantity")
+      .addSelect("SUM(sale.total_amount)", "totalSales");
+
+    if (userId) {
+      totalsQb.andWhere("user.id = :userId", { userId });
+    }
+
+    if (brandId) {
+      totalsQb.leftJoin("product.brand", "brand");
+      totalsQb.andWhere("brand.id = :brandId", { brandId });
+    }
+
+    if (search) {
+      totalsQb.andWhere(
+        new Brackets((subQb) => {
+          subQb.where("product.name ILIKE :search", { search: `%${search}%` });
+        }),
+      );
+    }
+
+    // Apply precise datetime filtering to totals
+    if (startDate && endDate) {
+      totalsQb.andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+        startDate,
+        endDate,
+      });
+    } else if (startDate) {
+      totalsQb.andWhere("sale.created_at >= :startDate", { startDate });
+    } else if (endDate) {
+      totalsQb.andWhere("sale.created_at <= :endDate", { endDate });
+    }
+
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") {
+          if (key.includes(".")) {
+            const [relation, field] = key.split(".");
+            totalsQb.andWhere(
+              `${relation}.${field} = :${key.replace(".", "_")}`,
+              { [key.replace(".", "_")]: value },
+            );
+          } else {
+            totalsQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
+          }
+        }
+      });
+    }
+
+    const totalsRaw = await totalsQb.getRawOne();
+    const total_quantity = parseFloat(totalsRaw.totalQuantity) || 0;
+    const total_sales = parseFloat(totalsRaw.totalSales) || 0;
+
+    // --- Last Journey Totals ---
+    let last_journey_totals = { total_quantity: 0, total_sales: 0 };
+    if (userId) {
+      const lastJourney = await this.saleRepo.manager
+        .createQueryBuilder(Journey, "journey")
+        .innerJoinAndSelect("journey.checkin", "checkin")
+        .innerJoinAndSelect("journey.branch", "branch")
+        .where("journey.user.id = :userId", { userId })
+        .orderBy("journey.date", "DESC")
+        .getOne();
+
+      if (lastJourney) {
+        const lastJourneyTotalsQb = this.saleRepo
+          .createQueryBuilder("sale")
+          .select("SUM(sale.quantity)", "totalQuantity")
+          .addSelect("SUM(sale.total_amount)", "totalSales")
+          .where("sale.user.id = :userId", { userId })
+          .andWhere("sale.branch.id = :branchId", {
+            branchId: lastJourney.branch?.id,
+          })
+          .andWhere("sale.created_at BETWEEN :start AND :end", {
+            start: new Date(new Date(lastJourney.date).setHours(0, 0, 0, 0)),
+            end: new Date(
+              new Date(lastJourney.date).setHours(23 + 5, 59, 59, 999),
+            ),
+          });
+
+        if (brandId) {
+          lastJourneyTotalsQb
+            .leftJoin("sale.product", "p")
+            .leftJoin("p.brand", "b");
+          lastJourneyTotalsQb.andWhere("b.id = :brandId", { brandId });
+        }
+
+        const lastJourneyTotals = await lastJourneyTotalsQb.getRawOne();
+
+        last_journey_totals = {
+          total_quantity: parseFloat(lastJourneyTotals.totalQuantity) || 0,
+          total_sales: parseFloat(lastJourneyTotals.totalSales) || 0,
+        };
+      }
+    }
+
+    // --- Category Summaries Aggregation ---
+    const categoryQb = this.saleRepo
+      .createQueryBuilder("sale")
+      .leftJoin("sale.product", "product")
+      .leftJoin("product.category", "category")
+      .leftJoin("sale.user", "user")
+      .leftJoin("sale.branch", "branch")
+      .leftJoin("product.brand", "brand")
+      .select([
+        "category.id as category_id",
+        "category.name as category_name",
+        "SUM(sale.quantity) as total_quantity",
+        "SUM(sale.total_amount) as total_price",
+      ])
+      .groupBy("category.id, category.name");
+
+    if (userId) {
+      categoryQb.andWhere("user.id = :userId", { userId });
+    }
+    if (brandId) {
+      categoryQb.andWhere("brand.id = :brandId", { brandId });
+    }
+
+    if (search) {
+      categoryQb.andWhere("product.name ILIKE :search", {
+        search: `%${search}%`,
+      });
+    }
+
+    // Apply precise datetime filtering to categories
+    if (startDate && endDate) {
+      categoryQb.andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+        startDate,
+        endDate,
+      });
+    } else if (startDate) {
+      categoryQb.andWhere("sale.created_at >= :startDate", { startDate });
+    } else if (endDate) {
+      categoryQb.andWhere("sale.created_at <= :endDate", { endDate });
+    }
+
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== "") {
+          if (key.includes(".")) {
+            const [relation, field] = key.split(".");
+            categoryQb.andWhere(
+              `${relation}.${field} = :${key.replace(".", "_")}`,
+              { [key.replace(".", "_")]: value },
+            );
+          } else {
+            categoryQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
+          }
+        }
+      });
+    }
+
+    const categorySummariesRaw = await categoryQb.getRawMany();
+    const category_summaries = categorySummariesRaw.map((item) => ({
+      category_id: item.category_id,
+      category_name: item.category_name || "Uncategorized",
+      total_quantity: parseFloat(item.total_quantity) || 0,
+      total_price: parseFloat(item.total_price) || 0,
+    }));
+
+    // --- Additional Totals (All-time, Monthly, Quarterly) ---
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const currentQuarter = Math.floor(now.getMonth() / 3);
+    const quarterStart = new Date(now.getFullYear(), currentQuarter * 3, 1);
+    const quarterEnd = new Date(
+      now.getFullYear(),
+      currentQuarter * 3 + 3,
+      0,
+      23,
+      59,
+      59,
+      999,
+    );
+
+    const allTimeTotalQb = this.saleRepo
+      .createQueryBuilder("sale")
+      .select("SUM(sale.total_amount)", "total")
+      .where("sale.status != :status", { status: "cancelled" });
+
+    const monthlyTotalQb = this.saleRepo
+      .createQueryBuilder("sale")
+      .select("SUM(sale.total_amount)", "total")
+      .where("sale.status != :status", { status: "cancelled" })
+      .andWhere("sale.created_at BETWEEN :start AND :end", {
+        start: monthStart,
+        end: monthEnd,
+      });
+
+    const quarterlyTotalQb = this.saleRepo
+      .createQueryBuilder("sale")
+      .select("SUM(sale.total_amount)", "total")
+      .where("sale.status != :status", { status: "cancelled" })
+      .andWhere("sale.created_at BETWEEN :start AND :end", {
+        start: quarterStart,
+        end: quarterEnd,
+      });
+
+    if (userId) {
+      allTimeTotalQb.andWhere("sale.userId = :userId", { userId });
+      monthlyTotalQb.andWhere("sale.userId = :userId", { userId });
+      quarterlyTotalQb.andWhere("sale.userId = :userId", { userId });
+    }
+
+    const [allTimeRes, monthlyRes, quarterlyRes] = await Promise.all([
+      allTimeTotalQb.getRawOne(),
+      monthlyTotalQb.getRawOne(),
+      quarterlyTotalQb.getRawOne(),
+    ]);
 
     return {
-      id: sale.id,
-      quantity: quantity,
-      total_amount: sale.total_amount,
-      created_at: sale.created_at,
-      status: sale.status,
-      discount: discount,
-      user_type: sale.user?.role?.name || null, // Added User Type
-      check_in: checkIn ? {
-          checkInTime: checkIn.checkInTime,
-          checkOutTime: checkIn.checkOutTime,
-          checkInImage: checkIn.checkInDocument, 
-          checkInDocument: checkIn.checkInDocument,
-          checkOutDocument: checkIn.checkOutDocument,
-          image: checkIn.image,
-          branch_id: checkIn.branch?.id || null,
-          branch_name: checkIn.branch?.name || null
-      } : null,
-      product: {
-        id: sale.product?.id || null,
-        name: sale.product?.name || null,
-        sku: sale.product?.sku || null,
-        price: unitPrice,
-        // All three amount types
-        unit_amount: unitPrice, // Unit price (same as product price)
-        total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
-        discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
-        brand_name: sale.product?.brand?.name || null,
-        category_name: sale.product?.category?.name || null
-      }
-      // Remove branch and user from individual records
+      total_records,
+      total_quantity,
+      total_sales, // This is the filtered total
+      all_time_total_sales: parseFloat(allTimeRes?.total) || 0,
+      monthly_total_sales: parseFloat(monthlyRes?.total) || 0,
+      quarterly_total_sales: parseFloat(quarterlyRes?.total) || 0,
+      last_journey_totals,
+      category_summaries,
+      current_page: pageNumber,
+      per_page: limitNumber,
+      branch: branchInfo,
+      user: userInfo,
+      target_performance: targetPerformance,
+      records: optimizedRecords,
     };
-  });
-
-  // --- Aggregation for Totals ---
-  // Create a separate query for totals using the same filters but without pagination
-  const totalsQb = this.saleRepo.createQueryBuilder('sale')
-    .leftJoin('sale.product', 'product')
-    .leftJoin('sale.branch', 'branch')
-    .leftJoin('sale.user', 'user')
-    .select('SUM(sale.quantity)', 'totalQuantity')
-    .addSelect('SUM(sale.total_amount)', 'totalSales');
-
-  if (userId) {
-     totalsQb.andWhere('user.id = :userId', { userId });
   }
-
-  if (brandId) {
-    totalsQb.leftJoin('product.brand', 'brand');
-    totalsQb.andWhere('brand.id = :brandId', { brandId });
-  }
-
-  if (search) {
-    totalsQb.andWhere(new Brackets(subQb => {
-      subQb.where('product.name ILIKE :search', { search: `%${search}%` });
-    }));
-  }
-
-  // Apply precise datetime filtering to totals
-  if (startDate && endDate) {
-    totalsQb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', { startDate, endDate });
-  } else if (startDate) {
-    totalsQb.andWhere('sale.created_at >= :startDate', { startDate });
-  } else if (endDate) {
-    totalsQb.andWhere('sale.created_at <= :endDate', { endDate });
-  }
-
-  if (filters) {
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== null && value !== undefined && value !== '') {
-        if (key.includes('.')) {
-          const [relation, field] = key.split('.');
-          totalsQb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { [key.replace('.', '_')]: value });
-        } else {
-          totalsQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
-        }
-      }
-    });
-  }
-
-  const totalsRaw = await totalsQb.getRawOne();
-  const total_quantity = parseFloat(totalsRaw.totalQuantity) || 0;
-  const total_sales = parseFloat(totalsRaw.totalSales) || 0;
-
-  // --- Last Journey Totals ---
-  let last_journey_totals = { total_quantity: 0, total_sales: 0 };
-  if (userId) {
-    const lastJourney = await this.saleRepo.manager.createQueryBuilder(Journey, 'journey')
-      .innerJoinAndSelect('journey.checkin', 'checkin')
-      .innerJoinAndSelect('journey.branch', 'branch')
-      .where('journey.user.id = :userId', { userId })
-      .orderBy('journey.date', 'DESC')
-      .getOne();
-
-    if (lastJourney) {
-      const lastJourneyTotalsQb = this.saleRepo.createQueryBuilder('sale')
-        .select('SUM(sale.quantity)', 'totalQuantity')
-        .addSelect('SUM(sale.total_amount)', 'totalSales')
-        .where('sale.user.id = :userId', { userId })
-        .andWhere('sale.branch.id = :branchId', { branchId: lastJourney.branch?.id })
-        .andWhere('sale.created_at BETWEEN :start AND :end', { 
-            start: new Date(new Date(lastJourney.date).setHours(0, 0, 0, 0)), 
-            end: new Date(new Date(lastJourney.date).setHours(23 + 5, 59, 59, 999)) 
-        });
-
-      if (brandId) {
-        lastJourneyTotalsQb.leftJoin('sale.product', 'p').leftJoin('p.brand', 'b');
-        lastJourneyTotalsQb.andWhere('b.id = :brandId', { brandId });
-      }
-
-      const lastJourneyTotals = await lastJourneyTotalsQb.getRawOne();
-      
-      last_journey_totals = {
-        total_quantity: parseFloat(lastJourneyTotals.totalQuantity) || 0,
-        total_sales: parseFloat(lastJourneyTotals.totalSales) || 0
-      };
-    }
-  }
-
-  // --- Category Summaries Aggregation ---
-  const categoryQb = this.saleRepo.createQueryBuilder('sale')
-    .leftJoin('sale.product', 'product')
-    .leftJoin('product.category', 'category')
-    .leftJoin('sale.user', 'user')
-    .leftJoin('sale.branch', 'branch')
-    .leftJoin('product.brand', 'brand')
-    .select([
-      'category.id as category_id',
-      'category.name as category_name',
-      'SUM(sale.quantity) as total_quantity',
-      'SUM(sale.total_amount) as total_price'
-    ])
-    .groupBy('category.id, category.name');
-
-  if (userId) {
-    categoryQb.andWhere('user.id = :userId', { userId });
-  }
-  if (brandId) {
-    categoryQb.andWhere('brand.id = :brandId', { brandId });
-  }
-
-  if (search) {
-    categoryQb.andWhere('product.name ILIKE :search', { search: `%${search}%` });
-  }
-
-  // Apply precise datetime filtering to categories
-  if (startDate && endDate) {
-    categoryQb.andWhere('sale.created_at BETWEEN :startDate AND :endDate', { startDate, endDate });
-  } else if (startDate) {
-    categoryQb.andWhere('sale.created_at >= :startDate', { startDate });
-  } else if (endDate) {
-    categoryQb.andWhere('sale.created_at <= :endDate', { endDate });
-  }
-
-  if (filters) {
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value !== null && value !== undefined && value !== '') {
-        if (key.includes('.')) {
-          const [relation, field] = key.split('.');
-          categoryQb.andWhere(`${relation}.${field} = :${key.replace('.', '_')}`, { [key.replace('.', '_')]: value });
-        } else {
-          categoryQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
-        }
-      }
-    });
-  }
-
-  const categorySummariesRaw = await categoryQb.getRawMany();
-  const category_summaries = categorySummariesRaw.map(item => ({
-    category_id: item.category_id,
-    category_name: item.category_name || 'Uncategorized',
-    total_quantity: parseFloat(item.total_quantity) || 0,
-    total_price: parseFloat(item.total_price) || 0
-  }));
-
-  // --- Additional Totals (All-time, Monthly, Quarterly) ---
-  const now = new Date();
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-  
-  const currentQuarter = Math.floor(now.getMonth() / 3);
-  const quarterStart = new Date(now.getFullYear(), currentQuarter * 3, 1);
-  const quarterEnd = new Date(now.getFullYear(), currentQuarter * 3 + 3, 0, 23, 59, 59, 999);
-
-  const allTimeTotalQb = this.saleRepo.createQueryBuilder('sale')
-    .select('SUM(sale.total_amount)', 'total')
-    .where('sale.status != :status', { status: 'cancelled' });
-  
-  const monthlyTotalQb = this.saleRepo.createQueryBuilder('sale')
-    .select('SUM(sale.total_amount)', 'total')
-    .where('sale.status != :status', { status: 'cancelled' })
-    .andWhere('sale.created_at BETWEEN :start AND :end', { start: monthStart, end: monthEnd });
-
-  const quarterlyTotalQb = this.saleRepo.createQueryBuilder('sale')
-    .select('SUM(sale.total_amount)', 'total')
-    .where('sale.status != :status', { status: 'cancelled' })
-    .andWhere('sale.created_at BETWEEN :start AND :end', { start: quarterStart, end: quarterEnd });
-
-  if (userId) {
-    allTimeTotalQb.andWhere('sale.userId = :userId', { userId });
-    monthlyTotalQb.andWhere('sale.userId = :userId', { userId });
-    quarterlyTotalQb.andWhere('sale.userId = :userId', { userId });
-  }
-
-  const [allTimeRes, monthlyRes, quarterlyRes] = await Promise.all([
-    allTimeTotalQb.getRawOne(),
-    monthlyTotalQb.getRawOne(),
-    quarterlyTotalQb.getRawOne()
-  ]);
-
-  return {
-    total_records,
-    total_quantity,
-    total_sales, // This is the filtered total
-    all_time_total_sales: parseFloat(allTimeRes?.total) || 0,
-    monthly_total_sales: parseFloat(monthlyRes?.total) || 0,
-    quarterly_total_sales: parseFloat(quarterlyRes?.total) || 0,
-    last_journey_totals,
-    category_summaries,
-    current_page: pageNumber,
-    per_page: limitNumber,
-    branch: branchInfo,
-    user: userInfo,
-    target_performance: targetPerformance,
-    records: optimizedRecords
-  };
-}
 }

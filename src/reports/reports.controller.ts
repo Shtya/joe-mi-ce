@@ -1,66 +1,69 @@
-import { Controller, Get, Res, UseGuards, Param } from '@nestjs/common';
-import { ReportsService } from './reports.service';
-import { Response } from 'express';
-import { AuthGuard } from '../auth/auth.guard';
-import { MailService } from '../mail/mail.service';
-import * as path from 'path';
-import { ReportsCron } from './reports.cron';
+import { Controller, Get, Res, UseGuards, Param } from "@nestjs/common";
+import { ReportsService } from "./reports.service";
+import { Response } from "express";
+import { AuthGuard } from "../auth/auth.guard";
+import { MailService } from "../mail/mail.service";
+import * as path from "path";
+import { ReportsCron } from "./reports.cron";
 
-@Controller('reports')
+@Controller("reports")
 @UseGuards(AuthGuard)
 export class ReportsController {
   constructor(
     private readonly reportsService: ReportsService,
     private readonly mailService: MailService,
-    private readonly reportsCron: ReportsCron
+    private readonly reportsCron: ReportsCron,
   ) {}
 
-  @Get('trigger-monthly-email')
+  @Get("trigger-monthly-email")
   async triggerMonthlyEmail(@Res() res: Response) {
     try {
       await this.reportsCron.handleMonthlyReportCron();
       return res.status(200).json({
         success: true,
-        message: 'Monthly report email trigger initiated',
+        message: "Monthly report email trigger initiated",
       });
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to trigger monthly report email',
+        message: "Failed to trigger monthly report email",
         error: error.message,
       });
     }
   }
 
-  @Get('trigger-gatemea-email')
+  @Get("trigger-gatemea-email")
   async triggerGatemeaEmail(@Res() res: Response) {
     try {
       await this.reportsCron.handleGatemeaReport();
       return res.status(200).json({
         success: true,
-        message: 'Gatemea report email trigger initiated',
+        message: "Gatemea report email trigger initiated",
       });
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to trigger Gatemea report email',
+        message: "Failed to trigger Gatemea report email",
         error: error.message,
       });
     }
   }
 
-  @Get('/:email')
-  async sendTestEmailEndpoint(@Param('email') email: string, @Res() res: Response) {
+  @Get("/:email")
+  async sendTestEmailEndpoint(
+    @Param("email") email: string,
+    @Res() res: Response,
+  ) {
     try {
       const filePath = await this.reportsService.generateGatemeaReport();
       if (!filePath) {
         return res.status(404).json({
           success: false,
-          message: 'Gatemea project not found or report generation failed',
+          message: "Gatemea project not found or report generation failed",
         });
       }
       const filename = path.basename(filePath);
-      const subject = 'Gatemea Report Six Seven (Test)';
+      const subject = "Gatemea Report Six Seven (Test)";
       const textBody = `Dear Team,\n\nPlease find attached the test Gatemea SixSeven Daily Performance Report.\n\nBest regards,\nSystem SixSeven Operations`;
       const emailHtml = `
 <!DOCTYPE html>
@@ -115,7 +118,7 @@ export class ReportsController {
         email,
         subject,
         textBody,
-        emailHtml
+        emailHtml,
       );
 
       if (emailSent) {
@@ -126,30 +129,33 @@ export class ReportsController {
       } else {
         return res.status(500).json({
           success: false,
-          message: 'Failed to send test report email. Check server logs.',
+          message: "Failed to send test report email. Check server logs.",
         });
       }
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Error sending test report email',
+        message: "Error sending test report email",
         error: error.message,
       });
     }
   }
 
-  @Get('test-monthly-email/:email')
-  async sendTestMonthlyEmailEndpoint(@Param('email') email: string, @Res() res: Response) {
+  @Get("test-monthly-email/:email")
+  async sendTestMonthlyEmailEndpoint(
+    @Param("email") email: string,
+    @Res() res: Response,
+  ) {
     try {
       const filePath = await this.reportsService.generateMonthlyReport();
       if (!filePath) {
         return res.status(404).json({
           success: false,
-          message: 'Report generation failed',
+          message: "Report generation failed",
         });
       }
       const filename = path.basename(filePath);
-      const subject = 'JOE MI CI Monthly Report (Test)';
+      const subject = "JOE MI CI Monthly Report (Test)";
       const textBody = `Dear Team,\n\nPlease find attached the test JOE MI CI Monthly Performance Report.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
@@ -191,7 +197,7 @@ export class ReportsController {
         email,
         subject,
         textBody,
-        emailHtml
+        emailHtml,
       );
 
       if (emailSent) {
@@ -202,75 +208,82 @@ export class ReportsController {
       } else {
         return res.status(500).json({
           success: false,
-          message: 'Failed to send test monthly report email. Check server logs.',
+          message:
+            "Failed to send test monthly report email. Check server logs.",
         });
       }
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Error sending test monthly report email',
+        message: "Error sending test monthly report email",
         error: error.message,
       });
     }
   }
 
-  @Get('test')
+  @Get("test")
   async testReportGeneration(@Res() res: Response) {
     try {
       const filePath = await this.reportsService.generateMonthlyReport();
       return res.status(200).json({
         success: true,
-        message: 'Report generated successfully (test mode)',
+        message: "Report generated successfully (test mode)",
         filePath,
       });
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to generate report',
+        message: "Failed to generate report",
         error: error.message,
       });
     }
   }
 
-  @Get('download')
+  @Get("download")
   async downloadReport(@Res() res: Response) {
     try {
       const filePath = await this.reportsService.generateMonthlyReport();
       const fileName = path.basename(filePath);
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
-      
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+
       return res.download(filePath, fileName);
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to download report',
+        message: "Failed to download report",
         error: error.message,
       });
     }
   }
 
-  @Get('gatemea')
+  @Get("gatemea")
   async downloadGatemeaReport(@Res() res: Response) {
     try {
       const filePath = await this.reportsService.generateGatemeaReport();
       if (!filePath) {
         return res.status(404).json({
           success: false,
-          message: 'Gatemea project not found or report generation failed',
+          message: "Gatemea project not found or report generation failed",
         });
       }
       const fileName = path.basename(filePath);
-      
-      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
-      
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+
       return res.download(filePath, fileName);
     } catch (error) {
       return res.status(500).json({
         success: false,
-        message: 'Failed to download Gatemea report',
+        message: "Failed to download Gatemea report",
         error: error.message,
       });
     }

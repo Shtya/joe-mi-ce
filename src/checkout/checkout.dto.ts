@@ -1,4 +1,13 @@
-import { IsBoolean, IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from "class-validator";
 
 export class CreateCheckoutDto {
   @IsString()
@@ -38,8 +47,8 @@ export class CreateCheckoutDto {
 
   // optional: initial status guard; usually keep default at DB layer
   @IsOptional()
-  @IsIn(['pending', 'verified', 'rejected'])
-  status?: 'pending' | 'verified' | 'rejected';
+  @IsIn(["pending", "verified", "rejected"])
+  status?: "pending" | "verified" | "rejected";
 
   // optional: capture IP from request if you want to store it
   @IsOptional()
@@ -47,12 +56,12 @@ export class CreateCheckoutDto {
   ipAddress?: string;
 }
 
-import { PartialType } from '@nestjs/mapped-types';
+import { PartialType } from "@nestjs/mapped-types";
 
 export class UpdateCheckoutDto extends PartialType(CreateCheckoutDto) {
   @IsOptional()
-  @IsIn(['pending', 'verified', 'rejected'])
-  status?: 'pending' | 'verified' | 'rejected';
+  @IsIn(["pending", "verified", "rejected"])
+  status?: "pending" | "verified" | "rejected";
 
   @IsOptional()
   @IsString()

@@ -1,40 +1,69 @@
 // src/journey/journey.service.ts
-import { Injectable, NotFoundException, ConflictException, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, Between, In, Not, ILike, MoreThan } from 'typeorm';
-import * as dayjs from 'dayjs';
-import * as XLSX from 'xlsx';
-import { CreateJourneyPlanDto, CreateUnplannedJourneyDto, CheckInOutDto, UpdateJourneyDto, UpdateJourneyPlanDto, AdminCheckInOutDto, AssignShiftAllDaysDto } from 'dto/journey.dto';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  ForbiddenException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import {
+  Repository,
+  LessThanOrEqual,
+  MoreThanOrEqual,
+  Between,
+  In,
+  Not,
+  ILike,
+  MoreThan,
+} from "typeorm";
+import * as dayjs from "dayjs";
+import * as XLSX from "xlsx";
+import {
+  CreateJourneyPlanDto,
+  CreateUnplannedJourneyDto,
+  CheckInOutDto,
+  UpdateJourneyDto,
+  UpdateJourneyPlanDto,
+  AdminCheckInOutDto,
+  AssignShiftAllDaysDto,
+} from "dto/journey.dto";
 
-import { CheckIn, Journey, JourneyPlan, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
-import { User } from 'entities/user.entity';
-import { Branch } from 'entities/branch.entity';
-import { Shift } from 'entities/employee/shift.entity';
-import { VacationDate } from 'entities/employee/vacation-date.entity';
-import { Sale } from 'entities/products/sale.entity';
-import { PromoterLocation } from 'entities/promoter-location.entity';
-import { LocationLog } from 'entities/location-log.entity';
-import { getDistance } from 'geolib';
-import { CRUD } from 'common/crud.service';
-import { NotificationService } from 'src/notification/notification.service';
-import { toLocalISOString } from 'common/date.util';
-import { logger } from 'nestjs-i18n';
-import { ERole } from 'enums/Role.enum';
+import {
+  CheckIn,
+  Journey,
+  JourneyPlan,
+  JourneyStatus,
+  JourneyType,
+} from "entities/all_plans.entity";
+import { User } from "entities/user.entity";
+import { Branch } from "entities/branch.entity";
+import { Shift } from "entities/employee/shift.entity";
+import { VacationDate } from "entities/employee/vacation-date.entity";
+import { Sale } from "entities/products/sale.entity";
+import { PromoterLocation } from "entities/promoter-location.entity";
+import { LocationLog } from "entities/location-log.entity";
+import { getDistance } from "geolib";
+import { CRUD } from "common/crud.service";
+import { NotificationService } from "src/notification/notification.service";
+import { toLocalISOString } from "common/date.util";
+import { logger } from "nestjs-i18n";
+import { ERole } from "enums/Role.enum";
 
 @Injectable()
 export class JourneyService {
   private readonly messages = {
     journeyNotFound: {
-      en: 'Journey not found',
-      ar: 'الرحلة غير موجودة',
+      en: "Journey not found",
+      ar: "الرحلة غير موجودة",
     },
     tooFar: {
-      en: 'You are too far from the location',
-      ar: 'أنت بعيد  عن الموقع',
+      en: "You are too far from the location",
+      ar: "أنت بعيد  عن الموقع",
     },
     checkedOutSuccess: {
-      en: 'Checked out successfully',
-      ar: 'تم تسجيل الخروج بنجاح',
+      en: "Checked out successfully",
+      ar: "تم تسجيل الخروج بنجاح",
     },
   };
 
@@ -87,11 +116,18 @@ export class JourneyService {
     recordedAt?: Date;
     isOffline?: boolean;
   }): Promise<PromoterLocation> {
-    const { userId, lat, lng, journeyId, recordedAt = new Date(), isOffline = false } = params;
+    const {
+      userId,
+      lat,
+      lng,
+      journeyId,
+      recordedAt = new Date(),
+      isOffline = false,
+    } = params;
 
     // Load user info for denormalised name/avatar stored in promoter_locations
     const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) throw new NotFoundException("User not found");
 
     // Resolve projectId: from journey (if provided) or from today's open journey
     let projectId: string | null = null;
@@ -100,18 +136,18 @@ export class JourneyService {
     if (journeyId) {
       const journey = await this.journeyRepo.findOne({
         where: { id: journeyId },
-        relations: ['branch', 'branch.chain'],
+        relations: ["branch", "branch.chain"],
       });
       if (journey) {
         projectId = journey.projectId;
         branch = journey.branch;
       }
     } else {
-      const today = dayjs().format('YYYY-MM-DD');
+      const today = dayjs().format("YYYY-MM-DD");
       const journey = await this.journeyRepo.findOne({
         where: { user: { id: userId }, date: today },
-        relations: ['branch', 'branch.chain'],
-        order: { created_at: 'DESC' },
+        relations: ["branch", "branch.chain"],
+        order: { created_at: "DESC" },
       });
       if (journey) {
         projectId = journey.projectId;
@@ -123,21 +159,41 @@ export class JourneyService {
     let isOutside = false;
     if (branch) {
       try {
-        const chainName = (branch as any).chain?.name ?? '';
-        const isCheckGeo = !chainName.toLowerCase().includes('roaming');
-        isOutside = isCheckGeo ? !this.isWithinGeofencePublic(branch, `${lat},${lng}`) : false;
-      } catch { isOutside = false; }
+        const chainName = (branch as any).chain?.name ?? "";
+        const isCheckGeo = !chainName.toLowerCase().includes("roaming");
+        isOutside = isCheckGeo
+          ? !this.isWithinGeofencePublic(branch, `${lat},${lng}`)
+          : false;
+      } catch {
+        isOutside = false;
+      }
     }
 
     // Upsert the single-row position record
     await this.locationRepo.upsert(
-      { userId, lat, lng, projectId, name: user.name, avatar_url: user.avatar_url, isOutside },
-      ['userId'],
+      {
+        userId,
+        lat,
+        lng,
+        projectId,
+        name: user.name,
+        avatar_url: user.avatar_url,
+        isOutside,
+      },
+      ["userId"],
     );
 
     // Always write to audit log
     await this.locationLogRepo.save(
-      this.locationLogRepo.create({ userId, journeyId, lat, lng, isOutside, isOffline, recordedAt }),
+      this.locationLogRepo.create({
+        userId,
+        journeyId,
+        lat,
+        lng,
+        isOutside,
+        isOffline,
+        recordedAt,
+      }),
     );
 
     // Return the fresh row so the gateway can broadcast it
@@ -148,18 +204,26 @@ export class JourneyService {
    * Returns all promoters who sent a location ping in the last `minutes` minutes.
    * Uses the (projectId, updatedAt) index — single range scan, very fast.
    */
-  async getActivePromoterLocations(projectId: string, minutes = 30): Promise<PromoterLocation[]> {
+  async getActivePromoterLocations(
+    projectId: string,
+    minutes = 30,
+  ): Promise<PromoterLocation[]> {
     const threshold = new Date(Date.now() - minutes * 60_000);
     return this.locationRepo.find({
       where: { projectId, updatedAt: MoreThan(threshold) },
-      order: { updatedAt: 'DESC' },
+      order: { updatedAt: "DESC" },
     });
   }
 
   /**
    * Returns the raw location audit log for a user / journey.
    */
-  async getLocationLog(params: { userId?: string; journeyId?: string; fromDate?: string; toDate?: string }) {
+  async getLocationLog(params: {
+    userId?: string;
+    journeyId?: string;
+    fromDate?: string;
+    toDate?: string;
+  }) {
     const { userId, journeyId, fromDate, toDate } = params;
     const where: any = {};
     if (userId) where.userId = userId;
@@ -167,7 +231,11 @@ export class JourneyService {
     if (fromDate && toDate) {
       where.recordedAt = Between(new Date(fromDate), new Date(toDate));
     }
-    return this.locationLogRepo.find({ where, order: { recordedAt: 'DESC' }, take: 200 });
+    return this.locationLogRepo.find({
+      where,
+      order: { recordedAt: "DESC" },
+      take: 200,
+    });
   }
 
   /** Exposed for the gateway – same geofence logic but public */
@@ -181,15 +249,15 @@ export class JourneyService {
       this.userRepo.findOne({ where: { id: dto.userId } }),
       this.branchRepo.findOne({
         where: { id: dto.branchId },
-        relations: ['city', 'city.region', 'project'],
+        relations: ["city", "city.region", "project"],
       }),
     ]);
 
-    if (!user) throw new NotFoundException('User not found');
-    if (!branch) throw new NotFoundException('Branch not found');
+    if (!user) throw new NotFoundException("User not found");
+    if (!branch) throw new NotFoundException("Branch not found");
 
     if (!branch.project) {
-      throw new BadRequestException('Branch has no project assigned');
+      throw new BadRequestException("Branch has no project assigned");
     }
 
     const shifts = await this.shiftRepo.find({
@@ -197,7 +265,7 @@ export class JourneyService {
     });
 
     if (shifts.length !== dto.shiftId.length) {
-      throw new NotFoundException('One or more shifts not found');
+      throw new NotFoundException("One or more shifts not found");
     }
 
     const savedPlans: JourneyPlan[] = [];
@@ -213,7 +281,7 @@ export class JourneyService {
       });
 
       for (const plan of existing) {
-        const overlap = plan.days.filter(d => dto.days.includes(d));
+        const overlap = plan.days.filter((d) => dto.days.includes(d));
         if (overlap.length > 0) {
           throw new ConflictException({
             message: `Conflict with existing plan days for shift ${shift.name}`,
@@ -245,31 +313,35 @@ export class JourneyService {
   async updatePlan(id: string, dto: UpdateJourneyPlanDto) {
     const plan = await this.journeyPlanRepo.findOne({
       where: { id },
-      relations: ['user', 'branch', 'shift', 'branch.project'],
+      relations: ["user", "branch", "shift", "branch.project"],
     });
 
-    if (!plan) throw new NotFoundException('Journey plan not found');
+    if (!plan) throw new NotFoundException("Journey plan not found");
 
     if (dto.userId) {
       const user = await this.userRepo.findOne({ where: { id: dto.userId } });
-      if (!user) throw new NotFoundException('User not found');
+      if (!user) throw new NotFoundException("User not found");
       plan.user = user;
     }
 
     if (dto.branchId) {
       const branch = await this.branchRepo.findOne({
         where: { id: dto.branchId },
-        relations: ['project'],
+        relations: ["project"],
       });
-      if (!branch) throw new NotFoundException('Branch not found');
-      if (!branch.project) throw new BadRequestException('Branch has no project');
+      if (!branch) throw new NotFoundException("Branch not found");
+      if (!branch.project) {
+        throw new BadRequestException("Branch has no project");
+      }
       plan.branch = branch;
       plan.projectId = branch.project.id;
     }
 
     if (dto.shiftId) {
-      const shift = await this.shiftRepo.findOne({ where: { id: dto.shiftId } });
-      if (!shift) throw new NotFoundException('Shift not found');
+      const shift = await this.shiftRepo.findOne({
+        where: { id: dto.shiftId },
+      });
+      if (!shift) throw new NotFoundException("Shift not found");
       plan.shift = shift;
     }
 
@@ -288,11 +360,11 @@ export class JourneyService {
     });
 
     for (const otherPlan of existing) {
-      const overlap = otherPlan.days.filter(d => plan.days.includes(d));
+      const overlap = otherPlan.days.filter((d) => plan.days.includes(d));
       if (overlap.length > 0) {
         throw new ConflictException({
           message: "Conflict with existing plan days",
-          overlappingDays: overlap
+          overlappingDays: overlap,
         });
       }
     }
@@ -300,204 +372,245 @@ export class JourneyService {
     return this.journeyPlanRepo.save(plan);
   }
 
-
-
-
   // ===== الرحلات الطارئة =====
-async createUnplannedJourney(dto: CreateUnplannedJourneyDto, createdBy: User) {
-    const today = new Date().toISOString().split('T')[0];
+  async createUnplannedJourney(
+    dto: CreateUnplannedJourneyDto,
+    createdBy: User,
+  ) {
+    const today = new Date().toISOString().split("T")[0];
 
+    const [user, branch, shift] = await Promise.all([
+      this.userRepo.findOne({ where: { id: dto.userId } }),
+      this.branchRepo.findOne({
+        where: { id: dto.branchId },
+        relations: ["city", "city.region", "project"],
+      }),
+      this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
+    ]);
 
-  const [user, branch, shift] = await Promise.all([
-    this.userRepo.findOne({ where: { id: dto.userId } }),
-    this.branchRepo.findOne({
-      where: { id: dto.branchId },
-      relations: ['city', 'city.region', 'project'],
-    }),
-    this.shiftRepo.findOne({ where: { id: dto.shiftId } }),
-  ]);
+    if (!user) throw new NotFoundException("User not found for given userId");
+    if (!branch) {
+      throw new NotFoundException("Branch not found for given branchId");
+    }
+    if (!shift) {
+      throw new NotFoundException("Shift not found for given shiftId");
+    }
+    if (!branch.project) {
+      throw new BadRequestException("Branch has no project assigned");
+    }
 
-  if (!user) throw new NotFoundException('User not found for given userId');
-  if (!branch) throw new NotFoundException('Branch not found for given branchId');
-  if (!shift) throw new NotFoundException('Shift not found for given shiftId');
-  if (!branch.project) {
-    throw new BadRequestException('Branch has no project assigned');
-  }
+    const existingJourney = await this.journeyRepo.findOne({
+      where: {
+        user: { id: dto.userId },
+        date: today,
+        type: JourneyType.UNPLANNED,
+        shift: shift,
+        branch: branch,
+      },
+    });
 
-  const existingJourney = await this.journeyRepo.findOne({
-    where: {
-      user: { id: dto.userId },
+    if (existingJourney) {
+      throw new ConflictException(
+        "Unplanned journey already exists for this user today",
+      );
+    }
+
+    const newJourney = this.journeyRepo.create({
+      user,
+      branch,
+      shift,
+      projectId: branch.project.id,
       date: today,
       type: JourneyType.UNPLANNED,
-      shift:shift,
-      branch:branch
-    },
-  });
-
-  if (existingJourney) {
-    throw new ConflictException('Unplanned journey already exists for this user today');
-  }
-
-  const newJourney = this.journeyRepo.create({
-    user,
-    branch,
-    shift,
-    projectId: branch.project.id,
-    date: today,
-    type: JourneyType.UNPLANNED,
-    status: JourneyStatus.UNPLANNED_ABSENT,
-    createdBy,
-  });
-
-  return this.journeyRepo.save(newJourney);
-}
-
-async updateJourney(id: string, dto: UpdateJourneyDto) {
-  const journey = await this.journeyRepo.findOne({
-    where: { id },
-    relations: ['user', 'branch', 'shift', 'branch.project'],
-  });
-
-  if (!journey) throw new NotFoundException('Journey not found');
-
-  if (dto.userId) {
-    const user = await this.userRepo.findOne({ where: { id: dto.userId } });
-    if (!user) throw new NotFoundException('User not found');
-    journey.user = user;
-  }
-
-  if (dto.branchId) {
-    const branch = await this.branchRepo.findOne({
-      where: { id: dto.branchId },
-      relations: ['project'],
+      status: JourneyStatus.UNPLANNED_ABSENT,
+      createdBy,
     });
-    if (!branch) throw new NotFoundException('Branch not found');
-    if (!branch.project) throw new BadRequestException('Branch has no project');
-    journey.branch = branch;
-    journey.projectId = branch.project.id; // Update project ID as well
+
+    return this.journeyRepo.save(newJourney);
   }
 
-  if (dto.shiftId) {
-    const shift = await this.shiftRepo.findOne({ where: { id: dto.shiftId } });
-    if (!shift) throw new NotFoundException('Shift not found');
-    journey.shift = shift;
+  async updateJourney(id: string, dto: UpdateJourneyDto) {
+    const journey = await this.journeyRepo.findOne({
+      where: { id },
+      relations: ["user", "branch", "shift", "branch.project"],
+    });
+
+    if (!journey) throw new NotFoundException("Journey not found");
+
+    if (dto.userId) {
+      const user = await this.userRepo.findOne({ where: { id: dto.userId } });
+      if (!user) throw new NotFoundException("User not found");
+      journey.user = user;
+    }
+
+    if (dto.branchId) {
+      const branch = await this.branchRepo.findOne({
+        where: { id: dto.branchId },
+        relations: ["project"],
+      });
+      if (!branch) throw new NotFoundException("Branch not found");
+      if (!branch.project) {
+        throw new BadRequestException("Branch has no project");
+      }
+      journey.branch = branch;
+      journey.projectId = branch.project.id; // Update project ID as well
+    }
+
+    if (dto.shiftId) {
+      const shift = await this.shiftRepo.findOne({
+        where: { id: dto.shiftId },
+      });
+      if (!shift) throw new NotFoundException("Shift not found");
+      journey.shift = shift;
+    }
+
+    if (dto.date) {
+      journey.date = dto.date;
+    }
+
+    // Check for conflicts after updates
+    const conflict = await this.journeyRepo.findOne({
+      where: {
+        user: { id: journey.user.id },
+        date: journey.date,
+        shift: { id: journey.shift.id },
+        id: Not(journey.id), // Exclude self
+        status: Not(
+          In([
+            JourneyStatus.UNPLANNED_ABSENT,
+            JourneyStatus.UNPLANNED_PRESENT,
+            JourneyStatus.UNPLANNED_CLOSED,
+          ]),
+        ),
+      },
+    });
+
+    if (conflict) {
+      throw new ConflictException(
+        "A journey already exists for this user, date, and shift",
+      );
+    }
+
+    return this.journeyRepo.save(journey);
   }
 
-  if (dto.date) {
-    journey.date = dto.date;
-  }
+  async getTodayJourneysForUserMobile(userId: string, lang: string = "en") {
+    const today = dayjs().format("YYYY-MM-DD");
 
-  // Check for conflicts after updates
-  const conflict = await this.journeyRepo.findOne({
-    where: {
-      user: { id: journey.user.id },
-      date: journey.date,
-      shift: { id: journey.shift.id },
-      id: Not(journey.id), // Exclude self
-      status: Not(In([
-        JourneyStatus.UNPLANNED_ABSENT,
-        JourneyStatus.UNPLANNED_PRESENT,
-        JourneyStatus.UNPLANNED_CLOSED,
-      ])),
-    },
-  });
+    const journeys = await this.journeyRepo.find({
+      where: {
+        user: { id: userId },
+        date: today,
+      },
+      relations: [
+        "branch",
+        "branch.city",
+        "branch.city.region",
+        "shift",
+        "checkin",
+      ],
+      order: { created_at: "ASC" },
+    });
 
-  if (conflict) {
-    throw new ConflictException('A journey already exists for this user, date, and shift');
-  }
-
-  return this.journeyRepo.save(journey);
-}
-
-async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
-  const today = dayjs().format('YYYY-MM-DD');
-
-  const journeys = await this.journeyRepo.find({
-    where: {
-      user: { id: userId },
-      date: today,
-    },
-    relations: [
-      'branch',
-      'branch.city',
-      'branch.city.region',
-      'shift',
-      'checkin',
-    ],
-    order: { created_at: 'ASC' },
-  });
-
-  // 🔑 status keys (used by frontend filters)
-  const statusKeys = {
-    [JourneyStatus.ABSENT]: 'absent',
-    [JourneyStatus.PRESENT]: 'present',
-    [JourneyStatus.CLOSED]: 'closed',
-    [JourneyStatus.VACATION]: 'vacation',
-    [JourneyStatus.UNPLANNED_ABSENT]: 'unplanned-absent',
-    [JourneyStatus.UNPLANNED_PRESENT]: 'unplanned-present',
-    [JourneyStatus.UNPLANNED_CLOSED]: 'unplanned-closed',
-  };
-
-  // 🌍 translations
-  const statusTranslations = {
-    [JourneyStatus.ABSENT]: { en: 'Absent', ar: 'غائب' },
-    [JourneyStatus.PRESENT]: { en: 'Present', ar: 'حاضر' },
-    [JourneyStatus.CLOSED]: { en: 'Closed', ar: 'مغلق' },
-    [JourneyStatus.VACATION]: { en: 'Vacation', ar: 'إجازة' },
-    [JourneyStatus.UNPLANNED_ABSENT]: { en: 'Unplanned Absent', ar: 'غائب غير مخطط' },
-    [JourneyStatus.UNPLANNED_PRESENT]: { en: 'Unplanned Present', ar: 'حاضر غير مخطط' },
-    [JourneyStatus.UNPLANNED_CLOSED]: { en: 'Unplanned Closed', ar: 'مغلق غير مخطط' },
-  };
-
-  return journeys.map(journey => {
-    const checkin = journey.checkin;
-
-    const attendanceStatus: JourneyStatus =
-      journey.status ?? JourneyStatus.ABSENT;
-
-    return {
-      id: journey.id,
-      date: journey.date,
-
-      branch: journey.branch,
-      city: journey.branch?.city?.name,
-      region: journey.branch?.city?.region?.name,
-
-      shift: journey.shift,
-      shiftStartTime: journey.shift?.startTime,
-      shiftEndTime: journey.shift?.endTime,
-
-      journeyType: journey.type,
-      journeyStatus: lang === 'ar'
-        ? statusTranslations[attendanceStatus].ar
-        : statusTranslations[attendanceStatus].en,
-
-      // ✅ NEW (same as supervisor)
-      status: statusKeys[attendanceStatus],
-      attendanceStatusText:
-        lang === 'ar'
-          ? statusTranslations[attendanceStatus].ar
-          : statusTranslations[attendanceStatus].en,
-
-      // check-in data
-      checkInTime: checkin?.checkInTime ? toLocalISOString(new Date(checkin.checkInTime)) : null,
-      checkOutTime: checkin?.checkOutTime ? toLocalISOString(new Date(checkin.checkOutTime)) : null,
-      checkInDocument: checkin?.checkInDocument,
-      checkOutDocument: checkin?.checkOutDocument,
-      noteIn: checkin?.noteIn,
-      noteOut: checkin?.noteOut,
-      isWithinRadius: checkin?.isWithinRadius,
+    // 🔑 status keys (used by frontend filters)
+    const statusKeys = {
+      [JourneyStatus.ABSENT]: "absent",
+      [JourneyStatus.PRESENT]: "present",
+      [JourneyStatus.CLOSED]: "closed",
+      [JourneyStatus.VACATION]: "vacation",
+      [JourneyStatus.UNPLANNED_ABSENT]: "unplanned-absent",
+      [JourneyStatus.UNPLANNED_PRESENT]: "unplanned-present",
+      [JourneyStatus.UNPLANNED_CLOSED]: "unplanned-closed",
     };
-  });
-}
 
-  async getCheckinsForSupervisorBranches(params: { supervisorId: string; date?: string; fromDate?: string; toDate?: string; page?: number; limit?: number }) {
-    const { supervisorId, date, fromDate, toDate, page = 1, limit = 20 } = params;
+    // 🌍 translations
+    const statusTranslations = {
+      [JourneyStatus.ABSENT]: { en: "Absent", ar: "غائب" },
+      [JourneyStatus.PRESENT]: { en: "Present", ar: "حاضر" },
+      [JourneyStatus.CLOSED]: { en: "Closed", ar: "مغلق" },
+      [JourneyStatus.VACATION]: { en: "Vacation", ar: "إجازة" },
+      [JourneyStatus.UNPLANNED_ABSENT]: {
+        en: "Unplanned Absent",
+        ar: "غائب غير مخطط",
+      },
+      [JourneyStatus.UNPLANNED_PRESENT]: {
+        en: "Unplanned Present",
+        ar: "حاضر غير مخطط",
+      },
+      [JourneyStatus.UNPLANNED_CLOSED]: {
+        en: "Unplanned Closed",
+        ar: "مغلق غير مخطط",
+      },
+    };
+
+    return journeys.map((journey) => {
+      const checkin = journey.checkin;
+
+      const attendanceStatus: JourneyStatus =
+        journey.status ?? JourneyStatus.ABSENT;
+
+      return {
+        id: journey.id,
+        date: journey.date,
+
+        branch: journey.branch,
+        city: journey.branch?.city?.name,
+        region: journey.branch?.city?.region?.name,
+
+        shift: journey.shift,
+        shiftStartTime: journey.shift?.startTime,
+        shiftEndTime: journey.shift?.endTime,
+
+        journeyType: journey.type,
+        journeyStatus:
+          lang === "ar"
+            ? statusTranslations[attendanceStatus].ar
+            : statusTranslations[attendanceStatus].en,
+
+        // ✅ NEW (same as supervisor)
+        status: statusKeys[attendanceStatus],
+        attendanceStatusText:
+          lang === "ar"
+            ? statusTranslations[attendanceStatus].ar
+            : statusTranslations[attendanceStatus].en,
+
+        // check-in data
+        checkInTime: checkin?.checkInTime
+          ? toLocalISOString(new Date(checkin.checkInTime))
+          : null,
+        checkOutTime: checkin?.checkOutTime
+          ? toLocalISOString(new Date(checkin.checkOutTime))
+          : null,
+        checkInDocument: checkin?.checkInDocument,
+        checkOutDocument: checkin?.checkOutDocument,
+        noteIn: checkin?.noteIn,
+        noteOut: checkin?.noteOut,
+        isWithinRadius: checkin?.isWithinRadius,
+      };
+    });
+  }
+
+  async getCheckinsForSupervisorBranches(params: {
+    supervisorId: string;
+    date?: string;
+    fromDate?: string;
+    toDate?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const {
+      supervisorId,
+      date,
+      fromDate,
+      toDate,
+      page = 1,
+      limit = 20,
+    } = params;
 
     const branches = await this.branchRepo.find({
       where: [
         { supervisor: { id: supervisorId } },
-        { supervisors: { id: supervisorId } }
+        { supervisors: { id: supervisorId } },
       ],
     });
 
@@ -505,31 +618,37 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       return { items: [], total: 0, page, limit };
     }
 
-    const branchIds = branches.map(b => b.id);
+    const branchIds = branches.map((b) => b.id);
 
-    const qb = this.checkInRepo.createQueryBuilder('c').innerJoinAndSelect('c.journey', 'j').innerJoinAndSelect('j.branch', 'b').innerJoinAndSelect('j.shift', 'shift').innerJoinAndSelect('c.user', 'u').where('b.id IN (:...branchIds)', { branchIds });
+    const qb = this.checkInRepo
+      .createQueryBuilder("c")
+      .innerJoinAndSelect("c.journey", "j")
+      .innerJoinAndSelect("j.branch", "b")
+      .innerJoinAndSelect("j.shift", "shift")
+      .innerJoinAndSelect("c.user", "u")
+      .where("b.id IN (:...branchIds)", { branchIds });
 
     if (date) {
-      qb.andWhere('j.date = :date', { date });
+      qb.andWhere("j.date = :date", { date });
     } else {
       if (fromDate) {
-        qb.andWhere('j.date >= :fromDate', { fromDate });
+        qb.andWhere("j.date >= :fromDate", { fromDate });
       }
       if (toDate) {
-        qb.andWhere('j.date <= :toDate', { toDate });
+        qb.andWhere("j.date <= :toDate", { toDate });
       }
     }
 
     const total = await qb.getCount();
 
     const items = await qb
-      .orderBy('c.checkInTime', 'DESC')
-      .skip((page||1 - 1) * limit||10)
+      .orderBy("c.checkInTime", "DESC")
+      .skip((page || 1 - 1) * limit || 10)
       .take(limit || 10)
       .getMany();
 
     return {
-      items: items.map(item => ({
+      items: items.map((item) => ({
         item,
       })),
       total,
@@ -538,17 +657,24 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     };
   }
 
-  async checkInOut(dto: CheckInOutDto, lang: string = 'en') {
+  async checkInOut(dto: CheckInOutDto, lang: string = "en") {
     const journey = await this.journeyRepo.findOne({
       where: { id: dto.journeyId },
-      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain', 'user.role'],
+      relations: [
+        "branch",
+        "branch.supervisor",
+        "shift",
+        "user",
+        "branch.chain",
+        "user.role",
+      ],
     });
- 
+
     if (!journey) {
-      throw new NotFoundException(this.messages.journeyNotFound[lang] || this.messages.journeyNotFound.en);
+      throw new NotFoundException(
+        this.messages.journeyNotFound[lang] || this.messages.journeyNotFound.en,
+      );
     }
-
-
 
     let checkIn = await this.checkInRepo.findOne({
       where: { journey: { id: dto.journeyId } },
@@ -560,10 +686,12 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
     // Check roaming settings
     const chainName = journey.branch?.chain?.name;
-    
-    const isCheckGeo = !chainName?.toLowerCase().includes('roaming');
 
-    const isWithinGeofence = isCheckGeo ? this.isWithinGeofence(journey.branch, dto.geo) : true;
+    const isCheckGeo = !chainName?.toLowerCase().includes("roaming");
+
+    const isWithinGeofence = isCheckGeo
+      ? this.isWithinGeofence(journey.branch, dto.geo)
+      : true;
 
     // 📍 Log location on every check-in/out (even if within radius)
     try {
@@ -576,7 +704,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           lng: geoCoords.lng,
           isOutside: !isWithinGeofence,
           isOffline: false,
-          recordedAt: new Date(dto.checkInTime || dto.checkOutTime || Date.now()),
+          recordedAt: new Date(
+            dto.checkInTime || dto.checkOutTime || Date.now(),
+          ),
         }),
       );
       // Also upsert the live position
@@ -591,20 +721,27 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
             avatar_url: journey.user.avatar_url,
             isOutside: !isWithinGeofence,
           },
-          ['userId'],
+          ["userId"],
         );
       }
-    } catch { /* geo logging is non-critical, never block the main flow */ }
+    } catch {
+      /* geo logging is non-critical, never block the main flow */
+    }
 
-    if(!isWithinGeofence){
-      throw new BadRequestException(this.messages.tooFar[lang] || this.messages.tooFar.en);
+    if (!isWithinGeofence) {
+      throw new BadRequestException(
+        this.messages.tooFar[lang] || this.messages.tooFar.en,
+      );
     }
     if (checkIn) {
       if (dto.checkInTime) {
         checkIn.checkInTime = dto.checkInTime as any;
         checkIn.checkInDocument = dto.checkInDocument;
         checkIn.noteIn = dto.noteIn;
-        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+        journey.status =
+          journey.type === JourneyType.PLANNED
+            ? JourneyStatus.PRESENT
+            : JourneyStatus.UNPLANNED_PRESENT;
       }
 
       if (dto.checkOutTime) {
@@ -614,7 +751,10 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         checkIn.checkOutTime = dto.checkOutTime as any;
         checkIn.checkOutDocument = dto.checkOutDocument;
         checkIn.noteOut = dto.noteOut;
-        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
+        journey.status =
+          journey.type === JourneyType.PLANNED
+            ? JourneyStatus.CLOSED
+            : JourneyStatus.UNPLANNED_CLOSED;
       }
 
       checkIn.geo = dto.geo as any;
@@ -639,53 +779,72 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         isWithinRadius: isWithinGeofence,
       });
 
-      journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+      journey.status =
+        journey.type === JourneyType.PLANNED
+          ? JourneyStatus.PRESENT
+          : JourneyStatus.UNPLANNED_PRESENT;
     }
 
     let savedCheckIn: CheckIn;
-    await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
-      await transactionalEntityManager.save(Journey, journey);
-      if (dto.checkInTime && journey.user?.role?.name === ERole.PROMOTER) {
-        await transactionalEntityManager.update(User, journey.user.id, { branch: journey.branch });
-      }
-      savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
-    });
+    await this.journeyRepo.manager.transaction(
+      async (transactionalEntityManager) => {
+        await transactionalEntityManager.save(Journey, journey);
+        if (dto.checkInTime && journey.user?.role?.name === ERole.PROMOTER) {
+          await transactionalEntityManager.update(User, journey.user.id, {
+            branch: journey.branch,
+          });
+        }
+        savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
+      },
+    );
 
     // 🔔 Notify supervisor if exists
     const supervisor = journey.branch?.supervisor;
-    
-    const type: 'checkin' | 'checkout' | 'update' = isUpdate ? 'update' : isCheckOut ? 'checkout' : 'checkin';
-    const time = type === 'checkout' ? savedCheckIn.checkOutTime : savedCheckIn.checkInTime || new Date();
 
+    const type: "checkin" | "checkout" | "update" = isUpdate
+      ? "update"
+      : isCheckOut
+        ? "checkout"
+        : "checkin";
+    const time =
+      type === "checkout"
+        ? savedCheckIn.checkOutTime
+        : savedCheckIn.checkInTime || new Date();
 
     const notifications = [];
 
     // 1. Notify Supervisor
     if (supervisor) {
       notifications.push(
-        this.notificationService.notifySupervisorOnCheckin({
-          supervisorId: supervisor.id,
-          branchId: journey.branch.id,
-          branchName: journey.branch.name,
-          promoterId: journey.user.id,
-          promoterName: journey.user.name,
-          journeyId: journey.id,
-          type,
-          time,
-        }, lang)
+        this.notificationService.notifySupervisorOnCheckin(
+          {
+            supervisorId: supervisor.id,
+            branchId: journey.branch.id,
+            branchName: journey.branch.name,
+            promoterId: journey.user.id,
+            promoterName: journey.user.name,
+            journeyId: journey.id,
+            type,
+            time,
+          },
+          lang,
+        ),
       );
     }
 
     // 2. Notify Promoter (User)
     notifications.push(
-      this.notificationService.notifyPromoterOnCheckin({
-        promoterId: journey.user.id,
-        branchId: journey.branch.id,
-        branchName: journey.branch.name,
-        journeyId: journey.id,
-        type,
-        time,
-      }, lang)
+      this.notificationService.notifyPromoterOnCheckin(
+        {
+          promoterId: journey.user.id,
+          branchId: journey.branch.id,
+          branchName: journey.branch.name,
+          journeyId: journey.id,
+          type,
+          time,
+        },
+        lang,
+      ),
     );
 
     await Promise.all(notifications);
@@ -693,9 +852,11 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     if (isCheckOut) {
       return {
         code: 200,
-        message: 'Checked out successfully',
+        message: "Checked out successfully",
         data: {
-          checkOutTime: savedCheckIn.checkOutTime ? dayjs(savedCheckIn.checkOutTime).format('HH:mm') : null,
+          checkOutTime: savedCheckIn.checkOutTime
+            ? dayjs(savedCheckIn.checkOutTime).format("HH:mm")
+            : null,
         },
       };
     }
@@ -703,14 +864,25 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return savedCheckIn;
   }
 
-  async adminCheckInOut(dto: AdminCheckInOutDto, adminUser: User, lang: string = 'en') {
+  async adminCheckInOut(
+    dto: AdminCheckInOutDto,
+    adminUser: User,
+    lang: string = "en",
+  ) {
     const journey = await this.journeyRepo.findOne({
       where: { id: dto.journeyId },
-      relations: ['branch', 'branch.supervisor', 'shift', 'user', 'branch.chain', 'user.role'],
+      relations: [
+        "branch",
+        "branch.supervisor",
+        "shift",
+        "user",
+        "branch.chain",
+        "user.role",
+      ],
     });
 
     if (!journey) {
-      throw new NotFoundException('Journey not found');
+      throw new NotFoundException("Journey not found");
     }
 
     let checkIn = await this.checkInRepo.findOne({
@@ -723,22 +895,29 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
       // Update logic
       if (dto.checkInTime) {
         checkIn.checkInTime = dto.checkInTime as any;
-        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+        journey.status =
+          journey.type === JourneyType.PLANNED
+            ? JourneyStatus.PRESENT
+            : JourneyStatus.UNPLANNED_PRESENT;
       }
 
       if (dto.checkOutTime) {
         checkIn.checkOutTime = dto.checkOutTime as any;
-        journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
+        journey.status =
+          journey.type === JourneyType.PLANNED
+            ? JourneyStatus.CLOSED
+            : JourneyStatus.UNPLANNED_CLOSED;
       } else if (!dto.checkInTime && !checkIn.checkOutTime) {
-         // Fallback: If no specific times given and journey is open, assume Check Out Now
-         checkIn.checkOutTime = now;
-         journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.CLOSED : JourneyStatus.UNPLANNED_CLOSED;
+        // Fallback: If no specific times given and journey is open, assume Check Out Now
+        checkIn.checkOutTime = now;
+        journey.status =
+          journey.type === JourneyType.PLANNED
+            ? JourneyStatus.CLOSED
+            : JourneyStatus.UNPLANNED_CLOSED;
       }
-
     } else {
-   
       const checkInTime = dto.checkInTime ? (dto.checkInTime as any) : now;
-      
+
       checkIn = this.checkInRepo.create({
         journey,
         user: journey.user,
@@ -746,84 +925,97 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
         checkOutTime: dto.checkOutTime as any, // Only set if provided
         checkInDocument: "",
         checkOutDocument: "",
-        geo:  '', 
-        image:"",
-        noteIn:"",
+        geo: "",
+        image: "",
+        noteIn: "",
         noteOut: "",
-        isWithinRadius: true, 
+        isWithinRadius: true,
       });
 
-      journey.status = journey.type === JourneyType.PLANNED ? JourneyStatus.PRESENT : JourneyStatus.UNPLANNED_PRESENT;
+      journey.status =
+        journey.type === JourneyType.PLANNED
+          ? JourneyStatus.PRESENT
+          : JourneyStatus.UNPLANNED_PRESENT;
     }
 
     let savedCheckIn: CheckIn;
-    await this.journeyRepo.manager.transaction(async (transactionalEntityManager) => {
-      await transactionalEntityManager.save(Journey, journey);
-      if (journey.user?.role?.name === ERole.PROMOTER) {
-        await transactionalEntityManager.update(User, journey.user.id, { branch: journey.branch });
-      }
-      savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
-    });
+    await this.journeyRepo.manager.transaction(
+      async (transactionalEntityManager) => {
+        await transactionalEntityManager.save(Journey, journey);
+        if (journey.user?.role?.name === ERole.PROMOTER) {
+          await transactionalEntityManager.update(User, journey.user.id, {
+            branch: journey.branch,
+          });
+        }
+        savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
+      },
+    );
 
     // 🔔 Notify supervisor/promoter?
-     const supervisor = journey.branch?.supervisor;
-     // Determine type based on what actually happened
-     const isCheckOut = savedCheckIn.checkOutTime && (!checkIn || !checkIn.checkOutTime); // Roughly estimates if we just checked out?
-     // Actually, let's keep it simple: if we have a checkout time, we treat the state as closed.
-     
-     const time = savedCheckIn.checkOutTime || savedCheckIn.checkInTime;
+    const supervisor = journey.branch?.supervisor;
+    // Determine type based on what actually happened
+    const isCheckOut =
+      savedCheckIn.checkOutTime && (!checkIn || !checkIn.checkOutTime); // Roughly estimates if we just checked out?
+    // Actually, let's keep it simple: if we have a checkout time, we treat the state as closed.
 
+    const time = savedCheckIn.checkOutTime || savedCheckIn.checkInTime;
 
     const notifications = [];
 
     // 1. Notify Supervisor
     if (supervisor) {
       notifications.push(
-        this.notificationService.notifySupervisorOnCheckin({
-          supervisorId: supervisor.id,
-          branchId: journey.branch.id,
-          branchName: journey.branch.name,
-          promoterId: journey.user.id,
-          promoterName: journey.user.name,
-          journeyId: journey.id,
-          type: 'update', 
-          time,
-        }, lang)
+        this.notificationService.notifySupervisorOnCheckin(
+          {
+            supervisorId: supervisor.id,
+            branchId: journey.branch.id,
+            branchName: journey.branch.name,
+            promoterId: journey.user.id,
+            promoterName: journey.user.name,
+            journeyId: journey.id,
+            type: "update",
+            time,
+          },
+          lang,
+        ),
       );
     }
 
     // 2. Notify Promoter (User)
-     notifications.push(
-      this.notificationService.notifyPromoterOnCheckin({
-        promoterId: journey.user.id,
-        branchId: journey.branch.id,
-        branchName: journey.branch.name,
-        journeyId: journey.id,
-        type: 'update',
-        time,
-      }, lang)
+    notifications.push(
+      this.notificationService.notifyPromoterOnCheckin(
+        {
+          promoterId: journey.user.id,
+          branchId: journey.branch.id,
+          branchName: journey.branch.name,
+          journeyId: journey.id,
+          type: "update",
+          time,
+        },
+        lang,
+      ),
     );
 
     await Promise.all(notifications);
-    
+
     return savedCheckIn;
   }
 
-  async adminRemoveCheckout( journeyId: string,) {
+  async adminRemoveCheckout(journeyId: string) {
     const where: any = {};
-   if(journeyId){
+    if (journeyId) {
       where.id = journeyId;
-   }else{
-    throw new BadRequestException('journeyId must be provided');
-   }
+    } else {
+      throw new BadRequestException("journeyId must be provided");
+    }
 
     const journey = await this.journeyRepo.findOne({
       where,
-      relations: ['checkin'],
+      relations: ["checkin"],
     });
 
     if (!journey) {
-      throw new NotFoundException('No journey found');
+      throw new NotFoundException("No journey found");
     }
 
     if (journey.checkin) {
@@ -846,16 +1038,16 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     if (journeyId) {
       where.id = journeyId;
     } else {
-      throw new BadRequestException('journeyId must be provided');
+      throw new BadRequestException("journeyId must be provided");
     }
 
     const journey = await this.journeyRepo.findOne({
       where,
-      relations: ['checkin'],
+      relations: ["checkin"],
     });
 
     if (!journey) {
-      throw new NotFoundException('No journey found');
+      throw new NotFoundException("No journey found");
     }
 
     if (journey.checkin) {
@@ -876,21 +1068,20 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return this.journeyRepo.save(journey);
   }
 
-
   async validateJourneyStatus(id: string) {
     const journey = await this.journeyRepo.findOne({
       where: { id },
     });
 
     if (!journey) {
-      throw new NotFoundException('Journey not found');
+      throw new NotFoundException("Journey not found");
     }
 
     if (
       journey.status === JourneyStatus.CLOSED ||
       journey.status === JourneyStatus.UNPLANNED_CLOSED
     ) {
-      throw new ForbiddenException('Journey is already closed');
+      throw new ForbiddenException("Journey is already closed");
     }
 
     if (
@@ -899,7 +1090,7 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     ) {
       return {
         code: 200,
-        message: 'Journey is active',
+        message: "Journey is active",
       };
     }
 
@@ -910,12 +1101,18 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
   }
 
   // ===== سجل الحضور =====
-  async getAttendanceHistory(projectId?: string, userId?: string, date?: string, fromDate?: string, toDate?: string) {
+  async getAttendanceHistory(
+    projectId?: string,
+    userId?: string,
+    date?: string,
+    fromDate?: string,
+    toDate?: string,
+  ) {
     const where: any = {};
 
     if (userId) where.user = { id: userId };
     if (date) where.journey = { date };
-    
+
     if (fromDate && toDate) {
       where.journey = { ...where.journey, date: Between(fromDate, toDate) };
     } else if (fromDate) {
@@ -932,8 +1129,15 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
     const checkIns = await this.checkInRepo.find({
       where,
-      relations: ['journey', 'journey.branch', 'journey.branch.city', 'journey.branch.city.region', 'journey.shift', 'user'],
-      order: { checkInTime: 'DESC' },
+      relations: [
+        "journey",
+        "journey.branch",
+        "journey.branch.city",
+        "journey.branch.city.region",
+        "journey.shift",
+        "user",
+      ],
+      order: { checkInTime: "DESC" },
     });
 
     return checkIns;
@@ -941,8 +1145,8 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
 
   // ===== الكرون جوب =====
   async createJourneysForTomorrow(userId?: string) {
-    const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
-    const dayName = dayjs(tomorrow).format('dddd').toLowerCase();
+    const tomorrow = dayjs().add(1, "day").format("YYYY-MM-DD");
+    const dayName = dayjs(tomorrow).format("dddd").toLowerCase();
 
     const qb = this.journeyPlanRepo
       .createQueryBuilder("plan")
@@ -961,11 +1165,13 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     const plans = await qb.getMany();
 
     let createdCount = 0;
-    console.log(plans)
+    console.log(plans);
     for (const plan of plans) {
       // Skip and Cleanup plans with missing relations
       if (!plan.user || !plan.branch || !plan.shift) {
-        console.warn(`Cleaning up plan ${plan.id}: missing user, branch, or shift relation`);
+        console.warn(
+          `Cleaning up plan ${plan.id}: missing user, branch, or shift relation`,
+        );
         await this.journeyPlanRepo.delete(plan.id);
         continue;
       }
@@ -986,9 +1192,9 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
           date: tomorrow,
           vacation: {
             user: { id: plan.user.id },
-            overall_status: 'approved'
-          }
-        }
+            overall_status: "approved",
+          },
+        },
       });
 
       const journey = this.journeyRepo.create({
@@ -1009,123 +1215,133 @@ async getTodayJourneysForUserMobile(userId: string, lang: string = 'en') {
     return { createdCount, date: tomorrow };
   }
 
-
   // ===== الدوال المساعدة =====
   private isWithinGeofence(branch: Branch, geo: any): boolean {
-    console.log(`branch${branch.geo}`)
+    console.log(`branch${branch.geo}`);
     const branchCoords = this.parseLatLng(branch.geo);
-    console.log(`geo :${geo}`)
+    console.log(`geo :${geo}`);
 
     const userCoords = this.parseLatLng(geo);
 
-    const distance = getDistance({ latitude: branchCoords.lat, longitude: branchCoords.lng }, { latitude: userCoords.lat, longitude: userCoords.lng });
+    const distance = getDistance(
+      { latitude: branchCoords.lat, longitude: branchCoords.lng },
+      { latitude: userCoords.lat, longitude: userCoords.lng },
+    );
 
     return distance <= branch.geofence_radius_meters;
   }
-private parseLatLng(value: any): { lat: number; lng: number } {
-if (!value || value === '') throw new BadRequestException('No geo value');
+  private parseLatLng(value: any): { lat: number; lng: number } {
+    if (!value || value === "") throw new BadRequestException("No geo value");
 
-  // If string
-if (typeof value === 'string') {
-  // Try "lat,lng"
-  const parts = value.split(',').map(s => Number(s.trim()));
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-    return { lat: parts[0], lng: parts[1] };
-  }
-}
-  // If object
-  if (typeof value === 'object') {
-    if ('lat' in value && 'lng' in value) return { lat: Number(value.lat), lng: Number(value.lng) };
-    const numericProps = Object.values(value).map(Number).filter(v => !isNaN(v));
-    if (numericProps.length >= 2) return { lat: numericProps[0], lng: numericProps[1] };
-  }
-
-  throw new BadRequestException('Invalid geo format');
-}
-
-
-
-// ===== الكرون جوب =====
-  async createJourneysForToday(userId?: string) {
-  const today = dayjs().format('YYYY-MM-DD');
-  const dayName = dayjs(today).format('dddd').toLowerCase();
-
-  // get all plans matching today's day
-  const qb = this.journeyPlanRepo
-    .createQueryBuilder("plan")
-    .leftJoinAndSelect("plan.user", "user")
-    .leftJoinAndSelect("plan.branch", "branch")
-    .leftJoinAndSelect("branch.project", "project")
-    .leftJoinAndSelect("plan.shift", "shift")
-    .where(":dayName = ANY(plan.days)", { dayName })
-    .andWhere("user.deleted_at IS NULL")
-    .andWhere("branch.deleted_at IS NULL");
-
-  if (userId) {
-    qb.andWhere("user.id = :userId", { userId });
-  }
-
-  const plans = await qb.getMany();
-
-  let createdCount = 0;
-  console.log(plans);
-
-  for (const plan of plans) {
-    // Skip and Cleanup plans with missing relations
-    if (!plan.user || !plan.branch || !plan.shift) {
-      console.warn(`Cleaning up plan ${plan.id}: missing user, branch, or shift relation`);
-      await this.journeyPlanRepo.delete(plan.id);
-      continue;
+    // If string
+    if (typeof value === "string") {
+      // Try "lat,lng"
+      const parts = value.split(",").map((s) => Number(s.trim()));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        return { lat: parts[0], lng: parts[1] };
+      }
+    }
+    // If object
+    if (typeof value === "object") {
+      if ("lat" in value && "lng" in value) {
+        return { lat: Number(value.lat), lng: Number(value.lng) };
+      }
+      const numericProps = Object.values(value)
+        .map(Number)
+        .filter((v) => !isNaN(v));
+      if (numericProps.length >= 2) {
+        return { lat: numericProps[0], lng: numericProps[1] };
+      }
     }
 
-    const exists = await this.journeyRepo.findOne({
-      where: {
-        user: { id: plan.user.id },
-        shift: { id: plan.shift.id },
-        date: today,
-        branch: { id: plan.branch.id }, // ✅ Check branch to allow multiple journeys/shift
-        status: Not(In([
-          JourneyStatus.UNPLANNED_ABSENT,
-          JourneyStatus.UNPLANNED_PRESENT,
-          JourneyStatus.UNPLANNED_CLOSED,
-        ])),
-      },
-    });
-
-    if (exists) continue;
-
-    const onVacation = await this.vacationDateRepo.findOne({
-      where: {
-        date: today,
-        vacation: {
-          user: { id: plan.user.id },
-          overall_status: 'approved'
-        }
-      }
-    });
-
-    const journey = this.journeyRepo.create({
-      user: plan.user,
-      branch: plan.branch,
-      shift: plan.shift,
-      projectId: plan.projectId || plan.branch.project?.id,
-      date: today,
-      type: JourneyType.PLANNED,
-      status: onVacation ? JourneyStatus.VACATION : JourneyStatus.ABSENT,
-      journeyPlan: plan,
-    });
-
-    await this.journeyRepo.save(journey);
-    createdCount++;
+    throw new BadRequestException("Invalid geo format");
   }
 
-  return { createdCount, date: today };
-}
+  // ===== الكرون جوب =====
+  async createJourneysForToday(userId?: string) {
+    const today = dayjs().format("YYYY-MM-DD");
+    const dayName = dayjs(today).format("dddd").toLowerCase();
+
+    // get all plans matching today's day
+    const qb = this.journeyPlanRepo
+      .createQueryBuilder("plan")
+      .leftJoinAndSelect("plan.user", "user")
+      .leftJoinAndSelect("plan.branch", "branch")
+      .leftJoinAndSelect("branch.project", "project")
+      .leftJoinAndSelect("plan.shift", "shift")
+      .where(":dayName = ANY(plan.days)", { dayName })
+      .andWhere("user.deleted_at IS NULL")
+      .andWhere("branch.deleted_at IS NULL");
+
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+
+    const plans = await qb.getMany();
+
+    let createdCount = 0;
+    console.log(plans);
+
+    for (const plan of plans) {
+      // Skip and Cleanup plans with missing relations
+      if (!plan.user || !plan.branch || !plan.shift) {
+        console.warn(
+          `Cleaning up plan ${plan.id}: missing user, branch, or shift relation`,
+        );
+        await this.journeyPlanRepo.delete(plan.id);
+        continue;
+      }
+
+      const exists = await this.journeyRepo.findOne({
+        where: {
+          user: { id: plan.user.id },
+          shift: { id: plan.shift.id },
+          date: today,
+          branch: { id: plan.branch.id }, // ✅ Check branch to allow multiple journeys/shift
+          status: Not(
+            In([
+              JourneyStatus.UNPLANNED_ABSENT,
+              JourneyStatus.UNPLANNED_PRESENT,
+              JourneyStatus.UNPLANNED_CLOSED,
+            ]),
+          ),
+        },
+      });
+
+      if (exists) continue;
+
+      const onVacation = await this.vacationDateRepo.findOne({
+        where: {
+          date: today,
+          vacation: {
+            user: { id: plan.user.id },
+            overall_status: "approved",
+          },
+        },
+      });
+
+      const journey = this.journeyRepo.create({
+        user: plan.user,
+        branch: plan.branch,
+        shift: plan.shift,
+        projectId: plan.projectId || plan.branch.project?.id,
+        date: today,
+        type: JourneyType.PLANNED,
+        status: onVacation ? JourneyStatus.VACATION : JourneyStatus.ABSENT,
+        journeyPlan: plan,
+      });
+
+      await this.journeyRepo.save(journey);
+      createdCount++;
+    }
+
+    return { createdCount, date: today };
+  }
 
   // ===== Recovery Cron Job =====
   async recoverJourneys(date?: string) {
-    const targetDate = date || dayjs().format('YYYY-MM-DD');
-    const dayName = dayjs(targetDate).format('dddd').toLowerCase();
+    const targetDate = date || dayjs().format("YYYY-MM-DD");
+    const dayName = dayjs(targetDate).format("dddd").toLowerCase();
 
     // 1. Get all active plans for this day
     const qb = this.journeyPlanRepo
@@ -1139,56 +1355,60 @@ if (typeof value === 'string') {
       .andWhere("branch.deleted_at IS NULL");
 
     const plans = await qb.getMany();
-    
-    let restoredCount = 0;
+
+    const restoredCount = 0;
     let createdCount = 0;
     const errors = [];
 
     for (const plan of plans) {
-       if (!plan.user || !plan.branch || !plan.shift) continue;
+      if (!plan.user || !plan.branch || !plan.shift) continue;
 
-       try {
-         // 2. Check if journey exists (ACTIVE only)
-         const journey = await this.journeyRepo.findOne({
-           where: {
-             user: { id: plan.user.id },
-             shift: { id: plan.shift.id },
-             date: targetDate,
-             branch: { id: plan.branch.id },
-             status: Not(In([
-              JourneyStatus.UNPLANNED_ABSENT,
-              JourneyStatus.UNPLANNED_PRESENT,
-              JourneyStatus.UNPLANNED_CLOSED,
-            ])),
-           },
-           // createJourneysForTomorrow checks for Unplanned status exclusion, let's match that to be safe
-           // But here we are looking for PLANNED journeys mainly.
-           // Actually, let's keep it simple: if ANY journey exists for this plan/date/shift, we are good.
-           // If it's soft-deleted, findOne won't find it (default behavior), so we go to 'else' and create new.
-         });
+      try {
+        // 2. Check if journey exists (ACTIVE only)
+        const journey = await this.journeyRepo.findOne({
+          where: {
+            user: { id: plan.user.id },
+            shift: { id: plan.shift.id },
+            date: targetDate,
+            branch: { id: plan.branch.id },
+            status: Not(
+              In([
+                JourneyStatus.UNPLANNED_ABSENT,
+                JourneyStatus.UNPLANNED_PRESENT,
+                JourneyStatus.UNPLANNED_CLOSED,
+              ]),
+            ),
+          },
+          // createJourneysForTomorrow checks for Unplanned status exclusion, let's match that to be safe
+          // But here we are looking for PLANNED journeys mainly.
+          // Actually, let's keep it simple: if ANY journey exists for this plan/date/shift, we are good.
+          // If it's soft-deleted, findOne won't find it (default behavior), so we go to 'else' and create new.
+        });
 
-         if (journey) {
-           // Journey exists and is active. Do nothing.
-         } else {
-           // 3. If doesn't exist (or was soft-deleted), create it
-           console.log(`🆕 Creating missing journey for user ${plan.user.name} on ${targetDate}`);
-           const newJourney = this.journeyRepo.create({
-              user: plan.user,
-              branch: plan.branch,
-              shift: plan.shift,
-              projectId: plan.projectId || plan.branch.project?.id,
-              date: targetDate,
-              type: JourneyType.PLANNED,
-              status: JourneyStatus.ABSENT,
-              journeyPlan: plan,
-           });
-           await this.journeyRepo.save(newJourney);
-           createdCount++;
-         }
-       } catch (err) {
-         console.error(`❌ Error recovering journey for plan ${plan.id}:`, err);
-         errors.push({ planId: plan.id, error: err.message });
-       }
+        if (journey) {
+          // Journey exists and is active. Do nothing.
+        } else {
+          // 3. If doesn't exist (or was soft-deleted), create it
+          console.log(
+            `🆕 Creating missing journey for user ${plan.user.name} on ${targetDate}`,
+          );
+          const newJourney = this.journeyRepo.create({
+            user: plan.user,
+            branch: plan.branch,
+            shift: plan.shift,
+            projectId: plan.projectId || plan.branch.project?.id,
+            date: targetDate,
+            type: JourneyType.PLANNED,
+            status: JourneyStatus.ABSENT,
+            journeyPlan: plan,
+          });
+          await this.journeyRepo.save(newJourney);
+          createdCount++;
+        }
+      } catch (err) {
+        console.error(`❌ Error recovering journey for plan ${plan.id}:`, err);
+        errors.push({ planId: plan.id, error: err.message });
+      }
     }
 
     return {
@@ -1196,22 +1416,21 @@ if (typeof value === 'string') {
       totalPlans: plans.length,
       restoredCount,
       createdCount,
-      errors
+      errors,
     };
   }
 
   // ===== Auto-close journeys at 3 AM =====
   async autoCloseJourneys() {
     const now = new Date();
-    
+
     // Find all journeys with PRESENT or UNPLANNED_PRESENT status
     const openJourneys = await this.journeyRepo.find({
       where: [
         { status: JourneyStatus.PRESENT },
         { status: JourneyStatus.UNPLANNED_PRESENT },
-        
       ],
-      relations: ['user', 'branch', 'shift'],
+      relations: ["user", "branch", "shift"],
     });
 
     let closedCount = 0;
@@ -1219,29 +1438,35 @@ if (typeof value === 'string') {
     for (const journey of openJourneys) {
       try {
         // Find or create check-in record
-        let checkIn = await this.checkInRepo.findOne({
+        const checkIn = await this.checkInRepo.findOne({
           where: { journey: { id: journey.id } },
         });
 
         if (checkIn) {
           // Only update if there's no checkout time already
-          logger.warn(`Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`);
+          logger.warn(
+            `Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`,
+          );
         } else {
           // This happens if status is PRESENT but no check-in record was found.
           // Revert status to ABSENT/UNPLANNED_ABSENT to resolve inconsistency.
-          console.warn(`Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`);
-          journey.status = journey.type === JourneyType.PLANNED 
-            ? JourneyStatus.ABSENT 
-            : JourneyStatus.UNPLANNED_ABSENT;
+          console.warn(
+            `Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`,
+          );
+          journey.status =
+            journey.type === JourneyType.PLANNED
+              ? JourneyStatus.ABSENT
+              : JourneyStatus.UNPLANNED_ABSENT;
           await this.journeyRepo.save(journey);
           continue;
         }
 
         // Update journey status
-        journey.status = journey.type === JourneyType.PLANNED 
-          ? JourneyStatus.CLOSED 
-          : JourneyStatus.UNPLANNED_CLOSED;
-        
+        journey.status =
+          journey.type === JourneyType.PLANNED
+            ? JourneyStatus.CLOSED
+            : JourneyStatus.UNPLANNED_CLOSED;
+
         await this.journeyRepo.save(journey);
         closedCount++;
       } catch (error) {
@@ -1256,14 +1481,14 @@ if (typeof value === 'string') {
   async recoverCheckInTimes() {
     // Find all check-ins that have a document (proof they happened) but no times
     const checkIns = await this.checkInRepo.find({
-      where: [
-        { checkInTime: null as any },
-      ],
-      relations: ['journey', 'journey.shift', 'journey.branch'],
+      where: [{ checkInTime: null as any }],
+      relations: ["journey", "journey.shift", "journey.branch"],
     });
 
     // Filter only those that have a checkInDocument (real check-ins)
-    const toRecover = checkIns.filter(c => c.checkInDocument && !c.checkInTime);
+    const toRecover = checkIns.filter(
+      (c) => c.checkInDocument && !c.checkInTime,
+    );
 
     let recoveredCount = 0;
     const errors: string[] = [];
@@ -1274,7 +1499,9 @@ if (typeof value === 'string') {
         const shift = journey?.shift;
 
         if (!journey?.date || !shift?.startTime) {
-          errors.push(`Skipped check-in ${checkIn.id}: missing journey date or shift times`);
+          errors.push(
+            `Skipped check-in ${checkIn.id}: missing journey date or shift times`,
+          );
           continue;
         }
 
@@ -1298,13 +1525,15 @@ if (typeof value === 'string') {
 
         // Update journey status to CLOSED if it had a checkout
         if (checkOutTime) {
-          journey.status = journey.type === JourneyType.PLANNED
-            ? JourneyStatus.CLOSED
-            : JourneyStatus.UNPLANNED_CLOSED;
+          journey.status =
+            journey.type === JourneyType.PLANNED
+              ? JourneyStatus.CLOSED
+              : JourneyStatus.UNPLANNED_CLOSED;
         } else {
-          journey.status = journey.type === JourneyType.PLANNED
-            ? JourneyStatus.PRESENT
-            : JourneyStatus.UNPLANNED_PRESENT;
+          journey.status =
+            journey.type === JourneyType.PLANNED
+              ? JourneyStatus.PRESENT
+              : JourneyStatus.UNPLANNED_PRESENT;
         }
 
         await this.journeyRepo.manager.transaction(async (em) => {
@@ -1326,12 +1555,11 @@ if (typeof value === 'string') {
     };
   }
 
-
   async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
     return this.branchRepo.find({
       where: [
         { supervisor: { id: supervisorId } },
-        { supervisors: { id: supervisorId } }
+        { supervisors: { id: supervisorId } },
       ],
     });
   }
@@ -1339,22 +1567,22 @@ if (typeof value === 'string') {
     const workbook = XLSX.utils.book_new();
     const worksheet = XLSX.utils.json_to_sheet([
       {
-        Username: 'johndoe',
-        Branch: 'Main Branch',
-        Shift: 'Morning Shift',
-        Days: 'monday,tuesday',
+        Username: "johndoe",
+        Branch: "Main Branch",
+        Shift: "Morning Shift",
+        Days: "monday,tuesday",
       },
     ]);
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template');
-    return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Template");
+    return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
   }
 
   async importPlans(file: Express.Multer.File, projectId: string) {
     if (!file) {
-      throw new BadRequestException('File is required');
+      throw new BadRequestException("File is required");
     }
 
-    const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+    const workbook = XLSX.read(file.buffer, { type: "buffer" });
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const data: any[] = XLSX.utils.sheet_to_json(worksheet);
@@ -1367,30 +1595,38 @@ if (typeof value === 'string') {
 
     for (const [index, row] of data.entries()) {
       try {
-        const username = row['Username'] || row['username'] as String;
-        const name = row['Name'] || row['name'] as String;
-        const branchName = row['Branch'] || row['branch'] as String;
-        const shiftName = row['Shift'] || row['shift'] as String;
-        const daysString = row['Days'] || row['days'] as String;
+        const username = row["Username"] || (row["username"] as string);
+        const name = row["Name"] || (row["name"] as string);
+        const branchName = row["Branch"] || (row["branch"] as string);
+        const shiftName = row["Shift"] || (row["shift"] as string);
+        const daysString = row["Days"] || (row["days"] as string);
 
         if ((!username && !name) || !branchName || !shiftName || !daysString) {
-          throw new Error('Missing required fields');
+          throw new Error("Missing required fields");
         }
 
         // Find User
         const userConditions: any[] = [];
-        if (username) userConditions.push({ username: typeof username === 'string' ? username.toLowerCase() : username });
-        if (name) userConditions.push({ name: typeof name === 'string' ? name.toLowerCase() : name });
-        
-        // If neither is present, error is thrown above.
-        
-        let user: User | null = null;
-        if (userConditions.length > 0) {
-            user = await this.userRepo.findOne({
-                where: userConditions
-            });
+        if (username) {
+          userConditions.push({
+            username:
+              typeof username === "string" ? username.toLowerCase() : username,
+          });
+        }
+        if (name) {
+          userConditions.push({
+            name: typeof name === "string" ? name.toLowerCase() : name,
+          });
         }
 
+        // If neither is present, error is thrown above.
+
+        let user: User | null = null;
+        if (userConditions.length > 0) {
+          user = await this.userRepo.findOne({
+            where: userConditions,
+          });
+        }
 
         if (!user) {
           throw new NotFoundException(`User not found: ${username || name}`);
@@ -1400,13 +1636,13 @@ if (typeof value === 'string') {
         // Try to find by name first, maybe scoped by project if possible?
         // Ideally we should filter branches by project, but for now global search might be okay if names are unique.
         // Or we can filter in memory or proper query.
-        let branch = await this.branchRepo.findOne({
+        const branch = await this.branchRepo.findOne({
           where: { name: branchName, project: { id: projectId } },
-          relations: ['project', 'city', 'city.region']
+          relations: ["project", "city", "city.region"],
         });
 
         if (!branch) {
-             throw new NotFoundException(`Branch not found: ${branchName}`);
+          throw new NotFoundException(`Branch not found: ${branchName}`);
         }
 
         // Find Shift
@@ -1418,27 +1654,26 @@ if (typeof value === 'string') {
           throw new NotFoundException(`Shift not found: ${shiftName}`);
         }
 
-        const days = daysString.split(',').map(d => d.trim().toLowerCase());
-        
+        const days = daysString.split(",").map((d) => d.trim().toLowerCase());
+
         // Create DTO
         const dto: CreateJourneyPlanDto = {
-            userId: user.id,
-            branchId: branch.id,
-            shiftId: [shift.id],
-            days: days
+          userId: user.id,
+          branchId: branch.id,
+          shiftId: [shift.id],
+          days: days,
         };
 
         // Reuse createPlan logic but handle errors
         // We can call createPlan directly.
         await this.createPlan(dto);
         results.success++;
-
       } catch (error) {
         results.failed++;
         results.errors.push({
           row: index + 2, // 1-based index, +header
           error: error.message,
-          data: row
+          data: row,
         });
       }
     }
@@ -1447,7 +1682,7 @@ if (typeof value === 'string') {
   }
   async removeAllPlansByUser(userId: string) {
     if (!userId) {
-      throw new BadRequestException('User ID is required');
+      throw new BadRequestException("User ID is required");
     }
 
     const plans = await this.journeyPlanRepo.find({
@@ -1465,7 +1700,7 @@ if (typeof value === 'string') {
     const { projectId, shiftId } = dto;
 
     const shift = await this.shiftRepo.findOne({ where: { id: shiftId } });
-    if (!shift) throw new NotFoundException('Shift not found');
+    if (!shift) throw new NotFoundException("Shift not found");
 
     // 1. Find all promoters in the project
     const promoters = await this.userRepo.find({
@@ -1473,35 +1708,49 @@ if (typeof value === 'string') {
         project_id: projectId,
         role: { name: ERole.PROMOTER },
       },
-      relations: ['branch', 'role'],
+      relations: ["branch", "role"],
     });
 
     if (promoters.length === 0) {
-      return { message: 'No promoters found in this project', processedCount: 0 };
+      return {
+        message: "No promoters found in this project",
+        processedCount: 0,
+      };
     }
 
-    const allDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const allDays = [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday",
+    ];
     let processedCount = 0;
 
     for (const promoter of promoters) {
       // Prioritize branch from the last checked-in journey
-      const lastCheckinJourney = await this.journeyRepo.manager.createQueryBuilder(Journey, 'journey')
-        .innerJoin('journey.checkin', 'checkin')
-        .leftJoinAndSelect('journey.branch', 'branch')
-        .where('journey.user.id = :userId', { userId: promoter.id })
-        .orderBy('checkin.checkInTime', 'DESC')
+      const lastCheckinJourney = await this.journeyRepo.manager
+        .createQueryBuilder(Journey, "journey")
+        .innerJoin("journey.checkin", "checkin")
+        .leftJoinAndSelect("journey.branch", "branch")
+        .where("journey.user.id = :userId", { userId: promoter.id })
+        .orderBy("checkin.checkInTime", "DESC")
         .getOne();
 
       const branchToUse = lastCheckinJourney?.branch || promoter.branch;
 
       if (!branchToUse) {
-        console.warn(`Skipping promoter ${promoter.name} (${promoter.id}): No branch found`);
+        console.warn(
+          `Skipping promoter ${promoter.name} (${promoter.id}): No branch found`,
+        );
         continue;
       }
 
       // 2. Fetch existing plans for safe deactivation (clearing days instead of deleting)
       const existingPlans = await this.journeyPlanRepo.find({
-        where: { user: { id: promoter.id } }
+        where: { user: { id: promoter.id } },
       });
 
       await this.journeyRepo.manager.transaction(async (em) => {
@@ -1534,15 +1783,15 @@ if (typeof value === 'string') {
   }
 
   async fixNightShiftJourneys(date?: string) {
-    const targetDate = date || dayjs().format('YYYY-MM-DD');
-    
+    const targetDate = date || dayjs().format("YYYY-MM-DD");
+
     // Find all journeys for this date with shift name containing "night"
     const journeys = await this.journeyRepo.find({
       where: {
         date: targetDate,
-        shift: { name: ILike('%night%') }
+        shift: { name: ILike("%night%") },
       },
-      relations: ['shift', 'checkin']
+      relations: ["shift", "checkin"],
     });
 
     let fixedCount = 0;
@@ -1551,7 +1800,7 @@ if (typeof value === 'string') {
     for (const journey of journeys) {
       // 1. Update status to ABSENT
       journey.status = JourneyStatus.ABSENT;
-      
+
       // 2. Delete checkin if it exists
       if (journey.checkin) {
         await this.checkInRepo.delete(journey.checkin.id);
@@ -1567,41 +1816,52 @@ if (typeof value === 'string') {
       date: targetDate,
       found: journeys.length,
       fixed: fixedCount,
-      deletedCheckins
+      deletedCheckins,
     };
   }
 
   async getUserStats(userId: string) {
     const user = await this.userRepo.findOne({
       where: { id: userId },
-      relations: ['role', 'project'],
+      relations: ["role", "project"],
     });
 
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
 
     // Attendance Stats
     const journeys = await this.journeyRepo.find({
       where: { user: { id: userId } },
-      relations: ['shift', 'checkin'],
+      relations: ["shift", "checkin"],
     });
 
     let absentDays = 0;
     let closedDays = 0;
     let lateDays = 0;
 
-    journeys.forEach(journey => {
-      if (journey.status === JourneyStatus.ABSENT || journey.status === JourneyStatus.UNPLANNED_ABSENT) {
+    journeys.forEach((journey) => {
+      if (
+        journey.status === JourneyStatus.ABSENT ||
+        journey.status === JourneyStatus.UNPLANNED_ABSENT
+      ) {
         absentDays++;
-      } else if (journey.status === JourneyStatus.CLOSED || journey.status === JourneyStatus.UNPLANNED_CLOSED) {
+      } else if (
+        journey.status === JourneyStatus.CLOSED ||
+        journey.status === JourneyStatus.UNPLANNED_CLOSED
+      ) {
         closedDays++;
       }
 
       if (journey.checkin?.checkInTime && journey.shift?.startTime) {
         const checkInTime = dayjs(journey.checkin.checkInTime);
-        const [shiftHours, shiftMinutes] = journey.shift.startTime.split(':').map(Number);
-        const shiftStart = dayjs(journey.checkin.checkInTime).hour(shiftHours).minute(shiftMinutes).second(0);
+        const [shiftHours, shiftMinutes] = journey.shift.startTime
+          .split(":")
+          .map(Number);
+        const shiftStart = dayjs(journey.checkin.checkInTime)
+          .hour(shiftHours)
+          .minute(shiftMinutes)
+          .second(0);
 
         if (checkInTime.isAfter(shiftStart)) {
           lateDays++;
@@ -1611,21 +1871,24 @@ if (typeof value === 'string') {
 
     // Sales Stats
     const now = dayjs();
-    const startOfMonth = now.startOf('month').toDate();
-    const last7Days = now.subtract(7, 'day').toDate();
+    const startOfMonth = now.startOf("month").toDate();
+    const last7Days = now.subtract(7, "day").toDate();
 
     const allSales = await this.saleRepo.find({
-      where: { user: { id: userId }, status: 'completed' },
+      where: { user: { id: userId }, status: "completed" },
     });
 
-    const totalSalesAmount = allSales.reduce((acc, sale) => acc + Number(sale.total_amount), 0);
-    
+    const totalSalesAmount = allSales.reduce(
+      (acc, sale) => acc + Number(sale.total_amount),
+      0,
+    );
+
     const monthlySalesAmount = allSales
-      .filter(sale => dayjs(sale.sale_date).isAfter(startOfMonth))
+      .filter((sale) => dayjs(sale.sale_date).isAfter(startOfMonth))
       .reduce((acc, sale) => acc + Number(sale.total_amount), 0);
 
     const weeklySalesAmount = allSales
-      .filter(sale => dayjs(sale.sale_date).isAfter(last7Days))
+      .filter((sale) => dayjs(sale.sale_date).isAfter(last7Days))
       .reduce((acc, sale) => acc + Number(sale.total_amount), 0);
 
     return {

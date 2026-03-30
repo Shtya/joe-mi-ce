@@ -7,25 +7,27 @@ import {
   OnGatewayDisconnect,
   MessageBody,
   ConnectedSocket,
-} from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
-import { JwtService } from '@nestjs/jwt';
-import { Logger } from '@nestjs/common';
-import { JourneyService } from './journey.service';
+} from "@nestjs/websockets";
+import { Server, Socket } from "socket.io";
+import { JwtService } from "@nestjs/jwt";
+import { Logger } from "@nestjs/common";
+import { JourneyService } from "./journey.service";
 
 interface LocationPayload {
   lat: number;
   lng: number;
   journeyId?: string;
-  recordedAt?: string;  // ISO string — provided by app when syncing offline pings
+  recordedAt?: string; // ISO string — provided by app when syncing offline pings
   isOffline?: boolean;
 }
 
 @WebSocketGateway({
-  namespace: '/location',
-  cors: { origin: '*', credentials: true },
+  namespace: "/location",
+  cors: { origin: "*", credentials: true },
 })
-export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class LocationGateway
+  implements OnGatewayConnection, OnGatewayDisconnect
+{
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(LocationGateway.name);
 
@@ -40,8 +42,9 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
     try {
       const raw =
         (client.handshake.auth?.token as string) ||
-        (client.handshake.headers?.authorization as string) || '';
-      const token = raw.replace(/^Bearer\s+/i, '');
+        (client.handshake.headers?.authorization as string) ||
+        "";
+      const token = raw.replace(/^Bearer\s+/i, "");
 
       const payload = await this.jwtService.verifyAsync(token, {
         secret: process.env.JWT_SECRET,
@@ -53,7 +56,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
       this.logger.log(`WS connected: userId=${payload.sub}`);
     } catch {
-      this.logger.warn('WS auth failed — disconnecting client');
+      this.logger.warn("WS auth failed — disconnecting client");
       client.disconnect();
     }
   }
@@ -70,7 +73,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
    *
    * Emits back: { isOutside: boolean }
    */
-  @SubscribeMessage('location.update')
+  @SubscribeMessage("location.update")
   async handleLocationUpdate(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: LocationPayload,
@@ -92,20 +95,24 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayDisconnect
 
       // Broadcast to any admin watching this project room
       if (result.projectId) {
-        this.server.to(`project:${result.projectId}`).emit('location.broadcast', {
-          userId,
-          name: result.name,
-          avatar_url: result.avatar_url,
-          lat: result.lat,
-          lng: result.lng,
-          isOutside: result.isOutside,
-          updatedAt: result.updatedAt,
-        });
+        this.server
+          .to(`project:${result.projectId}`)
+          .emit("location.broadcast", {
+            userId,
+            name: result.name,
+            avatar_url: result.avatar_url,
+            lat: result.lat,
+            lng: result.lng,
+            isOutside: result.isOutside,
+            updatedAt: result.updatedAt,
+          });
       }
 
       return { isOutside: result.isOutside };
     } catch (err) {
-      this.logger.error(`location.update error for userId=${userId}: ${err.message}`);
+      this.logger.error(
+        `location.update error for userId=${userId}: ${err.message}`,
+      );
     }
   }
 }

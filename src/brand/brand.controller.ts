@@ -1,15 +1,26 @@
-import { Controller, Get, Post, Body, Param, Put, Delete, Query, UseGuards, Req } from '@nestjs/common';
-import { BrandService } from './brand.service';
-import { CreateBrandDto, UpdateBrandDto } from 'dto/brand.dto';
-import { PaginationQueryDto } from 'dto/pagination.dto';
-import { CRUD } from 'common/crud.service';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { Permissions } from 'decorators/permissions.decorators';
-import { EPermission } from 'enums/Permissions.enum';
-import { ERole } from 'enums/Role.enum';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Put,
+  Delete,
+  Query,
+  UseGuards,
+  Req,
+} from "@nestjs/common";
+import { BrandService } from "./brand.service";
+import { CreateBrandDto, UpdateBrandDto } from "dto/brand.dto";
+import { PaginationQueryDto } from "dto/pagination.dto";
+import { CRUD } from "common/crud.service";
+import { AuthGuard } from "src/auth/auth.guard";
+import { Permissions } from "decorators/permissions.decorators";
+import { EPermission } from "enums/Permissions.enum";
+import { ERole } from "enums/Role.enum";
 
 @UseGuards(AuthGuard)
-@Controller('brands')
+@Controller("brands")
 export class BrandController {
   constructor(private readonly brandService: BrandService) {}
 
@@ -24,90 +35,90 @@ export class BrandController {
   findAllForMobile(@Query() query: PaginationQueryDto, @Req() req: any) {
     return this.brandService.findBrandsForMobile(query, req.user);
   }
-  @Post(':id/categories')
+  @Post(":id/categories")
   @Permissions(EPermission.BRAND_UPDATE)
   assignCategories(
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body() body: { categoryIds: string[] },
-    @Req() req:any
+    @Req() req: any,
   ) {
-    return this.brandService.assignCategories(id, body.categoryIds,req.user);
+    return this.brandService.assignCategories(id, body.categoryIds, req.user);
   }
-  @Delete(':id/categories')
+  @Delete(":id/categories")
   @Permissions(EPermission.BRAND_UPDATE)
   removeCategories(
-    @Param('id') id: string,
+    @Param("id") id: string,
     @Body() body: { categoryIds: string[] },
-    @Req() req:any
-
+    @Req() req: any,
   ) {
-    return this.brandService.removeCategories(id, body.categoryIds,req.user);
+    return this.brandService.removeCategories(id, body.categoryIds, req.user);
   }
 
-@Get()
-@Permissions(EPermission.BRAND_READ)
+  @Get()
+  @Permissions(EPermission.BRAND_READ)
   async findAll(@Query() query: PaginationQueryDto, @Req() req: any) {
-  const user = req.user;
-  const isSuper = user?.role?.name === ERole.SUPER_ADMIN;
+    const user = req.user;
+    const isSuper = user?.role?.name === ERole.SUPER_ADMIN;
 
-  // Super admins see all brands
-  if (isSuper) {
+    // Super admins see all brands
+    if (isSuper) {
+      return CRUD.findAll(
+        this.brandService.brandRepository,
+        "brand",
+        query.search,
+        query.page,
+        query.limit,
+        query.sortBy,
+        query.sortOrder,
+        ["categories"],
+        ["name"],
+      );
+    }
+
+    // Regular users: brands in the project OR owned by the user
+    const projectId =
+      await this.brandService.userService.resolveProjectIdFromUser(user.id);
+    console.log(projectId);
+    // Define OR filters as an array
+    const orFilters = [
+      { project: { id: projectId } },
+      { ownerUserId: user.id },
+    ];
+
     return CRUD.findAll(
       this.brandService.brandRepository,
-      'brand',
+      "brand",
       query.search,
       query.page,
       query.limit,
       query.sortBy,
       query.sortOrder,
-      ['categories'],
-      ['name']
+      ["categories"],
+      ["name"],
+      undefined, // regular filters (none in this case)
+      orFilters, // OR filters
     );
   }
 
-  // Regular users: brands in the project OR owned by the user
-  const projectId =  await this.brandService.userService.resolveProjectIdFromUser(user.id);
-  console.log(projectId)
-  // Define OR filters as an array
-  const orFilters = [
-    { project: { id: projectId } },
-    { ownerUserId: user.id }
-  ];
-
-  return CRUD.findAll(
-    this.brandService.brandRepository,
-    'brand',
-    query.search,
-    query.page,
-    query.limit,
-    query.sortBy,
-    query.sortOrder,
-    ['categories'],
-    ['name'],
-    undefined, // regular filters (none in this case)
-    orFilters  // OR filters
-  );
-}
-
-  @Get(':id')
+  @Get(":id")
   @Permissions(EPermission.BRAND_READ)
-  findOne(@Param('id') id: string,
-    @Req() req:any
-) {
-    return this.brandService.findOne(id,req.user);
+  findOne(@Param("id") id: string, @Req() req: any) {
+    return this.brandService.findOne(id, req.user);
   }
 
-  @Put(':id')
+  @Put(":id")
   @Permissions(EPermission.BRAND_UPDATE)
-  update(@Param('id') id: string, @Body() updateBrandDto: UpdateBrandDto,
-    @Req() req:any
-) {
-    return this.brandService.update(id, updateBrandDto,req.user);
+  update(
+    @Param("id") id: string,
+    @Body() updateBrandDto: UpdateBrandDto,
+    @Req() req: any,
+  ) {
+    return this.brandService.update(id, updateBrandDto, req.user);
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @Permissions(EPermission.BRAND_DELETE)
-  remove(@Param('id') id: string) {
-    return CRUD.delete(this.brandService.brandRepository, 'brand', id);
+  remove(@Param("id") id: string) {
+    return CRUD.delete(this.brandService.brandRepository, "brand", id);
   }
 }

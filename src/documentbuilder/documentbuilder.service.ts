@@ -1,11 +1,15 @@
-import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { TaskField, DocumentBuilder, DocumentElement } from '../../entities/documentbuilder.entity';
-import { User } from '../../entities/user.entity';
+import { Injectable } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import {
+  TaskField,
+  DocumentBuilder,
+  DocumentElement,
+} from "../../entities/documentbuilder.entity";
+import { User } from "../../entities/user.entity";
 
-import { CreateDocumentbuilderDto } from './dto/create-documentbuilder.dto';
-import { UpdateDocumentbuilderDto } from './dto/update-documentbuilder.dto';
+import { CreateDocumentbuilderDto } from "./dto/create-documentbuilder.dto";
+import { UpdateDocumentbuilderDto } from "./dto/update-documentbuilder.dto";
 
 @Injectable()
 export class DocumentbuilderService {
@@ -51,23 +55,21 @@ export class DocumentbuilderService {
 
   findAll(user: User) {
     return this.documentBuilderRepository.find({
-      where: [
-        { user: { id: user.id } },
-        { isMain: true }
-      ],
-      relations: ['elements'],
+      where: [{ user: { id: user.id } }, { isMain: true }],
+      relations: ["elements"],
       order: {
-        created_at: 'DESC',
-      }
+        created_at: "DESC",
+      },
     });
   }
 
   async findMain() {
     return this.documentBuilderRepository.findOne({
       where: { isMain: true },
-      relations: ['elements'],
+      relations: ["elements"],
     });
-  }2501550079
+  }
+  2501550079;
 
   async findAllTaskFields() {
     return await this.taskFieldRepository.find();
@@ -76,40 +78,44 @@ export class DocumentbuilderService {
   async findOne(id: string, user: User) {
     const doc = await this.documentBuilderRepository.findOne({
       where: { id },
-      relations: ['elements', 'user'],
+      relations: ["elements", "user"],
     });
 
     if (!doc) return null;
 
     // Check visibility: Owner OR Main
     if (doc.isMain || (doc.user && doc.user.id === user.id)) {
-        return doc;
+      return doc;
     }
 
     return null; // Or throw forbidden
   }
 
-  async update(id: string, updateDocumentbuilderDto: UpdateDocumentbuilderDto, user: User) {
+  async update(
+    id: string,
+    updateDocumentbuilderDto: UpdateDocumentbuilderDto,
+    user: User,
+  ) {
     const doc = await this.findOne(id, user);
     if (!doc) {
-      throw new Error('Document not found or access denied');
+      throw new Error("Document not found or access denied");
     }
 
     // Ownership check for update - only owner can update (unless admin, but simplifying for now)
     // Main docs might be editable by everyone if we don't strict check, but usually only admins edit main.
-    // For now, allow if found (which means isMain or isOwner). 
+    // For now, allow if found (which means isMain or isOwner).
     // If specific logic needed: "Users cannot edit Main docs", add:
     if (doc.isMain && (!doc.user || doc.user.id !== user.id)) {
-        // Decide if users can edit main docs. Usually NO. 
-        // Assuming users clone main docs to edit them.
-        // But keeping it open if the user is the CREATOR of the main doc (e.g. admin).
-        // If doc.isMain is true, usually it's a template.
-        // Let's assume only owner can edit.
+      // Decide if users can edit main docs. Usually NO.
+      // Assuming users clone main docs to edit them.
+      // But keeping it open if the user is the CREATOR of the main doc (e.g. admin).
+      // If doc.isMain is true, usually it's a template.
+      // Let's assume only owner can edit.
     }
-    
+
     // Strict ownership check:
     if (doc.user && doc.user.id !== user.id) {
-       throw new Error('You can only update your own documents.');
+      throw new Error("You can only update your own documents.");
     }
 
     const { paperSize, elements, taskData, timestamp, isMain } =
@@ -149,11 +155,19 @@ export class DocumentbuilderService {
     // We allow duplicating any visible doc (Own or Main)
     const original = await this.findOne(id, user);
     if (!original) {
-      throw new Error('Document not found or access denied');
+      throw new Error("Document not found or access denied");
     }
 
     // Clone document
-    const { id: _, created_at, updated_at, deleted_at, elements, user: __, ...docData } = original;
+    const {
+      id: _,
+      created_at,
+      updated_at,
+      deleted_at,
+      elements,
+      user: __,
+      ...docData
+    } = original;
     const newDoc = this.documentBuilderRepository.create({
       ...docData,
       isMain: false, // Duplicates are private
@@ -181,13 +195,13 @@ export class DocumentbuilderService {
   }
 
   async remove(id: string, user: User) {
-     const doc = await this.findOne(id, user);
-     if (!doc) {
-       throw new Error('Document not found');
-     }
-     if (doc.user && doc.user.id !== user.id) {
-         throw new Error('Cannot delete document you do not own');
-     }
+    const doc = await this.findOne(id, user);
+    if (!doc) {
+      throw new Error("Document not found");
+    }
+    if (doc.user && doc.user.id !== user.id) {
+      throw new Error("Cannot delete document you do not own");
+    }
     return this.documentBuilderRepository.delete(id);
   }
 }

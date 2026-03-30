@@ -1,7 +1,7 @@
 // ===== journey.cron.ts =====
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
-import { JourneyService } from './journey.service';
+import { Injectable, Logger } from "@nestjs/common";
+import { Cron } from "@nestjs/schedule";
+import { JourneyService } from "./journey.service";
 
 @Injectable()
 export class JourneyCron {
@@ -9,43 +9,51 @@ export class JourneyCron {
 
   constructor(private readonly journeyService: JourneyService) {}
 
-  @Cron('0 4 * * *',{ timeZone: 'Asia/Riyadh' }) // كل منتصف الليل
+  @Cron("0 4 * * *", { timeZone: "Asia/Riyadh" }) // كل منتصف الليل
   async handleDailyJourneyCreation() {
-    this.logger.log('🚀 Starting creation of planned journeys for tomorrow...');
+    this.logger.log("🚀 Starting creation of planned journeys for tomorrow...");
 
     try {
       const result = await this.journeyService.createJourneysForTomorrow();
-      this.logger.log(`✅ Created ${result.createdCount} planned journeys for ${result.date}`);
+      this.logger.log(
+        `✅ Created ${result.createdCount} planned journeys for ${result.date}`,
+      );
     } catch (error) {
-      this.logger.error('❌ Error creating journeys for tomorrow:', error);
+      this.logger.error("❌ Error creating journeys for tomorrow:", error);
     }
   }
 
-  @Cron('0 5 * * *', { timeZone: 'Asia/Riyadh' }) // 5 AM Saudi time
+  @Cron("0 5 * * *", { timeZone: "Asia/Riyadh" }) // 5 AM Saudi time
   async handleAutoCloseJourneys() {
-    this.logger.log('🔒 Starting auto-close of open journeys at 5 AM Saudi time...');
+    this.logger.log(
+      "🔒 Starting auto-close of open journeys at 5 AM Saudi time...",
+    );
 
     try {
       const result = await this.journeyService.autoCloseJourneys();
-      this.logger.log(`✅ Auto-closed ${result.closedCount} out of ${result.totalFound} open journeys at ${result.timestamp}`);
+      this.logger.log(
+        `✅ Auto-closed ${result.closedCount} out of ${result.totalFound} open journeys at ${result.timestamp}`,
+      );
     } catch (error) {
-      this.logger.error('❌ Error auto-closing journeys:', error);
+      this.logger.error("❌ Error auto-closing journeys:", error);
     }
   }
 
   // Run every 2 hours to fix any gaps
-@Cron('0 6 * * *',{ timeZone: 'Asia/Riyadh' })
+  @Cron("0 6 * * *", { timeZone: "Asia/Riyadh" })
   async handleJourneyRecovery() {
-    this.logger.log('🛠️ Starting journey recovery check...');
+    this.logger.log("🛠️ Starting journey recovery check...");
     try {
       const result = await this.journeyService.recoverJourneys();
       if (result.restoredCount > 0 || result.createdCount > 0) {
-        this.logger.warn(`⚠️ Recovered journeys: ${result.restoredCount} restored, ${result.createdCount} created.`);
+        this.logger.warn(
+          `⚠️ Recovered journeys: ${result.restoredCount} restored, ${result.createdCount} created.`,
+        );
       } else {
-        this.logger.log('✅ No missing journeys found.');
+        this.logger.log("✅ No missing journeys found.");
       }
     } catch (error) {
-      this.logger.error('❌ Error during journey recovery:', error);
+      this.logger.error("❌ Error during journey recovery:", error);
     }
   }
 }

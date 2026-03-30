@@ -1,5 +1,5 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import * as admin from 'firebase-admin';
+import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import * as admin from "firebase-admin";
 
 @Injectable()
 export class FirebaseService implements OnModuleInit {
@@ -16,7 +16,7 @@ export class FirebaseService implements OnModuleInit {
 
       if (!serviceAccountJson) {
         this.logger.warn(
-          'FIREBASE_SERVICE_ACCOUNT_JSON is not set. Push notifications will be disabled.',
+          "FIREBASE_SERVICE_ACCOUNT_JSON is not set. Push notifications will be disabled.",
         );
         return;
       }
@@ -27,9 +27,12 @@ export class FirebaseService implements OnModuleInit {
         credential: admin.credential.cert(serviceAccount),
       });
 
-      this.logger.log('Firebase Admin SDK initialised successfully.');
+      this.logger.log("Firebase Admin SDK initialised successfully.");
     } catch (err) {
-      this.logger.error('Failed to initialise Firebase Admin SDK', err?.message);
+      this.logger.error(
+        "Failed to initialise Firebase Admin SDK",
+        err?.message,
+      );
     }
   }
 
@@ -48,7 +51,9 @@ export class FirebaseService implements OnModuleInit {
     }
 
     if (admin.apps.length === 0) {
-      this.logger.warn('Firebase is not initialised; skipping push notification.');
+      this.logger.warn(
+        "Firebase is not initialised; skipping push notification.",
+      );
       return;
     }
 
@@ -58,16 +63,16 @@ export class FirebaseService implements OnModuleInit {
         notification: { title, body },
         data: data ?? {},
         android: {
-          priority: 'high',
+          priority: "high",
           notification: {
-            sound: 'default',
-            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+            sound: "default",
+            clickAction: "FLUTTER_NOTIFICATION_CLICK",
           },
         },
         apns: {
           payload: {
             aps: {
-              sound: 'default',
+              sound: "default",
               badge: 1,
             },
           },
@@ -96,7 +101,9 @@ export class FirebaseService implements OnModuleInit {
     }
 
     if (admin.apps.length === 0) {
-      this.logger.warn('Firebase is not initialised; skipping multicast push notification.');
+      this.logger.warn(
+        "Firebase is not initialised; skipping multicast push notification.",
+      );
       return;
     }
 
@@ -106,16 +113,16 @@ export class FirebaseService implements OnModuleInit {
         notification: { title, body },
         data: data ?? {},
         android: {
-          priority: 'high',
+          priority: "high",
           notification: {
-            sound: 'default',
-            clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+            sound: "default",
+            clickAction: "FLUTTER_NOTIFICATION_CLICK",
           },
         },
         apns: {
           payload: {
             aps: {
-              sound: 'default',
+              sound: "default",
               badge: 1,
             },
           },
@@ -127,7 +134,9 @@ export class FirebaseService implements OnModuleInit {
         `Multicast push: ${response.successCount} sent, ${response.failureCount} failed.`,
       );
     } catch (err) {
-      this.logger.error(`Failed to send multicast push notification: ${err?.message}`);
+      this.logger.error(
+        `Failed to send multicast push notification: ${err?.message}`,
+      );
     }
   }
 }

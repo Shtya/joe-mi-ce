@@ -1,9 +1,13 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Competitor } from 'entities/competitor.entity';
-import { CreateCompetitorDto, UpdateCompetitorDto } from 'dto/competitors.dto';
-import { Project } from 'entities/project.entity';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Competitor } from "entities/competitor.entity";
+import { CreateCompetitorDto, UpdateCompetitorDto } from "dto/competitors.dto";
+import { Project } from "entities/project.entity";
 
 @Injectable()
 export class CompetitorService {
@@ -15,7 +19,9 @@ export class CompetitorService {
   ) {}
 
   async createCompetitor(dto: CreateCompetitorDto): Promise<Competitor> {
-    const project = await this.projectRepo.findOne({ where: { id: dto.projectId } });
+    const project = await this.projectRepo.findOne({
+      where: { id: dto.projectId },
+    });
     if (!project) {
       throw new NotFoundException(`Project with id ${dto.projectId} not found`);
     }
@@ -24,7 +30,9 @@ export class CompetitorService {
       where: { name: dto.name, project: { id: dto.projectId } },
     });
     if (existingCompetitor) {
-      throw new ConflictException(`Competitor with name ${dto.name} already exists for this project`);
+      throw new ConflictException(
+        `Competitor with name ${dto.name} already exists for this project`,
+      );
     }
 
     const competitor = this.competitorRepo.create({
@@ -43,10 +51,13 @@ export class CompetitorService {
     return competitor;
   }
 
-  async updateCompetitor(id: string, dto: UpdateCompetitorDto): Promise<Competitor> {
+  async updateCompetitor(
+    id: string,
+    dto: UpdateCompetitorDto,
+  ): Promise<Competitor> {
     const competitor = await this.competitorRepo.findOne({
       where: { id },
-      relations: ['project'],
+      relations: ["project"],
     });
 
     if (!competitor) {
@@ -54,19 +65,28 @@ export class CompetitorService {
     }
 
     if (dto.projectId) {
-      const project = await this.projectRepo.findOne({ where: { id: dto.projectId } });
+      const project = await this.projectRepo.findOne({
+        where: { id: dto.projectId },
+      });
       if (!project) {
-        throw new NotFoundException(`Project with id ${dto.projectId} not found`);
+        throw new NotFoundException(
+          `Project with id ${dto.projectId} not found`,
+        );
       }
       competitor.project = project;
     }
 
     if (dto.name && dto.name !== competitor.name) {
       const existingCompetitor = await this.competitorRepo.findOne({
-        where: { name: dto.name, project: { id: competitor.project.id ||competitor.project_id } },
+        where: {
+          name: dto.name,
+          project: { id: competitor.project.id || competitor.project_id },
+        },
       });
       if (existingCompetitor) {
-        throw new ConflictException(`Competitor with name ${dto.name} already exists for this project`);
+        throw new ConflictException(
+          `Competitor with name ${dto.name} already exists for this project`,
+        );
       }
       competitor.name = dto.name;
     }

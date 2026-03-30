@@ -1,27 +1,30 @@
 // src/projects/project-stats.service.ts
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 
-import { Project } from 'entities/project.entity';
-import { Branch } from 'entities/branch.entity';
-import { User } from 'entities/user.entity';
-import { Product } from 'entities/products/product.entity';
-import { Competitor } from 'entities/competitor.entity';
-import { Shift } from 'entities/employee/shift.entity';
-import { Journey, JourneyStatus, JourneyType } from 'entities/all_plans.entity';
-import { CheckIn } from 'entities/all_plans.entity'; // same file
-import { Audit } from 'entities/audit.entity';
-import { Sale } from 'entities/products/sale.entity';
-import { Stock } from 'entities/products/stock.entity';
-import { Feedback } from 'entities/feedback.entity';
-import { Survey } from 'entities/survey.entity';
-import { SurveyFeedback, SurveyFeedbackAnswer } from 'entities/survey-feedback.entity';
+import { Project } from "entities/project.entity";
+import { Branch } from "entities/branch.entity";
+import { User } from "entities/user.entity";
+import { Product } from "entities/products/product.entity";
+import { Competitor } from "entities/competitor.entity";
+import { Shift } from "entities/employee/shift.entity";
+import { Journey, JourneyStatus, JourneyType } from "entities/all_plans.entity";
+import { CheckIn } from "entities/all_plans.entity"; // same file
+import { Audit } from "entities/audit.entity";
+import { Sale } from "entities/products/sale.entity";
+import { Stock } from "entities/products/stock.entity";
+import { Feedback } from "entities/feedback.entity";
+import { Survey } from "entities/survey.entity";
+import {
+  SurveyFeedback,
+  SurveyFeedbackAnswer,
+} from "entities/survey-feedback.entity";
 
-import { ProjectStatsDto } from './stats.dto';
-import { SalesTargetService } from 'src/sales-target/sales-target.service';
-import { Role } from 'entities/role.entity';
-import { ERole } from 'enums/Role.enum';
+import { ProjectStatsDto } from "./stats.dto";
+import { SalesTargetService } from "src/sales-target/sales-target.service";
+import { Role } from "entities/role.entity";
+import { ERole } from "enums/Role.enum";
 
 @Injectable()
 export class ProjectStatsService {
@@ -71,12 +74,13 @@ export class ProjectStatsService {
     @InjectRepository(SurveyFeedbackAnswer)
     private readonly surveyFeedbackAnswerRepo: Repository<SurveyFeedbackAnswer>,
 
-        private readonly salesTargetService: SalesTargetService, // <--- add this
-
+    private readonly salesTargetService: SalesTargetService, // <--- add this
   ) {}
 
   async getProjectStats(projectId: string): Promise<ProjectStatsDto> {
-    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
     if (!project) {
       throw new NotFoundException(`Project ${projectId} not found`);
     }
@@ -94,7 +98,9 @@ export class ProjectStatsService {
       surveysCount,
     ] = await Promise.all([
       this.branchRepo.count({ where: { project: { id: projectId } } }),
-      this.userRepo.count({ where: { project_id: projectId ,role:{name:ERole.PROMOTER}} ,}),
+      this.userRepo.count({
+        where: { project_id: projectId, role: { name: ERole.PROMOTER } },
+      }),
       this.productRepo.count({ where: { project: { id: projectId } } }),
       this.competitorRepo.count({ where: { project: { id: projectId } } }),
       this.shiftRepo.count({ where: { project: { id: projectId } } }),
@@ -104,21 +110,21 @@ export class ProjectStatsService {
     // --------- Journeys ----------
     const [journeyAgg, journeyTodayAgg] = await Promise.all([
       this.journeyRepo
-        .createQueryBuilder('j')
-        .select('COUNT(*)', 'total')
-        .addSelect('j.type', 'type')
-        .addSelect('j.status', 'status')
-        .where('j.projectId = :projectId', { projectId })
-        .groupBy('j.type')
-        .addGroupBy('j.status')
+        .createQueryBuilder("j")
+        .select("COUNT(*)", "total")
+        .addSelect("j.type", "type")
+        .addSelect("j.status", "status")
+        .where("j.projectId = :projectId", { projectId })
+        .groupBy("j.type")
+        .addGroupBy("j.status")
         .getRawMany(),
       this.journeyRepo
-        .createQueryBuilder('j')
-        .select('COUNT(*)', 'total')
-        .addSelect('j.status', 'status')
-        .where('j.projectId = :projectId', { projectId })
-        .andWhere('j.date = :today', { today: todayStr })
-        .groupBy('j.status')
+        .createQueryBuilder("j")
+        .select("COUNT(*)", "total")
+        .addSelect("j.status", "status")
+        .where("j.projectId = :projectId", { projectId })
+        .andWhere("j.date = :today", { today: todayStr })
+        .groupBy("j.status")
         .getRawMany(),
     ]);
 
@@ -126,7 +132,7 @@ export class ProjectStatsService {
     const journeysByStatus: Record<string, number> = {};
     let journeysTotal = 0;
 
-    journeyAgg.forEach(row => {
+    journeyAgg.forEach((row) => {
       const type = row.type as JourneyType;
       const status = row.status as JourneyStatus;
       const count = Number(row.total) || 0;
@@ -140,7 +146,7 @@ export class ProjectStatsService {
     let todayPresent = 0;
     let todayAbsent = 0;
 
-    journeyTodayAgg.forEach(row => {
+    journeyTodayAgg.forEach((row) => {
       const status = row.status as JourneyStatus;
       const count = Number(row.total) || 0;
 
@@ -160,114 +166,115 @@ export class ProjectStatsService {
     // --------- Checkins ----------
     const [totalCheckins, todayCheckins] = await Promise.all([
       this.checkinRepo
-        .createQueryBuilder('c')
-        .innerJoin('c.journey', 'j')
-        .where('j.projectId = :projectId', { projectId })
+        .createQueryBuilder("c")
+        .innerJoin("c.journey", "j")
+        .where("j.projectId = :projectId", { projectId })
         .getCount(),
       this.checkinRepo
-        .createQueryBuilder('c')
-        .innerJoin('c.journey', 'j')
-        .where('j.projectId = :projectId', { projectId })
-        .andWhere('DATE(c.checkInTime) = :today', { today: todayStr })
+        .createQueryBuilder("c")
+        .innerJoin("c.journey", "j")
+        .where("j.projectId = :projectId", { projectId })
+        .andWhere("DATE(c.checkInTime) = :today", { today: todayStr })
         .getCount(),
     ]);
 
     // --------- Audits ----------
-const [auditAgg, auditsWithImages] = await Promise.all([
-  this.auditRepo
-    .createQueryBuilder('a')
-    .select('COUNT(a.id)', 'count')
-    .where('a.projectId = :projectId', { projectId })
-    .getRawOne(),
+    const [auditAgg, auditsWithImages] = await Promise.all([
+      this.auditRepo
+        .createQueryBuilder("a")
+        .select("COUNT(a.id)", "count")
+        .where("a.projectId = :projectId", { projectId })
+        .getRawOne(),
 
-  this.auditRepo
-    .createQueryBuilder('a')
-    .where('a.projectId = :projectId', { projectId })
-    .getCount(),
-]);
-const branches = await this.branchRepo.find({ where: { project: { id: projectId } } });
+      this.auditRepo
+        .createQueryBuilder("a")
+        .where("a.projectId = :projectId", { projectId })
+        .getCount(),
+    ]);
+    const branches = await this.branchRepo.find({
+      where: { project: { id: projectId } },
+    });
 
-const salesTargetsPromises = branches.map(branch =>
-  this.salesTargetService.getCurrentTarget(branch.id),
-);
+    const salesTargetsPromises = branches.map((branch) =>
+      this.salesTargetService.getCurrentTarget(branch.id),
+    );
 
-const currentTargets = await Promise.all(salesTargetsPromises);
+    const currentTargets = await Promise.all(salesTargetsPromises);
 
-const salesTargets = currentTargets
-  .filter(t => !!t)
-  .map(t => ({
-    branchId: t.branch.id,
-    branchName: t.branch.name,
-    type: t.type,
-    targetAmount: t.targetAmount,
-    currentAmount: t.currentAmount,
-    progress: t.targetAmount ? (t.currentAmount / t.targetAmount) * 100 : 0,
-    status: t.status,
-  }));
-const salesPerPromoterRaw = await this.saleRepo
-  .createQueryBuilder('s')
-  .innerJoin('s.user', 'p')
-  .where('s.projectId = :projectId', { projectId })
-  .select('p.id', 'promoterId')
-  .addSelect('p.name', 'promoterName')
-  .addSelect('SUM(s.quantity)', 'totalQuantity')
-  .addSelect('SUM(s.total_amount)', 'totalAmount')
-  .groupBy('p.id')
-  .addGroupBy('p.name')
-  .getRawMany();
-
-const salesPerPromoter = salesPerPromoterRaw.map(item => ({
-  id: item.promoterId,
-  name: item.promoterName,
-  totalQuantity: Number(item.totalQuantity),
-  totalAmount: Number(item.totalAmount),
-}));
-
-const startOfWeek = new Date(today);
-const day = today.getDay(); // Sunday - Saturday : 0 - 6
-const diff = today.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-startOfWeek.setDate(diff);
-const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
-
-    const topSellingPromotersRaw = await this.saleRepo
-      .createQueryBuilder('s')
-      .innerJoin('s.user', 'p')
-      .select('p.id', 'promoterId')
-      .addSelect('p.name', 'promoterName')
-      .addSelect('SUM(s.quantity)', 'totalQuantity')
-      .addSelect('SUM(s.total_amount)', 'totalAmount')
-      .where('s.projectId = :projectId', { projectId })
-      .andWhere('s.sale_date >= :startOfWeek', { startOfWeek: startOfWeekStr })
-      .groupBy('p.id')
-      .addGroupBy('p.name')
-      .orderBy('SUM(s.total_amount)', 'DESC')
-      .limit(7)
+    const salesTargets = currentTargets
+      .filter((t) => !!t)
+      .map((t) => ({
+        branchId: t.branch.id,
+        branchName: t.branch.name,
+        type: t.type,
+        targetAmount: t.targetAmount,
+        currentAmount: t.currentAmount,
+        progress: t.targetAmount ? (t.currentAmount / t.targetAmount) * 100 : 0,
+        status: t.status,
+      }));
+    const salesPerPromoterRaw = await this.saleRepo
+      .createQueryBuilder("s")
+      .innerJoin("s.user", "p")
+      .where("s.projectId = :projectId", { projectId })
+      .select("p.id", "promoterId")
+      .addSelect("p.name", "promoterName")
+      .addSelect("SUM(s.quantity)", "totalQuantity")
+      .addSelect("SUM(s.total_amount)", "totalAmount")
+      .groupBy("p.id")
+      .addGroupBy("p.name")
       .getRawMany();
 
-    const topSellingPromoters = topSellingPromotersRaw.map(item => ({
+    const salesPerPromoter = salesPerPromoterRaw.map((item) => ({
       id: item.promoterId,
       name: item.promoterName,
       totalQuantity: Number(item.totalQuantity),
       totalAmount: Number(item.totalAmount),
     }));
 
+    const startOfWeek = new Date(today);
+    const day = today.getDay(); // Sunday - Saturday : 0 - 6
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+    startOfWeek.setDate(diff);
+    const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
 
-const auditsTotal = Number(auditAgg?.count) || 0;
+    const topSellingPromotersRaw = await this.saleRepo
+      .createQueryBuilder("s")
+      .innerJoin("s.user", "p")
+      .select("p.id", "promoterId")
+      .addSelect("p.name", "promoterName")
+      .addSelect("SUM(s.quantity)", "totalQuantity")
+      .addSelect("SUM(s.total_amount)", "totalAmount")
+      .where("s.projectId = :projectId", { projectId })
+      .andWhere("s.sale_date >= :startOfWeek", { startOfWeek: startOfWeekStr })
+      .groupBy("p.id")
+      .addGroupBy("p.name")
+      .orderBy("SUM(s.total_amount)", "DESC")
+      .limit(7)
+      .getRawMany();
+
+    const topSellingPromoters = topSellingPromotersRaw.map((item) => ({
+      id: item.promoterId,
+      name: item.promoterName,
+      totalQuantity: Number(item.totalQuantity),
+      totalAmount: Number(item.totalAmount),
+    }));
+
+    const auditsTotal = Number(auditAgg?.count) || 0;
 
     // --------- Sales ----------
     const [salesAgg, salesTodayAgg] = await Promise.all([
       this.saleRepo
-        .createQueryBuilder('s')
-        .select('COUNT(*)', 'totalOrders')
-        .addSelect('SUM(s.quantity)', 'totalQuantity')
-        .addSelect('SUM(s.total_amount)', 'totalAmount')
-        .where('s.projectId = :projectId', { projectId })
+        .createQueryBuilder("s")
+        .select("COUNT(*)", "totalOrders")
+        .addSelect("SUM(s.quantity)", "totalQuantity")
+        .addSelect("SUM(s.total_amount)", "totalAmount")
+        .where("s.projectId = :projectId", { projectId })
         .getRawOne(),
       this.saleRepo
-        .createQueryBuilder('s')
-        .select('SUM(s.total_amount)', 'totalAmount')
-        .where('s.projectId = :projectId', { projectId })
-        .andWhere('DATE(s.sale_date) = :today', { today: todayStr })
+        .createQueryBuilder("s")
+        .select("SUM(s.total_amount)", "totalAmount")
+        .where("s.projectId = :projectId", { projectId })
+        .andWhere("DATE(s.sale_date) = :today", { today: todayStr })
         .getRawOne(),
     ]);
 
@@ -278,17 +285,17 @@ const auditsTotal = Number(auditAgg?.count) || 0;
 
     // --------- Stock ----------
     const stockAgg = await this.stockRepo
-      .createQueryBuilder('st')
-      .innerJoin('st.product', 'p')
-      .innerJoin('st.branch', 'b')
-      .innerJoin('b.project', 'proj')
-      .select('COUNT(DISTINCT st.product)', 'totalSkuWithStock')
-      .addSelect('SUM(st.quantity)', 'totalQuantity')
+      .createQueryBuilder("st")
+      .innerJoin("st.product", "p")
+      .innerJoin("st.branch", "b")
+      .innerJoin("b.project", "proj")
+      .select("COUNT(DISTINCT st.product)", "totalSkuWithStock")
+      .addSelect("SUM(st.quantity)", "totalQuantity")
       .addSelect(
         `COUNT(DISTINCT CASE WHEN st.quantity <= 0 THEN st.product ELSE NULL END)`,
-        'outOfStockSku',
+        "outOfStockSku",
       )
-      .where('proj.id = :projectId', { projectId })
+      .where("proj.id = :projectId", { projectId })
       .getRawOne();
 
     const totalSkuWithStock = Number(stockAgg?.totalSkuWithStock) || 0;
@@ -298,7 +305,9 @@ const auditsTotal = Number(auditAgg?.count) || 0;
     // --------- Feedback ----------
     const [feedbackTotal, feedbackResolved] = await Promise.all([
       this.feedbackRepo.count({ where: { project: { id: projectId } } }),
-      this.feedbackRepo.count({ where: { project: { id: projectId }, is_resolved: true } }),
+      this.feedbackRepo.count({
+        where: { project: { id: projectId }, is_resolved: true },
+      }),
     ]);
 
     const feedbackUnresolved = feedbackTotal - feedbackResolved;
@@ -306,35 +315,35 @@ const auditsTotal = Number(auditAgg?.count) || 0;
     // --------- Survey Feedback ----------
     const [surveyFeedbackCount, surveyAnswersAgg] = await Promise.all([
       this.surveyFeedbackRepo
-        .createQueryBuilder('sf')
-        .innerJoin('sf.survey', 's')
-        .where('s.projectId = :projectId', { projectId })
+        .createQueryBuilder("sf")
+        .innerJoin("sf.survey", "s")
+        .where("s.projectId = :projectId", { projectId })
         .getCount(),
       this.surveyFeedbackAnswerRepo
-        .createQueryBuilder('ans')
-        .innerJoin('ans.feedback', 'sf')
-        .innerJoin('sf.survey', 's')
-        .where('s.projectId = :projectId', { projectId })
-        .select('COUNT(*)', 'totalAnswers')
+        .createQueryBuilder("ans")
+        .innerJoin("ans.feedback", "sf")
+        .innerJoin("sf.survey", "s")
+        .where("s.projectId = :projectId", { projectId })
+        .select("COUNT(*)", "totalAnswers")
         .getRawOne(),
     ]);
     const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const firstDayStr = firstDayOfMonth.toISOString().slice(0, 10);
 
     const weeklySales = await this.saleRepo
-      .createQueryBuilder('s')
+      .createQueryBuilder("s")
       .select(
         `EXTRACT(WEEK FROM s.sale_date)::INTEGER - EXTRACT(WEEK FROM DATE_TRUNC('month', s.sale_date))::INTEGER + 1`,
-        'week',
+        "week",
       )
-      .addSelect('COUNT(*)', 'totalOrders')
-      .addSelect('SUM(s.quantity)', 'totalQuantity')
-      .addSelect('SUM(s.total_amount)', 'totalAmount')
-      .where('s.projectId = :projectId', { projectId })
-      .andWhere('s.sale_date >= :firstDay', { firstDay: firstDayStr })
-      .andWhere('s.sale_date <= :today', { today: todayStr })
-      .groupBy('week')
-      .orderBy('week', 'ASC')
+      .addSelect("COUNT(*)", "totalOrders")
+      .addSelect("SUM(s.quantity)", "totalQuantity")
+      .addSelect("SUM(s.total_amount)", "totalAmount")
+      .where("s.projectId = :projectId", { projectId })
+      .andWhere("s.sale_date >= :firstDay", { firstDay: firstDayStr })
+      .andWhere("s.sale_date <= :today", { today: todayStr })
+      .groupBy("week")
+      .orderBy("week", "ASC")
       .getRawMany();
     const totalAnswers = Number(surveyAnswersAgg?.totalAnswers) || 0;
 
@@ -374,16 +383,15 @@ const auditsTotal = Number(auditAgg?.count) || 0;
         totalQuantity: salesTotalQuantity,
         totalAmount: salesTotalAmount,
         todayTotalAmount: salesTodayTotalAmount,
-        weekly: weeklySales.map(w => ({
+        weekly: weeklySales.map((w) => ({
           week: Number(w.week),
           totalOrders: Number(w.totalOrders),
           totalQuantity: Number(w.totalQuantity),
           totalAmount: Number(w.totalAmount),
-
         })),
         topSellingPromoters,
         perPromoter: salesPerPromoter,
-  targets: salesTargets,
+        targets: salesTargets,
       },
 
       stock: {

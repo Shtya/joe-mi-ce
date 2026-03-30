@@ -1,112 +1,154 @@
 // stock.controller.ts
-import { Controller, Post, Body, Get, Param, Patch, Delete, UseGuards, Query, BadRequestException, Res, Req, Put } from '@nestjs/common';
-import { StockService } from './stock.service';
-import { CreateStockDto, CreateStockForAllBranch, UpdateStockDto } from 'dto/stock.dto';
-import { AuthGuard } from 'src/auth/auth.guard';
-import { CRUD } from 'common/crud.service';
-import { Permissions } from 'decorators/permissions.decorators';
-import { EPermission } from 'enums/Permissions.enum';
-import { ExportService } from 'src/export/export.service';
-import { PaginationQueryDto } from 'dto/pagination.dto';
-import { Between, LessThanOrEqual } from 'typeorm';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  Patch,
+  Delete,
+  UseGuards,
+  Query,
+  BadRequestException,
+  Res,
+  Req,
+  Put,
+} from "@nestjs/common";
+import { StockService } from "./stock.service";
+import {
+  CreateStockDto,
+  CreateStockForAllBranch,
+  UpdateStockDto,
+} from "dto/stock.dto";
+import { AuthGuard } from "src/auth/auth.guard";
+import { CRUD } from "common/crud.service";
+import { Permissions } from "decorators/permissions.decorators";
+import { EPermission } from "enums/Permissions.enum";
+import { ExportService } from "src/export/export.service";
+import { PaginationQueryDto } from "dto/pagination.dto";
+import { Between, LessThanOrEqual } from "typeorm";
 
 @UseGuards(AuthGuard)
-@Controller('stock')
+@Controller("stock")
 export class StockController {
   constructor(
     private readonly stockService: StockService,
     private readonly exportService: ExportService,
   ) {}
-// Add these to your StockController class
+  // Add these to your StockController class
 
-// Add these to your StockController class
+  // Add these to your StockController class
 
-@Get('mobile/stocks/:branchId')
-@UseGuards(AuthGuard)
-async getStocksByUserBranchMobile(
-  @Req() req: any,
-  @Param("branchId") branchId:any,
-  @Query('search') search?: string,
-  @Query('page') page: any = 1,
-  @Query('limit') limit: any = 10,
-  @Query('sortBy') sortBy?: string,
-  @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC',
-  @Query() filters?: any
-) {
-  const userId = req.user.id;
-  return this.stockService.getStocksByUserBranchMobile(
-    userId, branchId,search, page, limit, sortBy, sortOrder, filters
-  );
-}
+  @Get("mobile/stocks/:branchId")
+  @UseGuards(AuthGuard)
+  async getStocksByUserBranchMobile(
+    @Req() req: any,
+    @Param("branchId") branchId: any,
+    @Query("search") search?: string,
+    @Query("page") page: any = 1,
+    @Query("limit") limit: any = 10,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder: "ASC" | "DESC" = "DESC",
+    @Query() filters?: any,
+  ) {
+    const userId = req.user.id;
+    return this.stockService.getStocksByUserBranchMobile(
+      userId,
+      branchId,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      filters,
+    );
+  }
 
-@Post('mobile/stocks')
-@UseGuards(AuthGuard)
-async createStockMobile(
-  @Req() req: any,
+  @Post("mobile/stocks")
+  @UseGuards(AuthGuard)
+  async createStockMobile(
+    @Req() req: any,
 
-  @Body() createStockDto: CreateStockDto
-) {
-  const userId = req.user.id;
-  return this.stockService.createStockMobile(userId, createStockDto);
-}
+    @Body() createStockDto: CreateStockDto,
+  ) {
+    const userId = req.user.id;
+    return this.stockService.createStockMobile(userId, createStockDto);
+  }
 
-@Post('all-branches')
-@UseGuards(AuthGuard)
-async createStockAllBranches(
-  @Req() req: any,
-  @Query('productId') productId?: string
-) {
-  const userId = req.user.id;
-  return this.stockService.createStockAllBranches(userId, productId);
-}
+  @Post("all-branches")
+  @UseGuards(AuthGuard)
+  async createStockAllBranches(
+    @Req() req: any,
+    @Query("productId") productId?: string,
+  ) {
+    const userId = req.user.id;
+    return this.stockService.createStockAllBranches(userId, productId);
+  }
 
-@Patch('mobile/stocks/:id')
-@UseGuards(AuthGuard)
-async updateStockMobile(
-  @Req() req: any,
-  @Param('id') stockId: string,
-  @Body() updateStockDto: UpdateStockDto
-) {
-  const userId = req.user.id;
-  return this.stockService.updateStockMobile(userId, stockId, updateStockDto);
-}
+  @Patch("mobile/stocks/:id")
+  @UseGuards(AuthGuard)
+  async updateStockMobile(
+    @Req() req: any,
+    @Param("id") stockId: string,
+    @Body() updateStockDto: UpdateStockDto,
+  ) {
+    const userId = req.user.id;
+    return this.stockService.updateStockMobile(userId, stockId, updateStockDto);
+  }
 
-@Delete('mobile/stocks/:id')
-@UseGuards(AuthGuard)
-async deleteStockMobile(
-  @Req() req: any,
-  @Param('id') stockId: string
-) {
-  const userId = req.user.id;
-  return this.stockService.deleteStockMobile(userId, stockId);
-}
-@Get('mobile/out-of-stock/:branchId')
-@UseGuards(AuthGuard)
-async getOutOfStockByUserBranchMobile(
-  @Req() req: any,
-  @Param("branchId") branchId,
-  @Query('threshold') threshold = '0',
-  @Query('search') search?: string,
-  @Query('page') page: any = 1,
-  @Query('limit') limit: any = 10,
-  @Query('sortBy') sortBy?: string,
-  @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'ASC',
-  @Query() filters?: any
-) {
-  const userId = req.user.id;
-  const thresholdNum = Number(threshold) || 0;
-  return this.stockService.getOutOfStockByUserBranchMobile(
-    userId, branchId,thresholdNum, search, page, limit, sortBy, sortOrder, filters
-  );
-}
-  @Get('project/:projectId')
+  @Delete("mobile/stocks/:id")
+  @UseGuards(AuthGuard)
+  async deleteStockMobile(@Req() req: any, @Param("id") stockId: string) {
+    const userId = req.user.id;
+    return this.stockService.deleteStockMobile(userId, stockId);
+  }
+  @Get("mobile/out-of-stock/:branchId")
+  @UseGuards(AuthGuard)
+  async getOutOfStockByUserBranchMobile(
+    @Req() req: any,
+    @Param("branchId") branchId,
+    @Query("threshold") threshold = "0",
+    @Query("search") search?: string,
+    @Query("page") page: any = 1,
+    @Query("limit") limit: any = 10,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder: "ASC" | "DESC" = "ASC",
+    @Query() filters?: any,
+  ) {
+    const userId = req.user.id;
+    const thresholdNum = Number(threshold) || 0;
+    return this.stockService.getOutOfStockByUserBranchMobile(
+      userId,
+      branchId,
+      thresholdNum,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      filters,
+    );
+  }
+  @Get("project/:projectId")
   @Permissions(EPermission.STOCK_READ)
-  async getProjectStocks(@Req() req, @Param('projectId') projectId?: string, @Query() query?: any, @Query('search') search?: string, @Query('page') page: any = 1, @Query('limit') limit: any = 10, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC') {
+  async getProjectStocks(
+    @Req() req,
+    @Param("projectId") projectId?: string,
+    @Query() query?: any,
+    @Query("search") search?: string,
+    @Query("page") page: any = 1,
+    @Query("limit") limit: any = 10,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder: "ASC" | "DESC" = "DESC",
+  ) {
     const user = req.user as any;
-    const effectiveProjectId = projectId || user?.project_id || user?.project?.id || null;
+    const effectiveProjectId =
+      projectId || user?.project_id || user?.project?.id || null;
 
     if (!effectiveProjectId) {
-      throw new BadRequestException('projectId is required or user must belong to a project');
+      throw new BadRequestException(
+        "projectId is required or user must belong to a project",
+      );
     }
 
     return this.stockService.getStocksByProjectPaginated({
@@ -119,153 +161,194 @@ async getOutOfStockByUserBranchMobile(
       query,
     });
   }
-//   async getStocksByProjectPaginated({
-//   projectId,
-//   search,
-//   page = 1,
-//   limit = 10,
-//   sortBy = 'createdAt',
-//   sortOrder = 'DESC',
-//   filters = {},
-// }: {
-//   projectId: string;
-//   search?: string;
-//   page?: number;
-//   limit?: number;
-//   sortBy?: string;
-//   sortOrder?: 'ASC' | 'DESC';
-//   filters?: any;
-// }) {
-//   const qb = this.stockService.stockRepo
-//     .createQueryBuilder('stock')
-//     .innerJoinAndSelect('stock.product', 'product')
-//     .innerJoinAndSelect('product.category', 'category')
-//     .leftJoinAndSelect('product.brand', 'brand')
-//     .innerJoinAndSelect('stock.branch', 'branch')
-//     .innerJoin('branch.project', 'project', 'project.id = :projectId', {
-//       projectId,
-//     });
+  //   async getStocksByProjectPaginated({
+  //   projectId,
+  //   search,
+  //   page = 1,
+  //   limit = 10,
+  //   sortBy = 'createdAt',
+  //   sortOrder = 'DESC',
+  //   filters = {},
+  // }: {
+  //   projectId: string;
+  //   search?: string;
+  //   page?: number;
+  //   limit?: number;
+  //   sortBy?: string;
+  //   sortOrder?: 'ASC' | 'DESC';
+  //   filters?: any;
+  // }) {
+  //   const qb = this.stockService.stockRepo
+  //     .createQueryBuilder('stock')
+  //     .innerJoinAndSelect('stock.product', 'product')
+  //     .innerJoinAndSelect('product.category', 'category')
+  //     .leftJoinAndSelect('product.brand', 'brand')
+  //     .innerJoinAndSelect('stock.branch', 'branch')
+  //     .innerJoin('branch.project', 'project', 'project.id = :projectId', {
+  //       projectId,
+  //     });
 
-//   /* ===================== SEARCH ===================== */
-//   if (search) {
-//     qb.andWhere(
-//       '(product.name ILIKE :search OR product.sku ILIKE :search)',
-//       { search: `%${search}%` },
-//     );
-//   }
+  //   /* ===================== SEARCH ===================== */
+  //   if (search) {
+  //     qb.andWhere(
+  //       '(product.name ILIKE :search OR product.sku ILIKE :search)',
+  //       { search: `%${search}%` },
+  //     );
+  //   }
 
-//   /* ===================== FILTERS ===================== */
+  //   /* ===================== FILTERS ===================== */
 
-//   // filters[product][id]
-//   if (filters?.product?.id) {
-//     qb.andWhere('product.id = :productId', {
-//       productId: filters.product.id,
-//     });
-//   }
+  //   // filters[product][id]
+  //   if (filters?.product?.id) {
+  //     qb.andWhere('product.id = :productId', {
+  //       productId: filters.product.id,
+  //     });
+  //   }
 
-//   // filters[branch][id]
-//   if (filters?.branch?.id) {
-//     qb.andWhere('branch.id = :branchId', {
-//       branchId: filters.branch.id,
-//     });
-//   }
+  //   // filters[branch][id]
+  //   if (filters?.branch?.id) {
+  //     qb.andWhere('branch.id = :branchId', {
+  //       branchId: filters.branch.id,
+  //     });
+  //   }
 
-//   // ✅ filters[category][id]
-//   if (filters?.category?.id) {
-//     qb.andWhere('category.id = :categoryId', {
-//       categoryId: filters.category.id,
-//     });
-//   }
+  //   // ✅ filters[category][id]
+  //   if (filters?.category?.id) {
+  //     qb.andWhere('category.id = :categoryId', {
+  //       categoryId: filters.category.id,
+  //     });
+  //   }
 
-//   // ✅ filters[brand][id]
-//   if (filters?.brand?.id) {
-//     qb.andWhere('brand.id = :brandId', {
-//       brandId: filters.brand.id,
-//     });
-//   }
+  //   // ✅ filters[brand][id]
+  //   if (filters?.brand?.id) {
+  //     qb.andWhere('brand.id = :brandId', {
+  //       brandId: filters.brand.id,
+  //     });
+  //   }
 
-//   // filters[createdAt]=YYYY-MM-DD
-// if (filters?.createdAt) {
-//   const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
-//   const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
+  //   // filters[createdAt]=YYYY-MM-DD
+  // if (filters?.createdAt) {
+  //   const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
+  //   const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
 
-//   qb.andWhere(
-//     'stock.created_at BETWEEN :start AND :end',
-//     { start, end }
-//   );
-// }
+  //   qb.andWhere(
+  //     'stock.created_at BETWEEN :start AND :end',
+  //     { start, end }
+  //   );
+  // }
 
+  // const safeSortBy =
+  //   sortBy === 'createdAt' ? 'created_at' : sortBy;
 
-// const safeSortBy =
-//   sortBy === 'createdAt' ? 'created_at' : sortBy;
+  // qb.orderBy(`stock.${safeSortBy}`, sortOrder);
 
-// qb.orderBy(`stock.${safeSortBy}`, sortOrder);
+  //   /* ===================== PAGINATION ===================== */
+  //   qb.skip((page - 1) * limit).take(limit);
 
-//   /* ===================== PAGINATION ===================== */
-//   qb.skip((page - 1) * limit).take(limit);
+  //   const [data, total] = await qb.getManyAndCount();
 
-//   const [data, total] = await qb.getManyAndCount();
+  //   return {
+  //     success: true,
+  //     data,
+  //     meta: {
+  //       total,
+  //       page,
+  //       limit,
+  //       totalPages: Math.ceil(total / limit),
+  //     },
+  //   };
+  // }
 
-//   return {
-//     success: true,
-//     data,
-//     meta: {
-//       total,
-//       page,
-//       limit,
-//       totalPages: Math.ceil(total / limit),
-//     },
-//   };
-// }
-
-  @Post('upsert')
+  @Post("upsert")
   @Permissions(EPermission.STOCK_CREATE, EPermission.STOCK_UPDATE)
   async createOrUpdate(@Body() dto: CreateStockDto) {
     return this.stockService.createOrUpdate(dto);
   }
 
-  @Patch('out-of-stock/:id')
+  @Patch("out-of-stock/:id")
   @Permissions(EPermission.STOCK_UPDATE)
-  async outOfStock(@Param('id') id: string, @Body() dto: UpdateStockDto) {
+  async outOfStock(@Param("id") id: string, @Body() dto: UpdateStockDto) {
     return this.stockService.outOfStock(id, dto);
   }
 
-  @Patch(':id')
+  @Patch(":id")
   @Permissions(EPermission.STOCK_UPDATE)
-  async updateOne(@Param('id') id: string, @Body() dto: UpdateStockDto) {
+  async updateOne(@Param("id") id: string, @Body() dto: UpdateStockDto) {
     return this.stockService.updateOne(id, dto);
   }
 
-  @Delete(':id')
+  @Delete(":id")
   @Permissions(EPermission.STOCK_UPDATE)
-  async deleteStock(@Param('id') id: string) {
+  async deleteStock(@Param("id") id: string) {
     return this.stockService.deleteStock(id);
   }
 
-  @Get('product/:productId')
+  @Get("product/:productId")
   @Permissions(EPermission.STOCK_READ)
-  async getStocksByProduct(@Param('productId') productId: string, @Query() query?: any, @Query('search') search?: string, @Query('page') page: any = 1, @Query('limit') limit: any = 10, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC') {
-    return this.stockService.getStocksByProduct(productId, search, page, limit, sortBy, sortOrder, query?.filters);
+  async getStocksByProduct(
+    @Param("productId") productId: string,
+    @Query() query?: any,
+    @Query("search") search?: string,
+    @Query("page") page: any = 1,
+    @Query("limit") limit: any = 10,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder: "ASC" | "DESC" = "DESC",
+  ) {
+    return this.stockService.getStocksByProduct(
+      productId,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      query?.filters,
+    );
   }
 
-  @Get('by-branch/:branchId')
+  @Get("by-branch/:branchId")
   @Permissions(EPermission.STOCK_READ)
-  async getStocksByBranch(@Param('branchId') branchId: string, @Query() query?: any, @Query('search') search?: string, @Query('page') page: any = 1, @Query('limit') limit: any = 10, @Query('sortBy') sortBy?: string, @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC') {
-    return this.stockService.getStocksByBranch(branchId, search, page, limit, sortBy, sortOrder, query?.filters);
+  async getStocksByBranch(
+    @Param("branchId") branchId: string,
+    @Query() query?: any,
+    @Query("search") search?: string,
+    @Query("page") page: any = 1,
+    @Query("limit") limit: any = 10,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder: "ASC" | "DESC" = "DESC",
+  ) {
+    return this.stockService.getStocksByBranch(
+      branchId,
+      search,
+      page,
+      limit,
+      sortBy,
+      sortOrder,
+      query?.filters,
+    );
   }
-  @Get('low-stock-alerts')
+  @Get("low-stock-alerts")
   @Permissions(EPermission.STOCK_READ)
-  async getLowStockAlertsOptimized(@Query('threshold') threshold: number = 10, @Query('projectId') projectId?: string) {
-    const result = await this.stockService.getLowStockAlerts(threshold, projectId);
+  async getLowStockAlertsOptimized(
+    @Query("threshold") threshold: number = 10,
+    @Query("projectId") projectId?: string,
+  ) {
+    const result = await this.stockService.getLowStockAlerts(
+      threshold,
+      projectId,
+    );
     return {
       ...result,
       records: result.records || [],
     };
   }
 
-  @Get('history/:productId/:branchId')
+  @Get("history/:productId/:branchId")
   @Permissions(EPermission.STOCK_ANALYZE)
-  async getStockHistory(@Param('productId') productId: string, @Param('branchId') branchId: string, @Query('days') days = '30') {
+  async getStockHistory(
+    @Param("productId") productId: string,
+    @Param("branchId") branchId: string,
+    @Query("days") days = "30",
+  ) {
     const daysNum = Number(days);
     const safeDays = Number.isFinite(daysNum) && daysNum > 0 ? daysNum : 30;
 
@@ -287,135 +370,157 @@ async getOutOfStockByUserBranchMobile(
       }
     };
 
-    mapKey('brand', 'brand'); // filters[brand]     -> filters[product][brand]
-    mapKey('category', 'category'); // filters[category]  -> filters[product][category]
+    mapKey("brand", "brand"); // filters[brand]     -> filters[product][brand]
+    mapKey("category", "category"); // filters[category]  -> filters[product][category]
 
     return out;
   }
-@Get('out-of-stock')
-@Permissions(EPermission.STOCK_ANALYZE)
-async outOfStockSmart(
-  @Req() req: any,
-  @Query('page') page: string = '1',
-  @Query('limit') limit: string = '10',
-  @Query('sortBy') sortBy: string = 'created_at',
-  @Query('sortOrder') sortOrder: 'ASC' | 'DESC' = 'DESC',
-  @Query('search') search?: string,
-  @Query('filters') filtersQuery?: Record<string, any>,
-  @Query('threshold') threshold = '0',
-  @Query('export') exportFlag?: string,
-  @Res({ passthrough: true }) res?: any,
-) {
-  const user = req.user;
-  const projectId = await this.stockService.userService.resolveProjectIdFromUser(user.id);
+  @Get("out-of-stock")
+  @Permissions(EPermission.STOCK_ANALYZE)
+  async outOfStockSmart(
+    @Req() req: any,
+    @Query("page") page: string = "1",
+    @Query("limit") limit: string = "10",
+    @Query("sortBy") sortBy: string = "created_at",
+    @Query("sortOrder") sortOrder: "ASC" | "DESC" = "DESC",
+    @Query("search") search?: string,
+    @Query("filters") filtersQuery?: Record<string, any>,
+    @Query("threshold") threshold = "0",
+    @Query("export") exportFlag?: string,
+    @Res({ passthrough: true }) res?: any,
+  ) {
+    const user = req.user;
+    const projectId =
+      await this.stockService.userService.resolveProjectIdFromUser(user.id);
 
-  const thrNum = Number(threshold);
-  const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
+    const thrNum = Number(threshold);
+    const safeThr = Number.isFinite(thrNum) ? thrNum : 0;
 
-  const filters: Record<string, any> = filtersQuery && typeof filtersQuery === 'object' ? { ...filtersQuery } : {};
+    const filters: Record<string, any> =
+      filtersQuery && typeof filtersQuery === "object"
+        ? { ...filtersQuery }
+        : {};
 
-  const qb = this.stockService.productRepo.createQueryBuilder('product')
-    .leftJoinAndSelect('product.stock', 'stock', filters.branch?.id ? 'stock.branch_id = :branchId' : undefined, { branchId: filters.branch?.id })
-    .leftJoinAndSelect('product.category', 'category')
-    .leftJoinAndSelect('product.brand', 'brand')
-    .leftJoinAndSelect('product.project', 'project')
-    .leftJoinAndSelect('stock.branch', 'branch');
+    const qb = this.stockService.productRepo
+      .createQueryBuilder("product")
+      .leftJoinAndSelect(
+        "product.stock",
+        "stock",
+        filters.branch?.id ? "stock.branch_id = :branchId" : undefined,
+        { branchId: filters.branch?.id },
+      )
+      .leftJoinAndSelect("product.category", "category")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("product.project", "project")
+      .leftJoinAndSelect("stock.branch", "branch");
 
-  // Search
-  if (search) {
-    qb.andWhere(
-      '(product.name ILIKE :search OR product.sku ILIKE :search OR product.model ILIKE :search)',
-      { search: `%${search}%` }
+    // Search
+    if (search) {
+      qb.andWhere(
+        "(product.name ILIKE :search OR product.sku ILIKE :search OR product.model ILIKE :search)",
+        { search: `%${search}%` },
+      );
+    }
+
+    // Project filter
+    qb.andWhere("product.project_id = :projectId", { projectId });
+
+    // Category filter
+    if (filters.category?.id || filters.category) {
+      const categoryId = filters.category?.id || filters.category;
+      qb.andWhere("category.id = :categoryId", { categoryId });
+    }
+
+    // Brand filter
+    if (filters.brand?.id || filters.brand) {
+      const brandId = filters.brand?.id || filters.brand;
+      qb.andWhere("brand.id = :brandId", { brandId });
+    }
+
+    // Branch filter
+    if (filters.branch?.id || filters.branch) {
+      const branchId = filters.branch?.id || filters.branch;
+      qb.andWhere("branch.id = :branchId", { branchId });
+    }
+
+    // Product filter
+    if (filters.product?.id || filters.product) {
+      const productId = filters.product?.id || filters.product;
+      qb.andWhere("product.id = :productId", { productId });
+    }
+
+    // Created_at filter
+    if (filters.createdAt) {
+      const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
+      const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
+      qb.andWhere("stock.created_at BETWEEN :start AND :end", { start, end });
+    }
+
+    // Quantity threshold filter
+    if (safeThr >= 0) {
+      qb.andWhere("COALESCE(stock.quantity, 0) <= :threshold", {
+        threshold: safeThr,
+      });
+    }
+
+    // Sorting
+    const safeSortBy =
+      sortBy.startsWith("product.") || sortBy.startsWith("stock.")
+        ? sortBy
+        : `product.${sortBy}`;
+    qb.orderBy(safeSortBy, sortOrder);
+
+    // Pagination
+    const pageNum = Math.max(1, Number(page));
+    const limitNum = Math.max(1, Number(limit));
+    qb.skip((pageNum - 1) * limitNum).take(limitNum);
+
+    const [records, total] = await qb.getManyAndCount();
+
+    // Flatten for response or export
+    const flatItems = records.map((product) => {
+      // If we have multiple stock records because no branch was specified,
+      // we take the first one that passed the filter or null.
+      // However, getManyAndCount on a 1-to-many join returns distinct products.
+      const stock =
+        product.stock && product.stock.length > 0 ? product.stock[0] : null;
+
+      return {
+        product_id: product.id ?? null,
+        product_name: product.name ?? null,
+        sku: product.sku ?? null,
+        model: product.model ?? null,
+        price: product.price ?? null,
+        is_active: product.is_active ?? null,
+        project: product.project ?? null,
+        project_id: product.project?.id ?? null,
+        category_name: product.category?.name ?? null,
+        brand_name: product.brand?.name || null, // Fixed: was using product.brand?.name in some places and cat in others
+        branch_id: stock?.branch?.id ?? null,
+        branch_name: stock?.branch?.name ?? null,
+        quantity: stock ? stock.quantity : 0,
+        created_at: stock ? stock.created_at : product.created_at,
+      };
+    });
+
+    const shouldExport = ["true", "1", "yes"].includes(
+      (exportFlag || "").toLowerCase(),
     );
-  }
+    if (shouldExport) {
+      return flatItems.map((row) => ({
+        ...row,
+        threshold: safeThr,
+        filter_threshold: safeThr,
+      }));
+    }
 
-  // Project filter
-  qb.andWhere('product.project_id = :projectId', { projectId });
-
-  // Category filter
-  if (filters.category?.id || filters.category) {
-    const categoryId = filters.category?.id || filters.category;
-    qb.andWhere('category.id = :categoryId', { categoryId });
-  }
-
-  // Brand filter
-  if (filters.brand?.id || filters.brand) {
-    const brandId = filters.brand?.id || filters.brand;
-    qb.andWhere('brand.id = :brandId', { brandId });
-  }
-
-  // Branch filter
-  if (filters.branch?.id || filters.branch) {
-    const branchId = filters.branch?.id || filters.branch;
-    qb.andWhere('branch.id = :branchId', { branchId });
-  }
-
-  // Product filter
-  if (filters.product?.id || filters.product) {
-    const productId = filters.product?.id || filters.product;
-    qb.andWhere('product.id = :productId', { productId });
-  }
-
-  // Created_at filter
-  if (filters.createdAt) {
-    const start = new Date(`${filters.createdAt}T00:00:00.000Z`);
-    const end = new Date(`${filters.createdAt}T23:59:59.999Z`);
-    qb.andWhere('stock.created_at BETWEEN :start AND :end', { start, end });
-  }
-
-  // Quantity threshold filter
-  if (safeThr >= 0) {
-    qb.andWhere('COALESCE(stock.quantity, 0) <= :threshold', { threshold: safeThr });
-  }
-
-  // Sorting
-  const safeSortBy = sortBy.startsWith('product.') || sortBy.startsWith('stock.') ? sortBy : `product.${sortBy}`;
-  qb.orderBy(safeSortBy, sortOrder);
-
-  // Pagination
-  const pageNum = Math.max(1, Number(page));
-  const limitNum = Math.max(1, Number(limit));
-  qb.skip((pageNum - 1) * limitNum).take(limitNum);
-
-  const [records, total] = await qb.getManyAndCount();
-
-  // Flatten for response or export
-  const flatItems = records.map(product => {
-     // If we have multiple stock records because no branch was specified, 
-     // we take the first one that passed the filter or null.
-     // However, getManyAndCount on a 1-to-many join returns distinct products.
-     const stock = product.stock && product.stock.length > 0 ? product.stock[0] : null;
-     
-     return {
-      product_id: product.id ?? null,
-      product_name: product.name ?? null,
-      sku: product.sku ?? null,
-      model: product.model ?? null,
-      price: product.price ?? null,
-      is_active: product.is_active ?? null,
-      project: product.project ?? null,
-      project_id: product.project?.id ?? null,
-      category_name: product.category?.name ?? null,
-      brand_name: product.brand?.name || null, // Fixed: was using product.brand?.name in some places and cat in others
-      branch_id: stock?.branch?.id ?? null,
-      branch_name: stock?.branch?.name ?? null,
-      quantity: stock ? stock.quantity : 0,
-      created_at: stock ? stock.created_at : product.created_at,
+    return {
+      records: flatItems,
+      total,
+      page: pageNum,
+      limit: limitNum,
     };
-  });
-
-  const shouldExport = ['true', '1', 'yes'].includes((exportFlag || '').toLowerCase());
-  if (shouldExport) {
-    return flatItems.map(row => ({ ...row, threshold: safeThr, filter_threshold: safeThr }));
   }
-
-  return {
-    records: flatItems,
-    total,
-    page: pageNum,
-    limit: limitNum,
-  };
-}
 
   // @Get('mobile/out-of-stock')
   // @Permissions(EPermission.STOCK_ANALYZE)
@@ -485,19 +590,21 @@ async outOfStockSmart(
   //   return payload;
   // }
 
-  @Get(':id')
+  @Get(":id")
   @Permissions(EPermission.STOCK_READ)
-  async getById(@Param('id') id: string) {
+  async getById(@Param("id") id: string) {
     return this.stockService.getById(id);
   }
 
   getValidRelations(repository: any, requestedRelations: string[]): string[] {
     const validRelations: string[] = [];
-    const entityRelations = repository.metadata.relations.map((r: any) => r.propertyName);
+    const entityRelations = repository.metadata.relations.map(
+      (r: any) => r.propertyName,
+    );
 
-    requestedRelations.forEach(relation => {
-      if (relation.includes('.')) {
-        const firstLevelRelation = relation.split('.')[0];
+    requestedRelations.forEach((relation) => {
+      if (relation.includes(".")) {
+        const firstLevelRelation = relation.split(".")[0];
         if (entityRelations.includes(firstLevelRelation)) {
           validRelations.push(relation);
         }

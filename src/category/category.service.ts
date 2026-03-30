@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { CreateCategoryDto, UpdateCategoryDto } from "dto/category.dto";
 import { PaginationQueryDto } from "dto/pagination.dto";
@@ -40,13 +44,13 @@ export class CategoryService {
     });
 
     if (existing) {
-      throw new ConflictException('category.name_exists');
+      throw new ConflictException("category.name_exists");
     }
 
     const category = this.categoryRepository.create({
       name: dto.name,
       description: dto.description,
-    ownerUserId: user.id, // always assign owner
+      ownerUserId: user.id, // always assign owner
       project: { id: projectId },
     });
 
@@ -56,33 +60,28 @@ export class CategoryService {
 
   /* ===================== FIND ONE ===================== */
 
-async findOne(id: string, user: any): Promise<Category> {
-  const category = await this.categoryRepository.findOne({
-    where: await this.projectOrOwnerWhere(user, { id }),
-  });
+  async findOne(id: string, user: any): Promise<Category> {
+    const category = await this.categoryRepository.findOne({
+      where: await this.projectOrOwnerWhere(user, { id }),
+    });
 
-  if (!category) {
-    throw new NotFoundException('category.not_found');
+    if (!category) {
+      throw new NotFoundException("category.not_found");
+    }
+
+    return category;
   }
-
-  return category;
-}
-
 
   /* ===================== UPDATE ===================== */
 
-async update(
-  id: string,
-  dto: UpdateCategoryDto,
-  user: any,
-){
-  const category = await this.findOne(id, user);
+  async update(id: string, dto: UpdateCategoryDto, user: any) {
+    const category = await this.findOne(id, user);
 
-  this.categoryRepository.merge(category, dto);
-  const saved = await this.categoryRepository.save(category);
+    this.categoryRepository.merge(category, dto);
+    const saved = await this.categoryRepository.save(category);
 
-  return this.maskOwnerId(saved,user); // will always return owner
-}
+    return this.maskOwnerId(saved, user); // will always return owner
+  }
 
   /* ===================== MOBILE ===================== */
 
@@ -91,21 +90,21 @@ async update(
     query: PaginationQueryDto,
     user: any,
   ) {
-    const { search, sortBy = 'name', sortOrder = 'ASC' } = query;
+    const { search, sortBy = "name", sortOrder = "ASC" } = query;
 
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
 
     const qb = this.categoryRepository
-      .createQueryBuilder('category')
-      .innerJoin('category.brands', 'brand', 'brand.id = :brandId', { brandId })
-      .innerJoin('category.project', 'project', 'project.id = :projectId', {
+      .createQueryBuilder("category")
+      .innerJoin("category.brands", "brand", "brand.id = :brandId", { brandId })
+      .innerJoin("category.project", "project", "project.id = :projectId", {
         projectId,
       })
-      .select(['category.id', 'category.name'])
+      .select(["category.id", "category.name"])
       .orderBy(`category.${sortBy}`, sortOrder);
 
     if (search) {
-      qb.andWhere('category.name ILIKE :search', {
+      qb.andWhere("category.name ILIKE :search", {
         search: `%${search}%`,
       });
     }
@@ -130,12 +129,11 @@ async update(
   }
 
   private async projectOrOwnerWhere(user: any, extra: any = {}) {
-  const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
 
-  return [
-    { project: { id: projectId }, ...extra },
-    { ownerUserId: user.id, ...extra }
-  ];
-}
-
+    return [
+      { project: { id: projectId }, ...extra },
+      { ownerUserId: user.id, ...extra },
+    ];
+  }
 }

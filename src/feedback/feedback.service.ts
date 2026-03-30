@@ -1,15 +1,12 @@
 // --- File: feedback/feedback.service.ts ---
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Feedback } from 'entities/feedback.entity';
-import { User } from 'entities/user.entity';
-import { Project } from 'entities/project.entity';
-import { CreateFeedbackDto, UpdateFeedbackStatusDto } from 'dto/feedback.dto';
-import { CRUD } from 'common/crud.service';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Feedback } from "entities/feedback.entity";
+import { User } from "entities/user.entity";
+import { Project } from "entities/project.entity";
+import { CreateFeedbackDto, UpdateFeedbackStatusDto } from "dto/feedback.dto";
+import { CRUD } from "common/crud.service";
 
 @Injectable()
 export class FeedbackService {
@@ -32,7 +29,7 @@ export class FeedbackService {
     let user: User | null = null;
     if (dto.userId) {
       user = await this.userRepo.findOne({ where: { id: dto.userId } });
-      if (!user) throw new NotFoundException('User not found for given userId');
+      if (!user) throw new NotFoundException("User not found for given userId");
     } else if (currentUser) {
       user = await this.userRepo.findOne({ where: { id: currentUser.id } });
     }
@@ -42,8 +39,9 @@ export class FeedbackService {
       project = await this.projectRepo.findOne({
         where: { id: dto.projectId },
       });
-      if (!project)
-        throw new NotFoundException('Project not found for given projectId');
+      if (!project) {
+        throw new NotFoundException("Project not found for given projectId");
+      }
     }
 
     const feedback = this.feedbackRepo.create({
@@ -86,19 +84,19 @@ export class FeedbackService {
     if (type) filters.type = type;
     if (is_resolved !== undefined) {
       // comes as string from query (?is_resolved=true/false)
-      filters.is_resolved = is_resolved === 'true';
+      filters.is_resolved = is_resolved === "true";
     }
 
     return CRUD.findAllRelation(
       this.feedbackRepo,
-      'feedback',
+      "feedback",
       search,
       page,
       limit,
-      'created_at',
-      'DESC',
-      ['user', 'project', 'resolvedBy'],
-      ['message', 'type'], // search in message/type
+      "created_at",
+      "DESC",
+      ["user", "project", "resolvedBy"],
+      ["message", "type"], // search in message/type
       filters,
     );
   }
@@ -106,15 +104,15 @@ export class FeedbackService {
   async findOne(id: string) {
     const feedback = await this.feedbackRepo.findOne({
       where: { id },
-      relations: ['user', 'project', 'resolvedBy'],
+      relations: ["user", "project", "resolvedBy"],
     });
-    if (!feedback) throw new NotFoundException('Feedback not found');
+    if (!feedback) throw new NotFoundException("Feedback not found");
     return feedback;
   }
 
   async resolve(id: string, dto: UpdateFeedbackStatusDto, resolver?: User) {
     const feedback = await this.feedbackRepo.findOne({ where: { id } });
-    if (!feedback) throw new NotFoundException('Feedback not found');
+    if (!feedback) throw new NotFoundException("Feedback not found");
 
     feedback.is_resolved = dto.is_resolved;
 
@@ -125,8 +123,9 @@ export class FeedbackService {
         resolvedBy = await this.userRepo.findOne({
           where: { id: dto.resolvedById },
         });
-        if (!resolvedBy)
-          throw new NotFoundException('ResolvedBy user not found');
+        if (!resolvedBy) {
+          throw new NotFoundException("ResolvedBy user not found");
+        }
       } else if (resolver) {
         resolvedBy = await this.userRepo.findOne({
           where: { id: resolver.id },
@@ -145,7 +144,7 @@ export class FeedbackService {
 
   async remove(id: string) {
     const feedback = await this.feedbackRepo.findOne({ where: { id } });
-    if (!feedback) throw new NotFoundException('Feedback not found');
+    if (!feedback) throw new NotFoundException("Feedback not found");
     await this.feedbackRepo.remove(feedback);
     return { deleted: true, id };
   }
