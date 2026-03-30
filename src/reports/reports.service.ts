@@ -75,9 +75,12 @@ export class ReportsService {
 
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
-    const tab3Sheet = workbook.addWorksheet(`Check-in - Check-out`);
-    const durationSheet = workbook.addWorksheet(`Attendance Duration`);
-    const salesByModelSheet = workbook.addWorksheet(`Sales by Model`);
+    const tab3Sheet = workbook.addWorksheet("Check-in - Check-out");
+    const durationSheet = workbook.addWorksheet("Attendance Duration");
+    const branchPromoterSalesSheet = workbook.addWorksheet(
+      "Branch Promoter Sales",
+    );
+    const salesByModelSheet = workbook.addWorksheet("Sales by Model");
     const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
 
     const baseColumns = [
@@ -674,6 +677,109 @@ export class ReportsService {
       });
     });
 
+    // --- Branch Promoter Sales Matrix Tab ---
+    const promotersMap = new Map<string, User>();
+    const journeysByBranchAndDate = new Map<string, Map<string, User>>();
+
+    journeys.forEach((j) => {
+      if (!j.branch || !j.user) return;
+      if (isRoaming(j.branch.chain?.name)) return;
+      if (!isPromoter(j.user)) return;
+
+      promotersMap.set(j.user.id, j.user);
+
+      if (!journeysByBranchAndDate.has(j.branch.id)) {
+        journeysByBranchAndDate.set(j.branch.id, new Map<string, User>());
+      }
+      journeysByBranchAndDate.get(j.branch.id).set(j.date, j.user);
+    });
+
+    const sortedPromoters = Array.from(promotersMap.values()).sort((a, b) =>
+      (a.name || "").localeCompare(b.name || ""),
+    );
+
+    const bpSalesMatrix = new Map<string, Map<string, number>>();
+    const branchesMap = new Map<string, any>();
+
+    sales.forEach((s) => {
+      if (isRoaming(s.branch?.chain?.name)) return;
+
+      const saleDate = dayjs(s.sale_date);
+      // Determine Reporting Day (7 AM - 5 AM window)
+      // Sales between 00:00 and 06:59 count for the previous day
+      const reportingDay =
+        saleDate.hour() < 7
+          ? saleDate.subtract(1, "day").format("YYYY-MM-DD")
+          : saleDate.format("YYYY-MM-DD");
+
+      const branchId = s.branch?.id;
+      if (!branchId) return;
+
+      branchesMap.set(branchId, s.branch);
+
+      const assignedUser = journeysByBranchAndDate
+        .get(branchId)
+        ?.get(reportingDay);
+      if (!assignedUser) return;
+
+      if (!bpSalesMatrix.has(branchId)) {
+        bpSalesMatrix.set(branchId, new Map<string, number>());
+      }
+      const branchUserSales = bpSalesMatrix.get(branchId);
+      const currentSales = branchUserSales.get(assignedUser.id) || 0;
+      branchUserSales.set(
+        assignedUser.id,
+        currentSales + Number(s.total_amount || 0),
+      );
+    });
+
+    const bpCols = [
+      { header: "Branch Name", key: "branch_name", width: 30 },
+      ...sortedPromoters.map((p) => ({
+        header: p.name || p.username,
+        key: `user_${p.id}`,
+        width: 20,
+      })),
+      { header: "Grand Total", key: "grand_total", width: 20 },
+    ];
+    branchPromoterSalesSheet.columns = bpCols;
+
+    const bpTotalsRow: any = { branch_name: "Grand Total" };
+    sortedPromoters.forEach((p) => (bpTotalsRow[`user_${p.id}`] = 0));
+    let bpAbsoluteTotal = 0;
+
+    Array.from(branchesMap.values())
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
+      .forEach((branch) => {
+        const branchSales = bpSalesMatrix.get(branch.id);
+        if (!branchSales) return;
+
+        const rowData: any = { branch_name: branch.name };
+        let branchTotal = 0;
+        sortedPromoters.forEach((p) => {
+          const val = branchSales.get(p.id) || 0;
+          rowData[`user_${p.id}`] = val > 0 ? Number(val.toFixed(2)) : "";
+          bpTotalsRow[`user_${p.id}`] += val;
+          branchTotal += val;
+        });
+        rowData.grand_total = Number(branchTotal.toFixed(2));
+        bpAbsoluteTotal += branchTotal;
+        branchPromoterSalesSheet.addRow(rowData);
+      });
+
+    bpTotalsRow.grand_total = Number(bpAbsoluteTotal.toFixed(2));
+    // Format totals for the grand total row
+    sortedPromoters.forEach((p) => {
+      if (bpTotalsRow[`user_${p.id}`] > 0) {
+        bpTotalsRow[`user_${p.id}`] = Number(
+          bpTotalsRow[`user_${p.id}`].toFixed(2),
+        );
+      } else {
+        bpTotalsRow[`user_${p.id}`] = "";
+      }
+    });
+    branchPromoterSalesSheet.addRow(bpTotalsRow);
+
     // Formatting
     const headerFill = {
       type: "pattern",
@@ -700,10 +806,12 @@ export class ReportsService {
       tab2Sheet,
       tab3Sheet,
       durationSheet,
+      branchPromoterSalesSheet,
       salesByModelSheet,
       salesDetailSheet,
     ].forEach((sheet) => {
       const isTab3 = sheet.name === "Check-in - Check-out";
+      const isBPMatrix = sheet.name === "Branch Promoter Sales";
       const isSalesByModel = sheet.name === "Sales by Model";
       const isSalesDetail = sheet.name === "Sales Detail";
       const isAttendance = sheet.name === "Attendance";
@@ -717,6 +825,7 @@ export class ReportsService {
       ) {
         effectiveBaseColCount = baseColumns.length;
       }
+      if (isBPMatrix) effectiveBaseColCount = 1;
 
       const startRow = isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
 
@@ -734,7 +843,9 @@ export class ReportsService {
 
       sheet.eachRow((row, rowNumber) => {
         const isHeader = isTab3 ? rowNumber <= 2 : rowNumber === 1;
-        const isTotalRow = isAttendance && rowNumber === 2;
+        const isTotalRow =
+          (isAttendance && rowNumber === 2) ||
+          (isBPMatrix && rowNumber === sheet.rowCount);
 
         row.eachCell((cell, colNumber) => {
           cell.alignment = { vertical: "middle", horizontal: "center" };
