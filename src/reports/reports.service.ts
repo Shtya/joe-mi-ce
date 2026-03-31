@@ -59,12 +59,13 @@ export class ReportsService {
       );
     }
 
-    const now = dayjs();
+    const now = dayjs().tz("Asia/Riyadh");
     const startOfMonth = now.startOf("month");
 
     const daysInMonthForAttendance = now.daysInMonth();
     const daysInMonthForSales =
-      now.month() === dayjs().month() && now.year() === dayjs().year()
+      now.month() === dayjs().tz("Asia/Riyadh").month() &&
+      now.year() === dayjs().tz("Asia/Riyadh").year()
         ? now.date()
         : now.daysInMonth();
 
@@ -171,12 +172,12 @@ export class ReportsService {
     const journeys = await this.journeyRepository.find({
       where: {
         date: Between(
-          startOfMonth.format("YYYY-MM-DD"),
+          startOfMonth.subtract(1, "day").format("YYYY-MM-DD"),
           endOfReportingPeriod.format("YYYY-MM-DD"),
         ),
         ...(projectId && { projectId }),
       },
-      relations: ["user", "checkin"],
+      relations: ["user", "user.role", "branch", "branch.chain", "checkin"],
     });
 
     const sales = await this.saleRepository.find({
