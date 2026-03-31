@@ -469,7 +469,9 @@ export class ReportsService {
     attendanceSheet.addRow(totalsRowData);
     attendanceRows.forEach((r) => attendanceSheet.addRow(r));
 
-    tab2Rows.forEach((r) => tab2Sheet.addRow(r));
+    tab2Rows
+      .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
+      .forEach((r) => tab2Sheet.addRow(r));
 
     tab3Rows.forEach((r) => {
       tab3Sheet.addRow(r);
@@ -636,11 +638,13 @@ export class ReportsService {
     });
 
     modelSalesMap.forEach((value) => {
-      salesByModelSheet.addRow({
-        ...value,
-        total_amount: `${value.total_amount.toFixed(2)}`,
-        last_sale_date: value.last_sale_date || "N/A",
-      });
+      if (value.quantity > 0) {
+        salesByModelSheet.addRow({
+          ...value,
+          total_amount: `${value.total_amount.toFixed(2)}`,
+          last_sale_date: value.last_sale_date || "N/A",
+        });
+      }
     });
 
     // --- Sales Detail Tab ---
@@ -709,11 +713,6 @@ export class ReportsService {
       journeysByUserAndDate.get(j.user.id).set(j.date, j.branch);
     });
 
-    const sortedPromoters = Array.from(promotersMap.values()).sort((a, b) =>
-      (a.name || "").localeCompare(b.name || ""),
-    );
-    this.logger.log(`Promoters Map Size: ${promotersMap.size}. Sorted Promoters: ${sortedPromoters.length}`);
-
     const bpSalesMatrix = new Map<string, Map<string, number>>();
     const branchesMap = new Map<string, any>();
     (project?.branches || []).forEach((b) => {
@@ -757,6 +756,19 @@ export class ReportsService {
     });
     this.logger.log(`Sales Matched in BP Matrix: ${bpSalesMatrix.size} branches have sales entries in the matrix.`);
 
+    // Filter promoters to only those who have either a journey or a sale this month
+    const activePromoterIds = new Set<string>();
+    journeysByUserAndDate.forEach((_, uid) => activePromoterIds.add(uid));
+    bpSalesMatrix.forEach((userSales) => {
+      userSales.forEach((_, uid) => activePromoterIds.add(uid));
+    });
+
+    const sortedPromoters = Array.from(promotersMap.values())
+      .filter((p) => activePromoterIds.has(p.id))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+
+    this.logger.log(`Active Promoters Filtered: ${sortedPromoters.length} from ${promotersMap.size}`);
+
     const bpCols = [
       { header: "Branch Name", key: "branch_name", width: 30 },
       ...sortedPromoters.map((p) => ({
@@ -772,9 +784,9 @@ export class ReportsService {
     sortedPromoters.forEach((p) => (bpTotalsRow[`user_${p.id}`] = 0));
     let bpAbsoluteTotal = 0;
 
-    Array.from(branchesMap.values())
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""))
-      .forEach((branch) => {
+    // Filter branches to only those appearing in the sales matrix (or having journeys)
+    const branchRows = Array.from(branchesMap.values())
+      .map((branch) => {
         const branchSales = bpSalesMatrix.get(branch.id);
         const rowData: any = { branch_name: branch.name };
         let branchTotal = 0;
@@ -784,11 +796,28 @@ export class ReportsService {
           bpTotalsRow[`user_${p.id}`] += val;
           branchTotal += val;
         });
-        rowData.grand_total =
-          branchTotal > 0 ? Number(branchTotal.toFixed(2)) : "";
-        bpAbsoluteTotal += branchTotal;
-        branchPromoterSalesSheet.addRow(rowData);
-      });
+        rowData.grand_total = branchTotal; // Store as number for sorting
+        return rowData;
+      })
+      .filter((row) => row.grand_total > 0) // Only show branches with sales
+      .sort((a, b) => b.grand_total - a.grand_total); // Sort by highest sales
+
+    branchRows.forEach((row, index) => {
+      bpAbsoluteTotal += row.grand_total;
+      // Format number to string with 2 decimals if > 0
+      row.grand_total =
+        row.grand_total > 0 ? Number(row.grand_total.toFixed(2)) : "";
+      const addedRow = branchPromoterSalesSheet.addRow(row);
+
+      // Alternating row colors (Zebra striping)
+      if (index % 2 === 1) {
+        addedRow.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFF9F9F9" },
+        };
+      }
+    });
 
     bpTotalsRow.grand_total = Number(bpAbsoluteTotal.toFixed(2));
     // Format totals for the grand total row
@@ -801,7 +830,8 @@ export class ReportsService {
         bpTotalsRow[`user_${p.id}`] = "";
       }
     });
-    branchPromoterSalesSheet.addRow(bpTotalsRow);
+    const finalTotalRow = branchPromoterSalesSheet.addRow(bpTotalsRow);
+    finalTotalRow.font = { bold: true };
 
     // Formatting
     const headerFill = {
