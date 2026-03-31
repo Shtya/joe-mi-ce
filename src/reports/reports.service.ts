@@ -78,10 +78,10 @@ export class ReportsService {
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const tab3Sheet = workbook.addWorksheet("Check-in - Check-out");
-    const durationSheet = workbook.addWorksheet("Attendance Duration");
-    const branchPromoterSalesSheet = workbook.addWorksheet(
-      "Branch Promoter Sales",
-    );
+    // const durationSheet = workbook.addWorksheet("Attendance Duration");
+    // const branchPromoterSalesSheet = workbook.addWorksheet(
+    //   "Branch Promoter Sales",
+    // );
     const salesByModelSheet = workbook.addWorksheet("Sales by Model");
     const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
 
@@ -141,13 +141,13 @@ export class ReportsService {
       ...dateColumnsForSales,
       { header: "TLL DAYS", key: "tll_days_tab2", width: 15 },
     ];
-    durationSheet.columns = [
-      ...baseColumns,
-      ...durationDateColumns,
-      { header: "Total Hours", key: "total_hours", width: 15 },
-      { header: "Days of Work", key: "days_of_work", width: 15 },
-      { header: "Average Duration", key: "avg_duration", width: 18 },
-    ];
+    // durationSheet.columns = [
+    //   ...baseColumns,
+    //   ...durationDateColumns,
+    //   { header: "Total Hours", key: "total_hours", width: 15 },
+    //   { header: "Days of Work", key: "days_of_work", width: 15 },
+    //   { header: "Average Duration", key: "avg_duration", width: 18 },
+    // ];
 
     // Set widths for Tab 3 and Duration Sheet
     const tab3TotalCols = baseColumns.length + checkinDateColumns.length + 1;
@@ -156,9 +156,9 @@ export class ReportsService {
     }
     const durationTotalCols =
       baseColumns.length + durationDateColumns.length + 3;
-    for (let i = 1; i <= durationTotalCols; i++) {
-      durationSheet.getColumn(i).width = 15;
-    }
+    // for (let i = 1; i <= durationTotalCols; i++) {
+    //   durationSheet.getColumn(i).width = 15;
+    // }
 
     let users = await this.userRepository.find({
       where: {
@@ -477,15 +477,15 @@ export class ReportsService {
       tab3Sheet.addRow(r);
     });
 
-    durationRows.forEach((r) => {
-      durationSheet.addRow(r);
-    });
+    // durationRows.forEach((r) => {
+    //   durationSheet.addRow(r);
+    // });
 
     // Merging Headers for Tab 3 and Duration Sheet
     const headerRow1_t3 = tab3Sheet.getRow(1);
     const headerRow2_t3 = tab3Sheet.getRow(2);
-    const headerRow1_dur = durationSheet.getRow(1);
-    const headerRow2_dur = durationSheet.getRow(2);
+    // const headerRow1_dur = durationSheet.getRow(1);
+    // const headerRow2_dur = durationSheet.getRow(2);
 
     baseColumns.forEach((col, index) => {
       // Tab 3
@@ -494,9 +494,9 @@ export class ReportsService {
       tab3Sheet.mergeCells(1, index + 1, 2, index + 1);
 
       // Duration Sheet
-      const cell_dur = headerRow1_dur.getCell(index + 1);
-      cell_dur.value = col.header;
-      durationSheet.mergeCells(1, index + 1, 2, index + 1);
+      // const cell_dur = headerRow1_dur.getCell(index + 1);
+      // cell_dur.value = col.header;
+      // // durationSheet.mergeCells(1, index + 1, 2, index + 1);
     });
 
     let currentColIndex_t3 = baseColumns.length + 1;
@@ -514,18 +514,18 @@ export class ReportsService {
       currentColIndex_t3 += 2;
 
       // Duration Sheet
-      const dateCell_dur = headerRow1_dur.getCell(currentColIndex_dur);
-      dateCell_dur.value = dateStr;
-      durationSheet.mergeCells(
-        1,
-        currentColIndex_dur,
-        1,
-        currentColIndex_dur + 1,
-      );
-      headerRow2_dur.getCell(currentColIndex_dur).value = "Duration";
-      headerRow2_dur.getCell(currentColIndex_dur + 1).value = "Shift Count";
-      currentColIndex_dur += 2;
-    }
+    //   const dateCell_dur = headerRow1_dur.getCell(currentColIndex_dur);
+    //   dateCell_dur.value = dateStr;
+    //   durationSheet.mergeCells(
+    //     1,
+    //     currentColIndex_dur,
+    //     1,
+    //     currentColIndex_dur + 1,
+    //   );
+    //   headerRow2_dur.getCell(currentColIndex_dur).value = "Duration";
+    //   headerRow2_dur.getCell(currentColIndex_dur + 1).value = "Shift Count";
+    //   currentColIndex_dur += 2;
+    // }
 
     // Totals columns for Tab 3
     const tllDaysCell_t3 = headerRow1_t3.getCell(currentColIndex_t3);
@@ -533,27 +533,27 @@ export class ReportsService {
     tab3Sheet.mergeCells(1, currentColIndex_t3, 2, currentColIndex_t3);
 
     // Totals columns for Duration Sheet
-    const totalHoursCell = headerRow1_dur.getCell(currentColIndex_dur);
-    totalHoursCell.value = "Total Hours";
-    durationSheet.mergeCells(1, currentColIndex_dur, 2, currentColIndex_dur);
+    // const totalHoursCell = headerRow1_dur.getCell(currentColIndex_dur);
+    // totalHoursCell.value = "Total Hours";
+    // durationSheet.mergeCells(1, currentColIndex_dur, 2, currentColIndex_dur);
 
-    const daysOfWorkCell = headerRow1_dur.getCell(currentColIndex_dur + 1);
-    daysOfWorkCell.value = "Days of Work";
-    durationSheet.mergeCells(
-      1,
-      currentColIndex_dur + 1,
-      2,
-      currentColIndex_dur + 1,
-    );
+    // const daysOfWorkCell = headerRow1_dur.getCell(currentColIndex_dur + 1);
+    // daysOfWorkCell.value = "Days of Work";
+    // durationSheet.mergeCells(
+    //   1,
+    //   currentColIndex_dur + 1,
+    //   2,
+    //   currentColIndex_dur + 1,
+    // );
 
-    const avgDurationCell = headerRow1_dur.getCell(currentColIndex_dur + 2);
-    avgDurationCell.value = "Average Duration";
-    durationSheet.mergeCells(
-      1,
-      currentColIndex_dur + 2,
-      2,
-      currentColIndex_dur + 2,
-    );
+    // const avgDurationCell = headerRow1_dur.getCell(currentColIndex_dur + 2);
+    // avgDurationCell.value = "Average Duration";
+    // durationSheet.mergeCells(
+    //   1,
+    //   currentColIndex_dur + 2,
+    //   2,
+    //   currentColIndex_dur + 2,
+    // );
 
     // --- Sales by Model Tab ---
     const salesModelBaseColumns = [
@@ -778,7 +778,7 @@ export class ReportsService {
       })),
       { header: "Grand Total", key: "grand_total", width: 20 },
     ];
-    branchPromoterSalesSheet.columns = bpCols;
+    // branchPromoterSalesSheet.columns = bpCols;
 
     const bpTotalsRow: any = { branch_name: "Grand Total" };
     sortedPromoters.forEach((p) => (bpTotalsRow[`user_${p.id}`] = 0));
@@ -807,16 +807,16 @@ export class ReportsService {
       // Format number to string with 2 decimals if > 0
       row.grand_total =
         row.grand_total > 0 ? Number(row.grand_total.toFixed(2)) : "";
-      const addedRow = branchPromoterSalesSheet.addRow(row);
+      // const addedRow = branchPromoterSalesSheet.addRow(row);
 
       // Alternating row colors (Zebra striping)
-      if (index % 2 === 1) {
-        addedRow.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFF9F9F9" },
-        };
-      }
+      // if (index % 2 === 1) {
+      //   addedRow.fill = {
+      //     type: "pattern",
+      //     pattern: "solid",
+      //     fgColor: { argb: "FFF9F9F9" },
+      //   };
+      // }
     });
 
     bpTotalsRow.grand_total = Number(bpAbsoluteTotal.toFixed(2));
@@ -830,8 +830,8 @@ export class ReportsService {
         bpTotalsRow[`user_${p.id}`] = "";
       }
     });
-    const finalTotalRow = branchPromoterSalesSheet.addRow(bpTotalsRow);
-    finalTotalRow.font = { bold: true };
+    // const finalTotalRow = branchPromoterSalesSheet.addRow(bpTotalsRow);
+    // finalTotalRow.font = { bold: true };
 
     // Formatting
     const headerFill = {
@@ -858,8 +858,8 @@ export class ReportsService {
       attendanceSheet,
       tab2Sheet,
       tab3Sheet,
-      durationSheet,
-      branchPromoterSalesSheet,
+      // durationSheet,
+      // branchPromoterSalesSheet,
       salesByModelSheet,
       salesDetailSheet,
     ].forEach((sheet) => {
@@ -933,7 +933,7 @@ export class ReportsService {
 
     return tempFilePath;
   }
-
+  }
   async generateGatemeaReport(): Promise<string> {
     this.logger.log("Started generating GATEMEA Daily report...");
 
