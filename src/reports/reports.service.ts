@@ -864,7 +864,7 @@ export class ReportsService {
       salesDetailSheet,
     ].forEach((sheet) => {
       const isTab3 = sheet.name === "Check-in - Check-out";
-      const isBPMatrix = sheet.name === "Branch Promoter Sales";
+      // const isBPMatrix = sheet.name === "Branch Promoter Sales";
       const isSalesByModel = sheet.name === "Sales by Model";
       const isSalesDetail = sheet.name === "Sales Detail";
       const isAttendance = sheet.name === "Attendance";
@@ -873,12 +873,12 @@ export class ReportsService {
       if (isSalesByModel) effectiveBaseColCount = 5;
       if (isSalesDetail) effectiveBaseColCount = 0;
       if (
-        sheet.name === "Attendance Duration" ||
+        // sheet.name === "Attendance Duration" ||
         sheet.name === "Check-in - Check-out"
       ) {
         effectiveBaseColCount = baseColumns.length;
       }
-      if (isBPMatrix) effectiveBaseColCount = 1;
+      // if (isBPMatrix) effectiveBaseColCount = 1;
 
       const startRow = isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
 
@@ -898,7 +898,7 @@ export class ReportsService {
         const isHeader = isTab3 ? rowNumber <= 2 : rowNumber === 1;
         const isTotalRow =
           (isAttendance && rowNumber === 2) ||
-          (isBPMatrix && rowNumber === sheet.rowCount);
+          // (isBPMatrix && rowNumber === sheet.rowCount);
 
         row.eachCell((cell, colNumber) => {
           cell.alignment = { vertical: "middle", horizontal: "center" };
