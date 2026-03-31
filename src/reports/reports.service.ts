@@ -896,8 +896,8 @@ export class ReportsService {
 
       sheet.eachRow((row, rowNumber) => {
         const isHeader = isTab3 ? rowNumber <= 2 : rowNumber === 1;
-        const isTotalRow =
-          (isAttendance && rowNumber === 2) ||
+        // const isTotalRow =
+        //   (isAttendance && rowNumber === 2) ||
           // (isBPMatrix && rowNumber === sheet.rowCount);
 
         row.eachCell((cell, colNumber) => {
@@ -914,9 +914,9 @@ export class ReportsService {
             }
             cell.fill = headerFill as exceljs.Fill;
             cell.border = cellBorder as Partial<exceljs.Borders>;
-          } else if (isTotalRow) {
-            cell.font = { bold: true };
-            cell.border = thickBottomBorder as Partial<exceljs.Borders>;
+          // } else if (isTotalRow) {
+          //   cell.font = { bold: true };
+          //   cell.border = thickBottomBorder as Partial<exceljs.Borders>;
           } else {
             cell.border = cellBorder as Partial<exceljs.Borders>;
           }
