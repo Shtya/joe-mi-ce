@@ -179,6 +179,7 @@ export class ReportsService {
       },
       relations: ["user", "user.role", "branch", "branch.chain", "checkin"],
     });
+    this.logger.log(`Fetched ${journeys.length} journeys.`);
 
     const sales = await this.saleRepository.find({
       where: {
@@ -419,9 +420,14 @@ export class ReportsService {
         }
 
         if (i <= daysInMonthForSales) {
-          const daySales = userSales.filter(
-            (s) => dayjs(s.sale_date).format("YYYY-MM-DD") === currentDateStr,
-          );
+          const daySales = userSales.filter((s) => {
+            const sd = dayjs(s.sale_date).tz("Asia/Riyadh");
+            const rd =
+              sd.hour() < 8
+                ? sd.subtract(1, "day").format("YYYY-MM-DD")
+                : sd.format("YYYY-MM-DD");
+            return rd === currentDateStr;
+          });
           const dailySalesTotal = daySales.reduce(
             (sum, sale) => sum + Number(sale.total_amount || 0),
             0,
@@ -579,11 +585,18 @@ export class ReportsService {
       if (!isPromoter(s.user)) return;
       if (isRoaming(s.branch?.chain?.name)) return;
 
+      const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
+      const reportingDay =
+        saleDate.hour() < 8 ? saleDate.subtract(1, "day") : saleDate;
+      const dayOfMonth = reportingDay.date();
+      const reportingDayStr = reportingDay.format("YYYY-MM-DD");
+
+      // Only include sales that belong to the current report month
+      if (!reportingDayStr.startsWith(currentMonthPrefix)) return;
+
       const model = s.product?.model || "N/A";
       const sku = s.product?.sku || "N/A";
       const key = `${model}_${sku}`;
-      const saleDate = dayjs(s.sale_date);
-      const dayOfMonth = saleDate.date();
 
       if (!modelSalesMap.has(key)) {
         const initialData = {
@@ -680,30 +693,26 @@ export class ReportsService {
     });
 
     // --- Branch Promoter Sales Matrix Tab ---
-    const bpIsPromoter = (user: User) => {
-      const roleName = user?.role?.name?.toLowerCase();
-      return ["promoter", "supervisor", "admin"].includes(roleName);
-    };
-
     const promotersMap = new Map<string, User>();
-    const journeysByBranchAndDate = new Map<string, Map<string, User>>();
+    users.forEach((u) => promotersMap.set(u.id, u));
+
+    const journeysByUserAndDate = new Map<string, Map<string, any>>();
 
     journeys.forEach((j) => {
       if (!j.branch || !j.user) return;
       if (isRoaming(j.branch.chain?.name)) return;
-      if (!bpIsPromoter(j.user)) return;
+      if (!promotersMap.has(j.user.id)) return;
 
-      promotersMap.set(j.user.id, j.user);
-
-      if (!journeysByBranchAndDate.has(j.branch.id)) {
-        journeysByBranchAndDate.set(j.branch.id, new Map<string, User>());
+      if (!journeysByUserAndDate.has(j.user.id)) {
+        journeysByUserAndDate.set(j.user.id, new Map<string, any>());
       }
-      journeysByBranchAndDate.get(j.branch.id).set(j.date, j.user);
+      journeysByUserAndDate.get(j.user.id).set(j.date, j.branch);
     });
 
     const sortedPromoters = Array.from(promotersMap.values()).sort((a, b) =>
       (a.name || "").localeCompare(b.name || ""),
     );
+    this.logger.log(`Promoters Map Size: ${promotersMap.size}. Sorted Promoters: ${sortedPromoters.length}`);
 
     const bpSalesMatrix = new Map<string, Map<string, number>>();
     const branchesMap = new Map<string, any>();
@@ -714,38 +723,39 @@ export class ReportsService {
     });
 
     sales.forEach((s) => {
-      if (isRoaming(s.branch?.chain?.name)) return;
+      if (!s.user) return;
+      if (!promotersMap.has(s.user.id)) return;
 
       const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
-      // Determine Reporting Day (7 AM - 5 AM window)
-      // Sales between 00:00 and 06:59 count for the previous day
+      // Reporting Day: 8 AM Today to 5 AM Tomorrow (using 8 AM as full cutoff)
       const reportingDay =
-        saleDate.hour() < 7
+        saleDate.hour() < 8
           ? saleDate.subtract(1, "day").format("YYYY-MM-DD")
           : saleDate.format("YYYY-MM-DD");
 
-      const branchId = s.branch?.id;
-      if (!branchId) return;
+      // Only include sales that belong to the current report month
+      if (!reportingDay.startsWith(currentMonthPrefix)) return;
 
-      if (!branchesMap.has(branchId)) {
-        branchesMap.set(branchId, s.branch);
-      }
-
-      const assignedUser = journeysByBranchAndDate
-        .get(branchId)
+      const assignedBranch = journeysByUserAndDate
+        .get(s.user.id)
         ?.get(reportingDay);
-      if (!assignedUser) return;
+      if (!assignedBranch) return;
 
-      if (!bpSalesMatrix.has(branchId)) {
-        bpSalesMatrix.set(branchId, new Map<string, number>());
+      if (!branchesMap.has(assignedBranch.id)) {
+        branchesMap.set(assignedBranch.id, assignedBranch);
       }
-      const branchUserSales = bpSalesMatrix.get(branchId);
-      const currentSales = branchUserSales.get(assignedUser.id) || 0;
+
+      if (!bpSalesMatrix.has(assignedBranch.id)) {
+        bpSalesMatrix.set(assignedBranch.id, new Map<string, number>());
+      }
+      const branchUserSales = bpSalesMatrix.get(assignedBranch.id);
+      const currentSales = branchUserSales.get(s.user.id) || 0;
       branchUserSales.set(
-        assignedUser.id,
+        s.user.id,
         currentSales + Number(s.total_amount || 0),
       );
     });
+    this.logger.log(`Sales Matched in BP Matrix: ${bpSalesMatrix.size} branches have sales entries in the matrix.`);
 
     const bpCols = [
       { header: "Branch Name", key: "branch_name", width: 30 },
