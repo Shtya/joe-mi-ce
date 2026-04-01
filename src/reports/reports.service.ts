@@ -59,15 +59,12 @@ export class ReportsService {
       );
     }
 
-    const now = dayjs().tz("Asia/Riyadh");
+    // Use yesterday as the reference date to ensure reports run on the 1st cover the previous month.
+    const now = dayjs().tz("Asia/Riyadh").subtract(1, "day");
     const startOfMonth = now.startOf("month");
 
     const daysInMonthForAttendance = now.daysInMonth();
-    const daysInMonthForSales =
-      now.month() === dayjs().tz("Asia/Riyadh").month() &&
-      now.year() === dayjs().tz("Asia/Riyadh").year()
-        ? now.date()
-        : now.daysInMonth();
+    const daysInMonthForSales = now.date();
 
     const currentMonthPrefix = now.format("YYYY-MM");
     const endOfReportingPeriod = now.endOf("day");
