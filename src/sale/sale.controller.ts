@@ -303,6 +303,7 @@ export class SaleController {
       startDate,
       endDate,
       query.brand_id,
+      query.category_id,
     );
   }
 
@@ -444,6 +445,7 @@ export class SaleController {
       startDate,
       endDate,
       query.brand_id,
+      query.category_id,
     );
   }
 

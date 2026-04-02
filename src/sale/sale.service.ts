@@ -716,6 +716,7 @@ export class SaleService {
     startDate?: Date,
     endDate?: Date,
     brandId?: string,
+    categoryId?: string,
   ) {
     // 1. Fetch all matching sales using the optimized method to get ALL the extra totals/branch/user/target data
     // We use a high limit to get all records for grouping in memory, as invoice summary typically
@@ -731,6 +732,7 @@ export class SaleService {
       startDate,
       endDate,
       brandId,
+      categoryId,
     );
 
     // 2. Group the records
@@ -873,6 +875,7 @@ export class SaleService {
     startDate?: Date,
     endDate?: Date,
     brandId?: string,
+    categoryId?: string,
   ) {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -917,6 +920,9 @@ export class SaleService {
     }
     if (brandId) {
       qb.andWhere("brand.id = :brandId", { brandId });
+    }
+    if (categoryId) {
+      qb.andWhere("category.id = :categoryId", { categoryId });
     }
 
     // Apply search if provided
