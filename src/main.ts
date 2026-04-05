@@ -16,9 +16,7 @@ import * as express from "express";
 import * as qs from "qs";
 import * as dotenv from "dotenv";
 import helmet from "helmet";
-import { createRequire } from 'module';
 
-const require = createRequire(import.meta.url);
 
 // Load environment variables
 dotenv.config();
