@@ -84,6 +84,33 @@ export class SaleController {
     return { startDate, endDate };
   }
 
+  private applyShorthandFilters(mergedFilters: any) {
+    if (mergedFilters.brand?.id) {
+      mergedFilters["product.brand.id"] = mergedFilters.brand.id;
+      delete mergedFilters.brand;
+    }
+    if (mergedFilters.category?.id) {
+      mergedFilters["product.category.id"] = mergedFilters.category.id;
+      delete mergedFilters.category;
+    }
+    if (mergedFilters.chain?.id) {
+      mergedFilters["branch.chain.id"] = mergedFilters.chain.id;
+      delete mergedFilters.chain;
+    }
+    if (mergedFilters.city?.id) {
+      mergedFilters["branch.city.id"] = mergedFilters.city.id;
+      delete mergedFilters.city;
+    }
+    if (mergedFilters.user?.id) {
+      mergedFilters["user.id"] = mergedFilters.user.id;
+      delete mergedFilters.user;
+    }
+    if (mergedFilters.branch?.id) {
+      mergedFilters["branch.id"] = mergedFilters.branch.id;
+      delete mergedFilters.branch;
+    }
+  }
+
   // 🔹 Export sales data to Excel
   @Get("/export")
   @Permissions(EPermission.SALE_EXPORT)
@@ -132,6 +159,8 @@ export class SaleController {
     if (mergedFilters.sale_date_from) delete mergedFilters.sale_date_from;
     if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
     if (mergedFilters.project) delete mergedFilters.project;
+
+    this.applyShorthandFilters(mergedFilters);
 
     return CRUD.exportEntityToExcel2(
       this.saleService.saleRepo,
@@ -215,6 +244,8 @@ export class SaleController {
     if (mergedFilters.sale_date_from) delete mergedFilters.sale_date_from;
     if (mergedFilters.sale_date_to) delete mergedFilters.sale_date_to;
     if (mergedFilters.project) delete mergedFilters.project;
+
+    this.applyShorthandFilters(mergedFilters);
 
     return CRUD.findAll2(
       this.saleService.saleRepo,
@@ -396,6 +427,8 @@ export class SaleController {
     delete filters.toDate;
     delete filters.date;
 
+    this.applyShorthandFilters(filters);
+
     return this.saleService.findSalesWithBrand(
       "sale",
       query.search,
@@ -416,6 +449,8 @@ export class SaleController {
     delete filters.fromDate;
     delete filters.toDate;
     delete filters.date;
+
+    this.applyShorthandFilters(filters);
 
     return this.saleService.findSalesWithBrand(
       "sale",
@@ -439,6 +474,8 @@ export class SaleController {
     delete filters.fromDate;
     delete filters.toDate;
     delete filters.date;
+
+    this.applyShorthandFilters(filters);
 
     return this.saleService.findSalesByUserOptimized(
       userId,

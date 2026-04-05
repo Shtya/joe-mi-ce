@@ -953,10 +953,12 @@ export class SaleService {
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== "") {
           if (key.includes(".")) {
-            // Handle nested filters like branch.id, product.name, category.name, etc.
-            const [relation, field] = key.split(".");
-            qb.andWhere(`${relation}.${field} = :${key.replace(".", "_")}`, {
-              [key.replace(".", "_")]: value,
+            // Handle nested filters like product.brand.id, branch.id, etc.
+            const parts = key.split(".");
+            const field = parts.pop();
+            const alias = parts.length > 0 ? parts.pop() : "sale";
+            qb.andWhere(`${alias}.${field} = :${key.replace(/\./g, "_")}`, {
+              [key.replace(/\./g, "_")]: value,
             });
           } else {
             qb.andWhere(`sale.${key} = :${key}`, { [key]: value });
@@ -1244,11 +1246,12 @@ export class SaleService {
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== "") {
           if (key.includes(".")) {
-            const [relation, field] = key.split(".");
-            totalsQb.andWhere(
-              `${relation}.${field} = :${key.replace(".", "_")}`,
-              { [key.replace(".", "_")]: value },
-            );
+            const parts = key.split(".");
+            const field = parts.pop();
+            const alias = parts.length > 0 ? parts.pop() : "sale";
+            totalsQb.andWhere(`${alias}.${field} = :${key.replace(/\./g, "_")}`, {
+              [key.replace(/\./g, "_")]: value,
+            });
           } else {
             totalsQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
           }
@@ -1348,11 +1351,12 @@ export class SaleService {
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== null && value !== undefined && value !== "") {
           if (key.includes(".")) {
-            const [relation, field] = key.split(".");
-            categoryQb.andWhere(
-              `${relation}.${field} = :${key.replace(".", "_")}`,
-              { [key.replace(".", "_")]: value },
-            );
+            const parts = key.split(".");
+            const field = parts.pop();
+            const alias = parts.length > 0 ? parts.pop() : "sale";
+            categoryQb.andWhere(`${alias}.${field} = :${key.replace(/\./g, "_")}`, {
+              [key.replace(/\./g, "_")]: value,
+            });
           } else {
             categoryQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
           }
