@@ -232,7 +232,7 @@ export class SaleController {
         "product.brand",
         "product.category",
       ],
-      ["user.name", "user.username"],
+      ["user.name", "user.username", "product.name"],
       mergedFilters,
     );
   }
