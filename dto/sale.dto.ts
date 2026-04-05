@@ -28,3 +28,13 @@ export class CreateSaleDto {
 }
 
 export class UpdateSaleDto extends PartialType(CreateSaleDto) {}
+
+export class ReassignSalesDto {
+  @IsUUID('4', { each: true })
+  @IsNotEmpty()
+  saleIds: string[];
+
+  @IsUUID()
+  @IsNotEmpty()
+  projectId: string;
+}

@@ -929,7 +929,9 @@ export class SaleService {
     if (search) {
       qb.andWhere(
         new Brackets((subQb) => {
-          subQb.where("product.name ILIKE :search", { search: `%${search}%` });
+          subQb.where("product.name ILIKE :search", { search: `%${search}%` })
+            .orWhere("user.name ILIKE :search", { search: `%${search}%` })
+            .orWhere("user.username ILIKE :search", { search: `%${search}%` });
         }),
       );
     }
@@ -1441,6 +1443,19 @@ export class SaleService {
       user: userInfo,
       target_performance: targetPerformance,
       records: optimizedRecords,
+    };
+  }
+
+  async reassignProject(saleIds: string[], projectId: string) {
+    if (!saleIds || saleIds.length === 0) {
+      throw new BadRequestException("No sale IDs provided");
+    }
+
+    const result = await this.saleRepo.update(saleIds, { projectId });
+
+    return {
+      message: `${result.affected} sales reassigned to project ${projectId} successfully`,
+      affected: result.affected,
     };
   }
 }

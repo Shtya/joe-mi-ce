@@ -16,7 +16,7 @@ import {
   ParseUUIDPipe,
 } from "@nestjs/common";
 import { SaleService } from "./sale.service";
-import { CreateSaleDto, UpdateSaleDto } from "dto/sale.dto";
+import { CreateSaleDto, UpdateSaleDto, ReassignSalesDto } from "dto/sale.dto";
 import { CRUD } from "common/crud.service";
 import { AuthGuard } from "src/auth/auth.guard";
 import { Permissions } from "decorators/permissions.decorators";
@@ -153,6 +153,7 @@ export class SaleController {
           "product.brand",
           "product.category",
         ],
+        searchFields: ["user.name", "user.username", "product.name"],
       },
     );
   }
@@ -345,6 +346,11 @@ export class SaleController {
   update(@Param("id") id: string, @Body() dto: UpdateSaleDto) {
     return this.saleService.update(id, dto);
   }
+  @Patch("reassign-project")
+  @Permissions(EPermission.SALE_UPDATE)
+  reassignProject(@Body() dto: ReassignSalesDto) {
+    return this.saleService.reassignProject(dto.saleIds, dto.projectId);
+  }
 
   // 🔹 Get sale by ID
   @Get(":id")
@@ -398,7 +404,7 @@ export class SaleController {
       query.sortBy,
       query.sortOrder,
       ["user", "product", "branch", "branch.salesTargets"],
-      ["status"],
+      ["user.name", "user.username", "product.name"],
       { branch: { id: branchId }, ...filters },
     );
   }
@@ -419,7 +425,7 @@ export class SaleController {
       query.sortBy,
       query.sortOrder,
       ["user", "product", "branch"],
-      ["status"],
+      ["user.name", "user.username", "product.name"],
       { product: { id: productId }, ...filters },
     );
   }
