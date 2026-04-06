@@ -132,11 +132,18 @@ export class ReportsService {
       ...baseColumns,
       ...dateColumnsForAttendance,
       { header: "TLL DAYS", key: "ttl_attendance", width: 15 },
+      { header: "LATE", key: "ttl_late", width: 15 },
     ];
     tab2Sheet.columns = [
       ...baseColumns,
       ...dateColumnsForSales,
       { header: "TLL DAYS", key: "tll_days_tab2", width: 15 },
+    ];
+    tab3Sheet.columns = [
+      ...baseColumns,
+      ...checkinDateColumns,
+      { header: "TLL DAYS", key: "ttl_days_tab3", width: 15 },
+      { header: "LATE", key: "ttl_late_tab3", width: 15 },
     ];
     // durationSheet.columns = [
     //   ...baseColumns,
@@ -147,7 +154,7 @@ export class ReportsService {
     // ];
 
     // Set widths for Tab 3 and Duration Sheet
-    const tab3TotalCols = baseColumns.length + checkinDateColumns.length + 1;
+    const tab3TotalCols = baseColumns.length + checkinDateColumns.length + 2;
     for (let i = 1; i <= tab3TotalCols; i++) {
       tab3Sheet.getColumn(i).width = 15;
     }
@@ -174,7 +181,7 @@ export class ReportsService {
         ),
         ...(projectId && { projectId }),
       },
-      relations: ["user", "user.role", "branch", "branch.chain", "checkin"],
+      relations: ["user", "user.role", "branch", "branch.chain", "checkin", "shift"],
     });
     this.logger.log(`Fetched ${journeys.length} journeys.`);
 
@@ -303,6 +310,7 @@ export class ReportsService {
 
       let ttlDays = 0;
       let ttlAttendance = 0;
+      let ttlLate = 0;
       let totalSales = 0;
       let totalDurationMs = 0;
       let daysOfWork = 0;
@@ -363,17 +371,37 @@ export class ReportsService {
           const inTimes = dayJourneys
             .map((j) =>
               j.checkin?.checkInTime
-                ? dayjs(j.checkin.checkInTime).add(3, "hour").format("HH:mm")
+                ? dayjs(j.checkin.checkInTime).add(3, "hour").format("hh:mm A")
                 : "",
             )
             .filter(Boolean);
           const outTimes = dayJourneys
             .map((j) =>
               j.checkin?.checkOutTime
-                ? dayjs(j.checkin.checkOutTime).add(3, "hour").format("HH:mm")
+                ? dayjs(j.checkin.checkOutTime).add(3, "hour").format("hh:mm A")
                 : "",
             )
             .filter(Boolean);
+
+          // Calculate Lateness
+          dayJourneys.forEach((j) => {
+            if (j.checkin?.checkInTime && j.shift?.startTime) {
+              const checkInSaudi = dayjs(j.checkin.checkInTime).add(3, "hour");
+              const [sHours, sMinutes] = j.shift.startTime
+                .split(":")
+                .map(Number);
+              const shiftStart = checkInSaudi
+                .clone()
+                .hour(sHours)
+                .minute(sMinutes)
+                .second(0)
+                .millisecond(0);
+
+              if (checkInSaudi.isAfter(shiftStart)) {
+                ttlLate += 1;
+              }
+            }
+          });
 
           t3RowArr.push(inTimes.length > 0 ? inTimes.join(" , ") : "--:--");
           t3RowArr.push(outTimes.length > 0 ? outTimes.join(" , ") : "--:--");
@@ -436,8 +464,10 @@ export class ReportsService {
       }
 
       attRow["ttl_attendance"] = ttlAttendance;
+      attRow["ttl_late"] = ttlLate;
       t2Row["tll_days_tab2"] = totalSales > 0 ? `${totalSales}` : "";
       t3RowArr.push(ttlDays);
+      t3RowArr.push(ttlLate);
 
       attendanceRows.push(attRow);
       tab2Rows.push(t2Row);
@@ -456,12 +486,18 @@ export class ReportsService {
       user_status: "",
     };
     let totalOfTotals = 0;
+    let totalLateOfTotals = 0;
     for (let i = 1; i <= daysInMonthForAttendance; i++) {
       const key = `day_${i}`;
       totalsRowData[key] = dailyAttendanceTotals[key];
       totalOfTotals += dailyAttendanceTotals[key];
     }
     totalsRowData["ttl_attendance"] = totalOfTotals;
+    const allTttLate = attendanceRows.reduce(
+      (sum, row) => sum + (row.ttl_late || 0),
+      0,
+    );
+    totalsRowData["ttl_late"] = allTttLate;
 
     attendanceSheet.addRow(totalsRowData);
     attendanceRows.forEach((r) => attendanceSheet.addRow(r));
@@ -528,6 +564,10 @@ export class ReportsService {
     const tllDaysCell_t3 = headerRow1_t3.getCell(currentColIndex_t3);
     tllDaysCell_t3.value = "TLL DAYS";
     tab3Sheet.mergeCells(1, currentColIndex_t3, 2, currentColIndex_t3);
+
+    const lateCell_t3 = headerRow1_t3.getCell(currentColIndex_t3 + 1);
+    lateCell_t3.value = "LATE";
+    tab3Sheet.mergeCells(1, currentColIndex_t3 + 1, 2, currentColIndex_t3 + 1);
 
     // Totals columns for Duration Sheet
     // const totalHoursCell = headerRow1_dur.getCell(currentColIndex_dur);
@@ -630,7 +670,7 @@ export class ReportsService {
         !entry.last_sale_date ||
         saleDate.isAfter(dayjs(entry.last_sale_date))
       ) {
-        entry.last_sale_date = saleDate.format("YYYY-MM-DD HH:mm");
+        entry.last_sale_date = saleDate.format("YYYY-MM-DD hh:mm A");
       }
     });
 
@@ -689,7 +729,7 @@ export class ReportsService {
         total_amount: s.total_amount ?? "-",
         quantity: s.quantity ?? "-",
         date_of_sale: saleDate.format("YYYY-MM-DD"),
-        time_of_sale: saleDate.format("HH:mm:ss"),
+        time_of_sale: saleDate.format("hh:mm:ss A"),
       });
     });
 
