@@ -43,7 +43,7 @@ export class ReportsService {
     private readonly vacationDateRepository: Repository<VacationDate>,
   ) {}
 
-  async generateMonthlyReport(): Promise<string> {
+  async generateMonthlyReport(givenDate?: string | Date): Promise<string> {
     this.logger.log("Started generating monthly report...");
 
     const projectName = "taqnia";
@@ -59,8 +59,10 @@ export class ReportsService {
       );
     }
 
-    // Use yesterday as the reference date to ensure reports run on the 1st cover the previous month.
-    const now = dayjs().tz("Asia/Riyadh").subtract(1, "day");
+    // Use yesterday as the reference date by default, or the provided date.
+    const now = givenDate 
+      ? dayjs(givenDate).tz("Asia/Riyadh") 
+      : dayjs().tz("Asia/Riyadh").subtract(1, "day");
     const startOfMonth = now.startOf("month");
 
     const daysInMonthForAttendance = now.daysInMonth();

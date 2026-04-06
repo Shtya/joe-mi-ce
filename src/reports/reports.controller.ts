@@ -261,6 +261,37 @@ export class ReportsController {
     }
   }
 
+  @Get("monthly/:date")
+  async downloadMonthlyReportByDate(
+    @Param("date") date: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const filePath = await this.reportsService.generateMonthlyReport(date);
+      if (!filePath) {
+        return res.status(404).json({
+          success: false,
+          message: "Report generation failed",
+        });
+      }
+      const fileName = path.basename(filePath);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+
+      return res.download(filePath, fileName);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate report for specified date",
+        error: error.message,
+      });
+    }
+  }
+
   @Get("gatemea")
   async downloadGatemeaReport(@Res() res: Response) {
     try {
