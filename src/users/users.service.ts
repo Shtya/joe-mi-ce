@@ -274,10 +274,7 @@ export class UsersService {
         continue;
       }
 
-      await this.userRepository.update({ id: user.id }, {
-        national_id: nationalId.toString().trim(),
-        mobile: mobileNumber.toString().tim(),
-      });
+      await this.userRepository.update({ id: user.id }, updateData);
       updatedCount++;
     }
 
