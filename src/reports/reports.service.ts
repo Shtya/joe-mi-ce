@@ -696,6 +696,7 @@ export class ReportsService {
     salesDetailSheet.columns = [
       { header: "User Name", key: "user_name", width: 25 },
       { header: "User Username", key: "user_username", width: 25 },
+      { header: "National ID", key: "user_national_id", width: 15 },
       { header: "User Mobile", key: "user_mobile", width: 15 },
       { header: "City Name", key: "city_name", width: 15 },
       { header: "Chain", key: "chain", width: 15 },
@@ -726,6 +727,7 @@ export class ReportsService {
       salesDetailSheet.addRow({
         user_name: s.user?.name || "-",
         user_username: s.user?.username || "-",
+        user_national_id: s.user?.national_id || "-",
         user_mobile: s.user?.mobile || "-",
         city_name: s.branch?.city?.name || "-",
         chain: s.branch?.chain?.name || "-",
