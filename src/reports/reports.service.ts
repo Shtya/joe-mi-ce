@@ -400,7 +400,8 @@ export class ReportsService {
                 .millisecond(0);
 
               if (checkInSaudi.isAfter(shiftStart)) {
-                ttlLate += 1;
+                const diffMins = checkInSaudi.diff(shiftStart, "minute");
+                ttlLate += diffMins;
               }
             }
           });
@@ -466,10 +467,10 @@ export class ReportsService {
       }
 
       attRow["ttl_attendance"] = ttlAttendance;
-      attRow["ttl_late"] = ttlLate;
+      attRow["ttl_late"] = ttlLate; // Sum of minutes
       t2Row["tll_days_tab2"] = totalSales > 0 ? `${totalSales}` : "";
       t3RowArr.push(ttlDays);
-      t3RowArr.push(ttlLate);
+      t3RowArr.push(ttlLate); // Sum of minutes
 
       attendanceRows.push(attRow);
       tab2Rows.push(t2Row);
@@ -501,13 +502,15 @@ export class ReportsService {
     );
     totalsRowData["ttl_late"] = allTttLate;
 
-    attendanceSheet.addRow(totalsRowData);
     attendanceRows.forEach((r) => attendanceSheet.addRow(r));
+    attendanceSheet.addRow(totalsRowData);
 
     tab2Rows
       .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
       .forEach((r) => tab2Sheet.addRow(r));
 
+    // For Tab 3, we reserve Row 2 for the second header row
+    tab3Sheet.addRow([]); // Row 2 dummy
     tab3Rows.forEach((r) => {
       tab3Sheet.addRow(r);
     });
@@ -930,7 +933,7 @@ export class ReportsService {
 
       // Freeze headers (and totals row for Attendance)
       sheet.views = [
-        { state: "frozen", xSplit: 0, ySplit: isAttendance ? 2 : startRow },
+        { state: "frozen", xSplit: 0, ySplit: startRow },
       ];
 
       sheet.eachRow((row, rowNumber) => {
