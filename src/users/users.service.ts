@@ -234,25 +234,34 @@ export class UsersService {
     };
   }
 
-  async importNationalIds(
+  async importUsersData(
     rows: any[],
   ): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
     const errors: string[] = [];
     let updatedCount = 0;
 
     for (const row of rows) {
-      // The user's image shows "User" and "ID" as column headers.
-      // We'll also support "username" and "national_id" just in case.
       const username = row["User"] || row["username"] || row["username "];
       const nationalId = row["ID"] || row["national_id"] || row["national_id "];
+      const mobileNumber = row["Phone"] || row["mobile"] || row["mobile "];
 
       if (!username) {
         errors.push(`Row missing username: ${JSON.stringify(row)}`);
         continue;
       }
 
-      if (!nationalId) {
-        errors.push(`Row for user ${username} missing national ID`);
+      const updateData: any = {};
+      if (nationalId) {
+        updateData.national_id = nationalId.toString().trim();
+      }
+      if (mobileNumber) {
+        updateData.mobile = mobileNumber.toString().trim();
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        errors.push(
+          `Row for user ${username} missing both national ID and mobile number`,
+        );
         continue;
       }
 
@@ -265,10 +274,10 @@ export class UsersService {
         continue;
       }
 
-      await this.userRepository.update(
-        { id: user.id },
-        { national_id: nationalId.toString().trim() },
-      );
+      await this.userRepository.update({ id: user.id }, {
+        national_id: nationalId.toString().trim(),
+        mobile: mobileNumber.toString().tim(),
+      });
       updatedCount++;
     }
 

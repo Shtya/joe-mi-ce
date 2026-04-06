@@ -134,10 +134,10 @@ export class UsersController {
     return this.usersService.registerFcmToken(req.user.id, token);
   }
 
-  @Post("import-national-ids")
+  @Post("import-users")
   @Permissions(EPermission.USER_UPDATE)
   @UseInterceptors(FileInterceptor("file", multerOptions))
-  async importNationalIds(@UploadedFile() file: Express.Multer.File) {
+  async importUsers(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException("File is required");
     }
@@ -187,7 +187,7 @@ export class UsersController {
 
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-      return await this.usersService.importNationalIds(rows);
+      return await this.usersService.importUsersData(rows);
     } catch (err) {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       throw err;
