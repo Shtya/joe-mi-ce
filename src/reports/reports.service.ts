@@ -467,10 +467,10 @@ export class ReportsService {
       }
 
       attRow["ttl_attendance"] = ttlAttendance;
-      attRow["ttl_late"] = ttlLate; // Sum of minutes
+      attRow["ttl_late"] = formatDuration(ttlLate * 60000); // Format total minutes as HH:mm
       t2Row["tll_days_tab2"] = totalSales > 0 ? `${totalSales}` : "";
       t3RowArr.push(ttlDays);
-      t3RowArr.push(ttlLate); // Sum of minutes
+      t3RowArr.push(formatDuration(ttlLate * 60000)); // Format total minutes as HH:mm
 
       attendanceRows.push(attRow);
       tab2Rows.push(t2Row);
@@ -496,11 +496,14 @@ export class ReportsService {
       totalOfTotals += dailyAttendanceTotals[key];
     }
     totalsRowData["ttl_attendance"] = totalOfTotals;
-    const allTttLate = attendanceRows.reduce(
-      (sum, row) => sum + (row.ttl_late || 0),
+    const allTttLateMins = attendanceRows.reduce(
+      (sum, row) => {
+        const [h, m] = row.ttl_late.split(":").map(Number);
+        return sum + (h * 60 + m);
+      },
       0,
     );
-    totalsRowData["ttl_late"] = allTttLate;
+    totalsRowData["ttl_late"] = formatDuration(allTttLateMins * 60000);
 
     attendanceRows.forEach((r) => attendanceSheet.addRow(r));
     attendanceSheet.addRow(totalsRowData);
@@ -563,7 +566,7 @@ export class ReportsService {
     //   headerRow2_dur.getCell(currentColIndex_dur).value = "Duration";
     //   headerRow2_dur.getCell(currentColIndex_dur + 1).value = "Shift Count";
     //   currentColIndex_dur += 2;
-    // }
+    }
 
     // Totals columns for Tab 3
     const tllDaysCell_t3 = headerRow1_t3.getCell(currentColIndex_t3);
@@ -974,7 +977,6 @@ export class ReportsService {
     this.logger.log(`Monthly report successfully generated at ${tempFilePath}`);
 
     return tempFilePath;
-  }
   }
   async generateGatemeaReport(): Promise<string> {
     this.logger.log("Started generating GATEMEA Daily report...");
