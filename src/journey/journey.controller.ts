@@ -734,10 +734,8 @@ export class JourneyController {
             return jDateStr === dateStr;
           }) || [];
 
-        // If no journeys exist for this plan/date, but it was active, push one Absent row
+        // If no journeys exist for this plan/date, mark as seen and push one row (even if inactive to show plan info)
         if (matchingJourneys.length === 0) {
-          if (!isActiveForDate) return;
-
           seenPromoterDate.add(
             `${plan.user?.id}:${dateStr}:${plan.branch?.id}`,
           );
@@ -1033,7 +1031,7 @@ export class JourneyController {
             isActive: promoter.is_active,
             totalJourneys: 0,
           });
-          seenPromoterDate.add(`${promoter.id}:${dateStr}`);
+          seenPromoterDate.add(`${promoter.id}:${dateStr}:${promoter.branch?.id}`);
         }
       });
     });
