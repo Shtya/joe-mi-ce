@@ -555,6 +555,8 @@ export class JourneyController {
     };
 
     let supervisorBranchIds: string[] = [];
+    let teamUserIds: string[] = [];
+
     if (user.role.name === ERole.SUPERVISOR) {
       const branches = await this.journeyService.getSupervisorBranches(user.id);
       if (!branches || branches.length === 0) {
@@ -568,6 +570,17 @@ export class JourneyController {
         };
       }
       supervisorBranchIds = branches.map((b) => b.id);
+
+      // Fetch IDs of all promoters assigned to these branches
+      const teamUsers = await this.journeyService.userRepo.find({
+        where: {
+          branch: { id: In(supervisorBranchIds) },
+          role: { name: ERole.PROMOTER },
+          project_id: projectId,
+        },
+        select: ["id"],
+      });
+      teamUserIds = teamUsers.map((u) => u.id);
     }
 
     // Parse dates robustly using dayjs
@@ -627,10 +640,17 @@ export class JourneyController {
         if (supervisorBranchIds.length > 0) {
           qb.andWhere(
             new Brackets((subQb) => {
-              // Check if plan belongs to a supervisor's branch
+              // 1. Activity occurring in the supervisor's branches
               subQb.where("plan.branchId IN (:...branchIds)", {
                 branchIds: supervisorBranchIds,
               });
+
+              // 2. Activity performed by the supervisor's assigned team (at any branch)
+              if (teamUserIds.length > 0) {
+                subQb.orWhere("plan.userId IN (:...teamIds)", {
+                  teamIds: teamUserIds,
+                });
+              }
             }),
           );
         } else {
@@ -678,19 +698,35 @@ export class JourneyController {
 
     // Fetch Unplanned Journeys (not linked to plans)
     const unplannedJourneys = await this.journeyService.journeyRepo.find({
-      where: {
-        projectId,
-        type: JourneyType.UNPLANNED,
-        date: In(datesInRange),
-        ...(user.role.name === ERole.SUPERVISOR &&
-        supervisorBranchIds.length > 0
-          ? {
-              branch: { id: In(supervisorBranchIds) },
-              user: { role: { name: ERole.PROMOTER } },
-            }
-          : {}),
-        ...(user.role.name === ERole.PROMOTER ? { user: { id: user.id } } : {}),
-      },
+      where:
+        user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0
+          ? [
+              {
+                projectId,
+                type: JourneyType.UNPLANNED,
+                date: In(datesInRange),
+                branch: { id: In(supervisorBranchIds) },
+                user: { role: { name: ERole.PROMOTER } },
+              },
+              ...(teamUserIds.length > 0
+                ? [
+                    {
+                      projectId,
+                      type: JourneyType.UNPLANNED,
+                      date: In(datesInRange),
+                      user: { id: In(teamUserIds), role: { name: ERole.PROMOTER } },
+                    },
+                  ]
+                : []),
+            ]
+          : {
+              projectId,
+              type: JourneyType.UNPLANNED,
+              date: In(datesInRange),
+              ...(user.role.name === ERole.PROMOTER
+                ? { user: { id: user.id } }
+                : {}),
+            },
       relations: [
         "user",
         "user.role",
@@ -717,7 +753,8 @@ export class JourneyController {
     }
 
     const transformedData: any[] = [];
-    const seenPromoterDate = new Set<string>(); // Track 'userId:date' to avoid duplicates
+    const seenPromoterDate = new Set<string>(); // Track 'userId:date:branchId'
+    const seenUserDateGlobal = new Set<string>(); // Track 'userId:date' to avoid fallback row if they worked elsewhere
 
     plans.records.forEach((plan: any) => {
       datesInRange.forEach((dateStr) => {
@@ -739,6 +776,7 @@ export class JourneyController {
           seenPromoterDate.add(
             `${plan.user?.id}:${dateStr}:${plan.branch?.id}`,
           );
+          seenUserDateGlobal.add(`${plan.user?.id}:${dateStr}`);
 
           const attendanceStatus = "Absent";
           const attendanceStatusEn = getTranslatedStatus(
@@ -789,6 +827,7 @@ export class JourneyController {
           seenPromoterDate.add(
             `${plan.user?.id}:${dateStr}:${plan.branch?.id}`,
           );
+          seenUserDateGlobal.add(`${plan.user?.id}:${dateStr}`);
 
           const checkin = journey?.checkin;
           const checkInTime = checkin?.checkInTime
@@ -941,6 +980,7 @@ export class JourneyController {
       seenPromoterDate.add(
         `${journey.user?.id}:${journey.date}:${journey.branch?.id}`,
       );
+      seenUserDateGlobal.add(`${journey.user?.id}:${journey.date}`);
 
       transformedData.push({
         planId: null,
@@ -988,7 +1028,8 @@ export class JourneyController {
         if (
           !seenPromoterDate.has(
             `${promoter.id}:${dateStr}:${promoter.branch?.id}`,
-          )
+          ) &&
+          !seenUserDateGlobal.has(`${promoter.id}:${dateStr}`)
         ) {
           const attendanceStatus = "Absent";
           const finalAttendanceStatus = getTranslatedStatus(
@@ -1032,6 +1073,7 @@ export class JourneyController {
             totalJourneys: 0,
           });
           seenPromoterDate.add(`${promoter.id}:${dateStr}:${promoter.branch?.id}`);
+          seenUserDateGlobal.add(`${promoter.id}:${dateStr}`);
         }
       });
     });
