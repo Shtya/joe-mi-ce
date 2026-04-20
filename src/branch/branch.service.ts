@@ -1346,26 +1346,30 @@ export class BranchService {
       try {
         const row = this.mapHeaders(rawRow);
 
-        // Required: Branch Name (Store)
-        const branchName = (row.name || row.chain || "").trim();
-        if (!branchName) {
-          throw new Error("Branch name (Store) is missing");
+        // Required: City Name
+        const cityName = (row.city || "").trim();
+        if (!cityName) {
+          throw new Error("City name is missing");
         }
 
         // Required: User identifier (User or Supervisor)
-        const userIdentifier = (row.user || row.supervisor || "").trim();
+        // Note: row.username is the mapped key for both "user" and "username"
+        const userIdentifier = (row.username || row.supervisor || "").trim();
         if (!userIdentifier) {
           throw new Error("User identifier (User/Supervisor) is missing");
         }
 
-        // 1. Find the branch in this project
-        const branch = await this.branchRepo.findOne({
-          where: { name: branchName, project: { id: projectId } },
-          relations: ["supervisor", "supervisors", "team"],
+        // 1. Find branches in this city and project
+        const branches = await this.branchRepo.find({
+          where: { 
+            city: { name: cityName }, 
+            project: { id: projectId } 
+          },
+          relations: ["supervisor", "supervisors", "team", "project"],
         });
 
-        if (!branch) {
-          throw new Error(`Branch "${branchName}" not found in this project`);
+        if (branches.length === 0) {
+          throw new Error(`No branches found in city "${cityName}" for this project`);
         }
 
         // 2. Find the user
@@ -1382,25 +1386,28 @@ export class BranchService {
         user.project_id = projectId;
         await this.userRepo.save(user);
 
-        // Update Branch Supervisors
-        if (!branch.supervisors) branch.supervisors = [];
-        const alreadySupervisor = branch.supervisors.some((s) => s.id === user.id);
-        if (!alreadySupervisor) {
-          branch.supervisors.push(user);
+        for (const branch of branches) {
+          // Update Branch Supervisors
+          if (!branch.supervisors) branch.supervisors = [];
+          const alreadySupervisor = branch.supervisors.some((s) => s.id === user.id);
+          if (!alreadySupervisor) {
+            branch.supervisors.push(user);
+          }
+
+          // Update Legacy Supervisor field
+          branch.supervisor = user;
+
+          // Ensure user is in the team
+          if (!branch.team) branch.team = [];
+          const alreadyInTeam = branch.team.some((t) => t.id === user.id);
+          if (!alreadyInTeam) {
+            branch.team.push(user);
+          }
+
+          await this.branchRepo.save(branch);
         }
-
-        // Update Legacy Supervisor field (optional: pick the one from excel)
-        branch.supervisor = user;
-
-        // Ensure user is in the team
-        if (!branch.team) branch.team = [];
-        const alreadyInTeam = branch.team.some((t) => t.id === user.id);
-        if (!alreadyInTeam) {
-          branch.team.push(user);
-        }
-
-        await this.branchRepo.save(branch);
-        result.success++;
+        
+        result.success += branches.length;
       } catch (err) {
         result.failed++;
         result.errors.push({
