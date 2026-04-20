@@ -1327,6 +1327,92 @@ export class BranchService {
     return false;
   }
 
+  async assignSupervisorsFromExcel(rows: any[], projectId: string) {
+    const result = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    for (const [index, rawRow] of rows.entries()) {
+      try {
+        const row = this.mapHeaders(rawRow);
+
+        // Required: Branch Name (Store)
+        const branchName = (row.name || row.chain || "").trim();
+        if (!branchName) {
+          throw new Error("Branch name (Store) is missing");
+        }
+
+        // Required: User identifier (User or Supervisor)
+        const userIdentifier = (row.user || row.supervisor || "").trim();
+        if (!userIdentifier) {
+          throw new Error("User identifier (User/Supervisor) is missing");
+        }
+
+        // 1. Find the branch in this project
+        const branch = await this.branchRepo.findOne({
+          where: { name: branchName, project: { id: projectId } },
+          relations: ["supervisor", "supervisors", "team"],
+        });
+
+        if (!branch) {
+          throw new Error(`Branch "${branchName}" not found in this project`);
+        }
+
+        // 2. Find the user
+        const user = await this.userRepo.findOne({
+          where: [{ username: userIdentifier }, { name: userIdentifier }],
+        });
+
+        if (!user) {
+          throw new Error(`User "${userIdentifier}" not found`);
+        }
+
+        // 3. Assignment logic
+        // Update User Project ID
+        user.project_id = projectId;
+        await this.userRepo.save(user);
+
+        // Update Branch Supervisors
+        if (!branch.supervisors) branch.supervisors = [];
+        const alreadySupervisor = branch.supervisors.some((s) => s.id === user.id);
+        if (!alreadySupervisor) {
+          branch.supervisors.push(user);
+        }
+
+        // Update Legacy Supervisor field (optional: pick the one from excel)
+        branch.supervisor = user;
+
+        // Ensure user is in the team
+        if (!branch.team) branch.team = [];
+        const alreadyInTeam = branch.team.some((t) => t.id === user.id);
+        if (!alreadyInTeam) {
+          branch.team.push(user);
+        }
+
+        await this.branchRepo.save(branch);
+        result.success++;
+      } catch (err) {
+        result.failed++;
+        result.errors.push({
+          row: index + 2,
+          error: err.message,
+        });
+      }
+    }
+
+    return result;
+  }
+
   async assignProject(branchId: string, projectId: string) {
     const branch = await this.branchRepo.findOne({
       where: { id: branchId as any },
@@ -1401,6 +1487,8 @@ export const BRANCH_HEADER_MAP = {
   supervisor: "supervisor",
   supervisor_name: "supervisor",
   manager: "supervisor",
+  user: "username",
+  username: "username",
 
   // Additional Sales Target Fields (for direct import)
   target_name: "targetName",
