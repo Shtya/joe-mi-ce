@@ -57,6 +57,22 @@ export class JourneyController {
     private readonly journeyService: JourneyService,
     private readonly usersService: UsersService,
   ) {}
+  @Post("import-promoters-plans")
+  @Permissions(EPermission.JOURNEY_CREATE)
+  @UseInterceptors(FileInterceptor("file"))
+  async importPromotersAndPlans(
+    @UploadedFile() file: Express.Multer.File,
+    @Body("projectId") projectId: string,
+    @Body("shiftId") shiftId: string,
+    @Req() req: any,
+  ) {
+    return this.journeyService.importPromotersAndPlans(
+      file,
+      projectId,
+      shiftId,
+      req.user,
+    );
+  }
 
   // ===== Plans =====
   @Post("plans")
@@ -73,23 +89,6 @@ export class JourneyController {
     @Body("projectId") projectId: string,
   ) {
     return this.journeyService.importPlans(file, projectId);
-  }
-
-  @Post("plans/import-promoters")
-  @Permissions(EPermission.JOURNEY_CREATE)
-  @UseInterceptors(FileInterceptor("file"))
-  async importPromotersAndPlans(
-    @UploadedFile() file: Express.Multer.File,
-    @Body("projectId") projectId: string,
-    @Body("shiftId") shiftId: string,
-    @Req() req: any,
-  ) {
-    return this.journeyService.importPromotersAndPlans(
-      file,
-      projectId,
-      shiftId,
-      req.user,
-    );
   }
 
   @Get("plans/import-template")
