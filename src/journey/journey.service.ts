@@ -1776,7 +1776,21 @@ export class JourneyService {
           throw new NotFoundException(`Shift not found: ${shiftId}`);
         }
 
-        // 4. Create Journey Plan for all days
+        // 4. Check if plan already exists to skip
+        const existingPlan = await this.journeyPlanRepo.findOne({
+          where: {
+            user: { id: user.id },
+            branch: { id: branch.id },
+            shift: { id: shift.id },
+          },
+        });
+
+        if (existingPlan) {
+          results.success++;
+          continue;
+        }
+
+        // 5. Create Journey Plan for all days
         const dto: CreateJourneyPlanDto = {
           userId: user.id,
           branchId: branch.id,
