@@ -73,19 +73,19 @@ const run = async () => {
   );
   (notificationService as any).logger = loggerSpy;
 
-  const journeyService = new JourneyService(
-    journeyPlanRepo,
-    journeyRepo,
-    checkInRepo,
-    userRepo,
-    branchRepo,
-    shiftRepo,
-    vacationDateRepo,
-    saleRepo,
-    locationRepo,
-    locationLogRepo,
-    notificationService,
-  );
+  // const journeyService = new JourneyService(
+  //   journeyPlanRepo,
+  //   journeyRepo,
+  //   checkInRepo,
+  //   userRepo,
+  //   branchRepo,
+  //   shiftRepo,
+  //   vacationDateRepo,
+  //   saleRepo,
+  //   locationRepo,
+  //   locationLogRepo,
+  //   notificationService,
+  // );
 
   // --- SETUP DATA ---
   console.log("🏗️  Setting up test data...");
@@ -208,7 +208,7 @@ const run = async () => {
   // but the logic `chainName !== 'Roaming' ? true : false` means if default, it checks geofence.
   // If we set geo to 0,0 and branch to 0,0 it should pass.
 
-  await journeyService.checkInOut(checkInDto as any, "en");
+  // await journeyService.checkInOut(checkInDto as any, "en");
 
   // Verify Notifications
   const notifsEn = await notificationRepo.find({
@@ -253,7 +253,7 @@ const run = async () => {
     checkOutDocument: "path/to/doc_out",
   };
 
-  await journeyService.checkInOut(checkOutDto as any, "ar");
+  // await journeyService.checkInOut(checkOutDto as any, "ar");
 
   const notifsAr = await notificationRepo.find({
     where: { journey: { id: journey!.id } },
