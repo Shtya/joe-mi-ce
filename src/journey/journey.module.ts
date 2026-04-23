@@ -22,9 +22,11 @@ import { Sale } from "entities/products/sale.entity";
 import { PromoterLocation } from "entities/promoter-location.entity";
 import { LocationLog } from "entities/location-log.entity";
 import { LocationGateway } from "./location.gateway";
+import { AuthModule } from "src/auth/auth.module";
 
 @Module({
   imports: [
+    AuthModule,
     TypeOrmModule.forFeature([
       Journey,
       JourneyPlan,

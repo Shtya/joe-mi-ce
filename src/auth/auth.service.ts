@@ -648,7 +648,7 @@ export class AuthService {
     return mapped;
   }
 
-  private async importSinglePromoter(
+  public async importSinglePromoter(
     row: any,
     requester: User,
     projectId?: string,

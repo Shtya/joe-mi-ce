@@ -49,6 +49,7 @@ import { NotificationService } from "src/notification/notification.service";
 import { toLocalISOString } from "common/date.util";
 import { logger } from "nestjs-i18n";
 import { ERole } from "enums/Role.enum";
+import { AuthService } from "src/auth/auth.service";
 
 @Injectable()
 export class JourneyService {
@@ -99,6 +100,7 @@ export class JourneyService {
     public locationLogRepo: Repository<LocationLog>,
 
     private readonly notificationService: NotificationService,
+    private readonly authService: AuthService,
   ) {}
 
   // ===== Live Location =====
@@ -1667,11 +1669,128 @@ export class JourneyService {
         // Reuse createPlan logic but handle errors
         // We can call createPlan directly.
         await this.createPlan(dto);
+      } catch (error) {
+        console.log(error);
+        results.failed++;
+        results.errors.push({
+          row: index + 2,
+          error: error.message,
+        });
+      }
+    }
+
+    return results;
+  }
+
+  async importPromotersAndPlans(
+    file: Express.Multer.File,
+    projectId: string,
+    shiftId: string,
+    requester: User,
+  ) {
+    if (!file) {
+      throw new BadRequestException("File is required");
+    }
+
+    const workbook = XLSX.read(file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const data: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+    const results = {
+      success: 0,
+      failed: 0,
+      errors: [],
+    };
+
+    const days = [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday",
+    ];
+
+    const promoterRole = await this.authService.userRepository.manager
+      .getRepository("Role")
+      .findOne({ where: { name: ERole.PROMOTER } });
+
+    for (const [index, row] of data.entries()) {
+      try {
+        const branchName = row["Store Name"] || row["store name"];
+        const username = row["User"] || row["user"];
+        const name = row["Name"] || row["name"] || row["User"] || row["user"];
+        const nationalId = row["ID"] || row["id"];
+        const mobile = row["Phone"] || row["phone"];
+
+        if (!branchName || !username || !name) {
+          throw new Error("Missing required fields: Store Name, User, or Name");
+        }
+
+        // 1. Find or Create User
+        let user = await this.userRepo.findOne({
+          where: { username: username.toString().trim().toLowerCase() },
+        });
+
+        if (!user) {
+          // Map headers for importSinglePromoter
+          const mappedRow = {
+            username: username.toString().trim().toLowerCase(),
+            name: name,
+            mobile: mobile ? mobile.toString().trim() : undefined,
+            national_id: nationalId ? nationalId.toString().trim() : undefined,
+            password: username.toString().trim(), // Password same as username
+            
+          };
+
+          user = await this.authService.importSinglePromoter(
+            mappedRow,
+            requester,
+            projectId,
+            promoterRole as any,
+          );
+        }
+
+        // 2. Find Branch
+        const branch = await this.branchRepo.findOne({
+          where: { name: branchName, project: { id: projectId } },
+          relations: ["project"],
+        });
+
+        if (!branch) {
+          throw new NotFoundException(`Branch not found: ${branchName}`);
+        }
+
+        // Assign branch to user
+        user.branch = branch;
+        await this.userRepo.save(user);
+
+        // 3. Find Shift
+        const shift = await this.shiftRepo.findOne({
+          where: { id: shiftId },
+        });
+
+        if (!shift) {
+          throw new NotFoundException(`Shift not found: ${shiftId}`);
+        }
+
+        // 4. Create Journey Plan for all days
+        const dto: CreateJourneyPlanDto = {
+          userId: user.id,
+          branchId: branch.id,
+          shiftId: [shift.id],
+          days: days,
+          includeToday: true,
+        };
+
+        await this.createPlan(dto);
         results.success++;
       } catch (error) {
         results.failed++;
         results.errors.push({
-          row: index + 2, // 1-based index, +header
+          row: index + 2,
           error: error.message,
           data: row,
         });

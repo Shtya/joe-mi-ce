@@ -75,6 +75,23 @@ export class JourneyController {
     return this.journeyService.importPlans(file, projectId);
   }
 
+  @Post("plans/import-promoters")
+  @Permissions(EPermission.JOURNEY_CREATE)
+  @UseInterceptors(FileInterceptor("file"))
+  async importPromotersAndPlans(
+    @UploadedFile() file: Express.Multer.File,
+    @Body("projectId") projectId: string,
+    @Body("shiftId") shiftId: string,
+    @Req() req: any,
+  ) {
+    return this.journeyService.importPromotersAndPlans(
+      file,
+      projectId,
+      shiftId,
+      req.user,
+    );
+  }
+
   @Get("plans/import-template")
   async getImportTemplate(@Res() res: Response) {
     const buffer = await this.journeyService.getImportTemplate();
