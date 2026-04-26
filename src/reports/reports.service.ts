@@ -166,45 +166,96 @@ export class ReportsService {
     //   durationSheet.getColumn(i).width = 15;
     // }
 
-    let users = await this.userRepository.find({
-      where: {
-        is_active: true,
-        ...(projectId && { project_id: projectId }),
-      },
-      relations: ["role", "branch", "branch.city", "branch.chain"],
-    });
-    users = users.filter((u) => u.role?.name?.toLowerCase() === "promoter");
+    const users = await this.userRepository.createQueryBuilder("user")
+      .leftJoinAndSelect("user.role", "role")
+      .leftJoinAndSelect("user.branch", "branch")
+      .leftJoinAndSelect("branch.city", "city")
+      .leftJoinAndSelect("branch.chain", "chain")
+      .where("user.is_active = :isActive", { isActive: true })
+      .andWhere("user.project_id = :projectId", { projectId })
+      .andWhere("LOWER(role.name) = :roleName", { roleName: "promoter" })
+      .select([
+        "user.id",
+        "user.name",
+        "user.username",
+        "user.national_id",
+        "user.is_active",
+        "role.id",
+        "role.name",
+        "branch.id",
+        "branch.name",
+        "city.id",
+        "city.name",
+        "chain.id",
+        "chain.name",
+      ])
+      .getMany();
 
-    const journeys = await this.journeyRepository.find({
-      where: {
-        date: Between(
-          startOfMonth.subtract(1, "day").format("YYYY-MM-DD"),
-          endOfReportingPeriod.format("YYYY-MM-DD"),
-        ),
-        ...(projectId && { projectId }),
-      },
-      relations: ["user", "user.role", "branch", "branch.chain", "checkin", "shift"],
-    });
+    const journeys = await this.journeyRepository.createQueryBuilder("journey")
+      .leftJoinAndSelect("journey.user", "user")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("branch.chain", "chain")
+      .leftJoinAndSelect("journey.checkin", "checkin")
+      .leftJoinAndSelect("journey.shift", "shift")
+      .where("journey.projectId = :projectId", { projectId })
+      .andWhere("journey.date BETWEEN :start AND :end", {
+        start: startOfMonth.subtract(1, "day").format("YYYY-MM-DD"),
+        end: endOfReportingPeriod.format("YYYY-MM-DD"),
+      })
+      .select([
+        "journey.id",
+        "journey.date",
+        "journey.status",
+        "user.id",
+        "branch.id",
+        "branch.name",
+        "chain.id",
+        "chain.name",
+        "checkin.id",
+        "checkin.checkInTime",
+        "checkin.checkOutTime",
+        "shift.id",
+        "shift.startTime",
+      ])
+      .getMany();
     this.logger.log(`Fetched ${journeys.length} journeys.`);
 
-    const sales = await this.saleRepository.find({
-      where: {
-        sale_date: Between(
-          startOfMonth.toDate(),
-          endOfReportingPeriod.toDate(),
-        ),
-        ...(projectId && { projectId }),
-      },
-      relations: [
-        "user",
-        "user.role",
-        "product",
-        "product.brand",
-        "product.category",
-        "branch",
-        "branch.chain",
-      ],
-    });
+    const sales = await this.saleRepository.createQueryBuilder("sale")
+      .leftJoinAndSelect("sale.user", "user")
+      .leftJoinAndSelect("user.role", "role")
+      .leftJoinAndSelect("sale.product", "product")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("product.category", "category")
+      .leftJoinAndSelect("sale.branch", "branch")
+      .leftJoinAndSelect("branch.chain", "chain")
+      .where("sale.projectId = :projectId", { projectId })
+      .andWhere("sale.sale_date BETWEEN :start AND :end", {
+        start: startOfMonth.toDate(),
+        end: endOfReportingPeriod.toDate(),
+      })
+      .select([
+        "sale.id",
+        "sale.sale_date",
+        "sale.total_amount",
+        "sale.quantity",
+        "sale.price",
+        "user.id",
+        "user.name",
+        "user.username",
+        "user.national_id",
+        "user.mobile",
+        "role.name",
+        "product.id",
+        "product.name",
+        "product.model",
+        "product.sku",
+        "brand.name",
+        "category.name",
+        "branch.id",
+        "branch.name",
+        "chain.name",
+      ])
+      .getMany();
 
     const vacations = await this.vacationRepository.find({
       where: {
@@ -1041,27 +1092,60 @@ export class ReportsService {
 
     // 1. Fetch Sales, Products & Journeys for Custom Period
     const [sales, products, journeys, stocks] = await Promise.all([
-      this.saleRepository.find({
-        where: {
-          sale_date: Between(reportStart.toDate(), reportEnd.toDate()),
-          projectId: projectId,
-        },
-        relations: ["product", "branch", "branch.chain", "user", "user.role"],
-      }),
+      this.saleRepository.createQueryBuilder("sale")
+        .leftJoinAndSelect("sale.product", "product")
+        .leftJoinAndSelect("sale.branch", "branch")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("sale.user", "user")
+        .leftJoinAndSelect("user.role", "role")
+        .where("sale.projectId = :projectId", { projectId })
+        .andWhere("sale.sale_date BETWEEN :start AND :end", {
+          start: reportStart.toDate(),
+          end: reportEnd.toDate(),
+        })
+        .select([
+          "sale.id", "sale.quantity", "sale.sale_date",
+          "product.id", "product.name", "product.model",
+          "branch.id", "branch.name",
+          "chain.id", "chain.name",
+          "user.id", "role.name"
+        ])
+        .getMany(),
       this.productRepository.find({
         where: { project_id: projectId, is_active: true },
+        select: ["id", "name", "model"]
       }),
-      this.journeyRepository.find({
-        where: [
-          { date: yesterday.format("YYYY-MM-DD"), projectId: projectId },
-          { date: now.format("YYYY-MM-DD"), projectId: projectId },
-        ],
-        relations: ["user", "user.role", "branch", "branch.chain", "checkin"],
-      }),
-      this.stockRepository.find({
-        where: { product: { project_id: projectId, is_active: true } },
-        relations: ["branch", "branch.chain", "product"],
-      }),
+      this.journeyRepository.createQueryBuilder("journey")
+        .leftJoinAndSelect("journey.user", "user")
+        .leftJoinAndSelect("user.role", "role")
+        .leftJoinAndSelect("journey.branch", "branch")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("journey.checkin", "checkin")
+        .where("journey.projectId = :projectId", { projectId })
+        .andWhere("journey.date IN (:...dates)", {
+          dates: [yesterday.format("YYYY-MM-DD"), now.format("YYYY-MM-DD")]
+        })
+        .select([
+          "journey.id", "journey.date", "journey.status",
+          "user.id", "role.name",
+          "branch.id", "branch.name",
+          "chain.id", "chain.name",
+          "checkin.id", "checkin.checkInTime"
+        ])
+        .getMany(),
+      this.stockRepository.createQueryBuilder("stock")
+        .leftJoinAndSelect("stock.branch", "branch")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("stock.product", "product")
+        .where("product.project_id = :projectId", { projectId })
+        .andWhere("product.is_active = :isActive", { isActive: true })
+        .select([
+          "stock.id", "stock.quantity",
+          "branch.id", "branch.name",
+          "chain.id", "chain.name",
+          "product.id", "product.name", "product.model"
+        ])
+        .getMany(),
     ]);
 
     this.logger.log(
