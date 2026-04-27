@@ -75,7 +75,9 @@ export class ReportsService {
     workbook.creator = "System Cron";
 
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
+    const mgAttendanceSheet = workbook.addWorksheet(`MG Attendance`);
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
+    const mgTab2Sheet = workbook.addWorksheet(`MG SAR Entries`);
     const tab3Sheet = workbook.addWorksheet("Check-in - Check-out");
     // const durationSheet = workbook.addWorksheet("Attendance Duration");
     // const branchPromoterSalesSheet = workbook.addWorksheet(
@@ -136,11 +138,14 @@ export class ReportsService {
       { header: "TLL DAYS", key: "ttl_attendance", width: 15 },
       { header: "LATE", key: "ttl_late", width: 15 },
     ];
+    mgAttendanceSheet.columns = attendanceSheet.columns;
+
     tab2Sheet.columns = [
       ...baseColumns,
       ...dateColumnsForSales,
       { header: "TLL DAYS", key: "tll_days_tab2", width: 15 },
     ];
+    mgTab2Sheet.columns = tab2Sheet.columns;
     tab3Sheet.columns = [
       ...baseColumns,
       ...checkinDateColumns,
@@ -268,6 +273,8 @@ export class ReportsService {
     const isRoaming = (name: string) => /roam|roma/i.test(name || "");
     const isPromoter = (user: any) =>
       user?.role?.name?.toLowerCase() === "promoter";
+    const isMGUser = (username: string) =>
+      (username || "").toLowerCase().startsWith("mg");
 
     const journeysByUser: Record<string, Journey[]> = {};
     journeys.forEach((j) => {
@@ -297,12 +304,16 @@ export class ReportsService {
     });
 
     const dailyAttendanceTotals: Record<string, number> = {};
+    const mgDailyAttendanceTotals: Record<string, number> = {};
     for (let i = 1; i <= daysInMonthForAttendance; i++) {
       dailyAttendanceTotals[`day_${i}`] = 0;
+      mgDailyAttendanceTotals[`day_${i}`] = 0;
     }
-
+ 
     const attendanceRows: any[] = [];
+    const mgAttendanceRows: any[] = [];
     const tab2Rows: any[] = [];
+    const mgTab2Rows: any[] = [];
     const tab3Rows: any[] = [];
     const durationRows: any[] = [];
 
@@ -315,8 +326,12 @@ export class ReportsService {
     };
 
     let rowNo = 1;
+    let mgRowNo = 1;
     for (const user of users) {
       if (!isPromoter(user)) continue;
+
+      const mgUser = isMGUser(user.username);
+      const currentRowNo = mgUser ? mgRowNo++ : rowNo++;
 
       const userJourneys = journeysByUser[user.id] || [];
       const userSales = salesByUser[user.id] || [];
@@ -338,7 +353,7 @@ export class ReportsService {
 
       const baseRowData = {
         joe_user_1: user.username,
-        no: rowNo++,
+        no: currentRowNo,
         name: user.name,
         user_status: user.is_active ? "Active" : "Not Active",
         id: user.national_id,
@@ -408,7 +423,11 @@ export class ReportsService {
 
           if (hasPresent) {
             attRow[dayKey] = 1;
-            dailyAttendanceTotals[dayKey] += 1;
+            if (mgUser) {
+              mgDailyAttendanceTotals[dayKey] += 1;
+            } else {
+              dailyAttendanceTotals[dayKey] += 1;
+            }
             ttlAttendance += 1;
             ttlDays += 1;
           } else if (hasAbsent) {
@@ -523,8 +542,13 @@ export class ReportsService {
       t3RowArr.push(ttlDays);
       t3RowArr.push(formatDuration(ttlLate * 60000)); // Format total minutes as HH:mm
 
-      attendanceRows.push(attRow);
-      tab2Rows.push(t2Row);
+      if (mgUser) {
+        mgAttendanceRows.push(attRow);
+        mgTab2Rows.push(t2Row);
+      } else {
+        attendanceRows.push(attRow);
+        tab2Rows.push(t2Row);
+      }
       tab3Rows.push(t3RowArr);
 
       durationRow["total_hours"] = formatDuration(totalDurationMs);
@@ -539,29 +563,51 @@ export class ReportsService {
       name: "Total",
       user_status: "",
     };
+    const mgTotalsRowData: Record<string, any> = {
+      joe_user_1: "Total",
+      name: "Total",
+      user_status: "",
+    };
+
     let totalOfTotals = 0;
-    let totalLateOfTotals = 0;
+    let mgTotalOfTotals = 0;
+
     for (let i = 1; i <= daysInMonthForAttendance; i++) {
       const key = `day_${i}`;
       totalsRowData[key] = dailyAttendanceTotals[key];
       totalOfTotals += dailyAttendanceTotals[key];
+
+      mgTotalsRowData[key] = mgDailyAttendanceTotals[key];
+      mgTotalOfTotals += mgDailyAttendanceTotals[key];
     }
+
     totalsRowData["ttl_attendance"] = totalOfTotals;
-    const allTttLateMins = attendanceRows.reduce(
-      (sum, row) => {
-        const [h, m] = row.ttl_late.split(":").map(Number);
-        return sum + (h * 60 + m);
-      },
-      0,
-    );
+    const allTttLateMins = attendanceRows.reduce((sum, row) => {
+      const [h, m] = row.ttl_late.split(":").map(Number);
+      return sum + (h * 60 + m);
+    }, 0);
     totalsRowData["ttl_late"] = formatDuration(allTttLateMins * 60000);
+
+    mgTotalsRowData["ttl_attendance"] = mgTotalOfTotals;
+    const mgAllTttLateMins = mgAttendanceRows.reduce((sum, row) => {
+      const [h, m] = row.ttl_late.split(":").map(Number);
+      return sum + (h * 60 + m);
+    }, 0);
+    mgTotalsRowData["ttl_late"] = formatDuration(mgAllTttLateMins * 60000);
 
     attendanceRows.forEach((r) => attendanceSheet.addRow(r));
     attendanceSheet.addRow(totalsRowData);
 
+    mgAttendanceRows.forEach((r) => mgAttendanceSheet.addRow(r));
+    mgAttendanceSheet.addRow(mgTotalsRowData);
+
     tab2Rows
       .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
       .forEach((r) => tab2Sheet.addRow(r));
+
+    mgTab2Rows
+      .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
+      .forEach((r) => mgTab2Sheet.addRow(r));
 
     // For Tab 3, we reserve Row 2 for the second header row
     tab3Sheet.addRow([]); // Row 2 dummy
@@ -954,7 +1000,9 @@ export class ReportsService {
 
     [
       attendanceSheet,
+      mgAttendanceSheet,
       tab2Sheet,
+      mgTab2Sheet,
       tab3Sheet,
       // durationSheet,
       // branchPromoterSalesSheet,
