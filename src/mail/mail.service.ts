@@ -5,6 +5,22 @@ import { lastValueFrom } from "rxjs";
 import * as FormData from "form-data";
 import * as fs from "fs";
 
+type MailAttachment = {
+  filename: string;
+  path?: string;
+  content?: Buffer;
+  contentType?: string;
+};
+
+type SendEmailOptions = {
+  toEmail?: string;
+  subject?: string;
+  text?: string;
+  html?: string;
+  ccEmail?: string;
+  attachments?: MailAttachment[];
+};
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -14,15 +30,7 @@ export class MailService {
     private readonly configService: ConfigService,
   ) {}
 
-  async sendReportEmail(
-    attachmentPath: string,
-    filename: string,
-    toEmail?: string,
-    subject?: string,
-    text?: string,
-    html?: string,
-    ccEmail?: string,
-  ): Promise<boolean> {
+  async sendEmail(options: SendEmailOptions): Promise<boolean> {
     const apiKey = this.configService.get<string>("MAILGUN_API_KEY");
     const domain = this.configService.get<string>("MAILGUN_DOMAIN");
     const fromEmail =
@@ -43,27 +51,44 @@ export class MailService {
 
       const formData = new FormData();
       formData.append("from", fromEmail);
-      formData.append("to", toEmail || defaultToEmail);
-      if (ccEmail) {
-        formData.append("cc", ccEmail);
+      formData.append("to", options.toEmail || defaultToEmail);
+      if (options.ccEmail) {
+        formData.append("cc", options.ccEmail);
       }
-      formData.append("subject", subject || "Daily Team Report");
+      formData.append("subject", options.subject || "Daily Team Report");
 
-      if (text) formData.append("text", text);
-      if (html) formData.append("html", html);
-      if (!text && !html) {
+      if (options.text) formData.append("text", options.text);
+      if (options.html) formData.append("html", options.html);
+      if (!options.text && !options.html) {
         formData.append("text", "Attached is the updated report.");
       }
 
-      if (fs.existsSync(attachmentPath)) {
-        formData.append("attachment", fs.createReadStream(attachmentPath), {
-          filename: filename,
-        });
-      } else {
-        this.logger.error(
-          `Attachment file not found at path: ${attachmentPath}`,
-        );
-        return false;
+      for (const attachment of options.attachments || []) {
+        if (attachment.path) {
+          if (!fs.existsSync(attachment.path)) {
+            this.logger.error(
+              `Attachment file not found at path: ${attachment.path}`,
+            );
+            return false;
+          }
+
+          formData.append(
+            "attachment",
+            fs.createReadStream(attachment.path),
+            {
+              filename: attachment.filename,
+              contentType: attachment.contentType,
+            },
+          );
+          continue;
+        }
+
+        if (attachment.content) {
+          formData.append("attachment", attachment.content, {
+            filename: attachment.filename,
+            contentType: attachment.contentType,
+          });
+        }
       }
 
       const auth = Buffer.from(`api:${apiKey}`).toString("base64");
@@ -86,6 +111,25 @@ export class MailService {
       }
       return false;
     }
+  }
+
+  async sendReportEmail(
+    attachmentPath: string,
+    filename: string,
+    toEmail?: string,
+    subject?: string,
+    text?: string,
+    html?: string,
+    ccEmail?: string,
+  ): Promise<boolean> {
+    return this.sendEmail({
+      toEmail,
+      subject,
+      text,
+      html,
+      ccEmail,
+      attachments: [{ path: attachmentPath, filename }],
+    });
   }
 
   async sendTestEmail(toEmail: string): Promise<boolean> {

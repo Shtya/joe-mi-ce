@@ -19,6 +19,7 @@ import {
 } from "typeorm";
 import * as dayjs from "dayjs";
 import * as XLSX from "xlsx";
+import * as ExcelJS from "exceljs";
 import {
   CreateJourneyPlanDto,
   CreateUnplannedJourneyDto,
@@ -27,6 +28,7 @@ import {
   UpdateJourneyPlanDto,
   AdminCheckInOutDto,
   AssignShiftAllDaysDto,
+  ExportJourneyAttendanceOvertimeDto,
 } from "dto/journey.dto";
 
 import {
@@ -38,6 +40,7 @@ import {
 } from "entities/all_plans.entity";
 import { User } from "entities/user.entity";
 import { Branch } from "entities/branch.entity";
+import { Project } from "entities/project.entity";
 import { Shift } from "entities/employee/shift.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Sale } from "entities/products/sale.entity";
@@ -50,6 +53,7 @@ import { toLocalISOString } from "common/date.util";
 import { logger } from "nestjs-i18n";
 import { ERole } from "enums/Role.enum";
 import { AuthService } from "src/auth/auth.service";
+import { MailService } from "src/mail/mail.service";
 
 @Injectable()
 export class JourneyService {
@@ -78,6 +82,9 @@ export class JourneyService {
     @InjectRepository(CheckIn)
     public checkInRepo: Repository<CheckIn>,
 
+    @InjectRepository(Project)
+    public projectRepo: Repository<Project>,
+
     @InjectRepository(User)
     public userRepo: Repository<User>,
 
@@ -101,7 +108,235 @@ export class JourneyService {
 
     private readonly notificationService: NotificationService,
     private readonly authService: AuthService,
+    private readonly mailService: MailService,
   ) {}
+
+  async exportAttendanceOvertimeExcel(
+    dto: ExportJourneyAttendanceOvertimeDto,
+    authUser: User,
+  ) {
+    const start = dayjs(dto.startDate).startOf("day");
+    const end = dayjs(dto.endDate).endOf("day");
+
+    if (!start.isValid() || !end.isValid()) {
+      throw new BadRequestException("Invalid startDate or endDate");
+    }
+
+    if (start.isAfter(end)) {
+      throw new BadRequestException("startDate cannot be after endDate");
+    }
+
+    const projectId = await this.resolveProjectIdForAttendanceExport(authUser);
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+      select: ["id", "name"],
+    });
+    const projectName = project?.name || "-";
+
+    const journeys = await this.journeyRepo
+      .createQueryBuilder("journey")
+      .leftJoinAndSelect("journey.checkin", "checkin")
+      .leftJoinAndSelect("journey.user", "user")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("branch.chain", "chain")
+      .leftJoinAndSelect("journey.shift", "shift")
+      .where("journey.projectId = :projectId", { projectId })
+      .andWhere("journey.date BETWEEN :startDate AND :endDate", {
+        startDate: start.format("YYYY-MM-DD"),
+        endDate: end.format("YYYY-MM-DD"),
+      })
+      .andWhere("checkin.checkInTime IS NOT NULL")
+      .andWhere("checkin.checkOutTime IS NOT NULL")
+      .orderBy("journey.date", "ASC")
+      .addOrderBy("user.name", "ASC")
+      .getMany();
+
+    const overtimeRows = journeys
+      .map((journey) => {
+        const checkInTime = journey.checkin?.checkInTime;
+        const checkOutTime = journey.checkin?.checkOutTime;
+
+        if (!checkInTime || !checkOutTime) {
+          return null;
+        }
+
+        const workedMinutes = Math.max(
+          0,
+          dayjs(checkOutTime).diff(dayjs(checkInTime), "minute"),
+        );
+        const overtimeMinutes = Math.max(workedMinutes - 420, 0);
+
+        if (overtimeMinutes <= 0) {
+          return null;
+        }
+
+        const username = journey.user?.username || "";
+        const email = this.isEmailLike(username) ? username : "";
+
+        return {
+          date: journey.date,
+          project: projectName,
+          employeeName: journey.user?.name || "-",
+          email,
+          department:
+            journey.branch?.chain?.name || journey.branch?.name || "-",
+          checkIn: this.formatExportDateTime(checkInTime),
+          checkOut: this.formatExportDateTime(checkOutTime),
+          workedMinutes,
+          workedHours: this.formatMinutesAsHours(workedMinutes),
+          overtimeMinutes,
+          overtimeHours: this.formatMinutesAsHours(overtimeMinutes),
+        };
+      })
+      .filter(Boolean);
+
+    const exportedRowCount = overtimeRows.length;
+    const totalOvertimeMinutes = overtimeRows.reduce(
+      (sum, row) => sum + row.overtimeMinutes,
+      0,
+    );
+    const totalOvertimeHours =
+      this.formatMinutesAsHours(totalOvertimeMinutes);
+    const filename = `attendance-overtime-${start.format("YYYY-MM-DD")}-to-${end.format("YYYY-MM-DD")}.xlsx`;
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "System";
+    workbook.created = new Date();
+
+    const detailSheet = workbook.addWorksheet("Attendance Overtime");
+    detailSheet.columns = [
+      { header: "Date", key: "date", width: 14 },
+      { header: "Project", key: "project", width: 24 },
+      { header: "Employee Name", key: "employeeName", width: 28 },
+      { header: "Email", key: "email", width: 28 },
+      { header: "Department", key: "department", width: 24 },
+      { header: "Check In", key: "checkIn", width: 20 },
+      { header: "Check Out", key: "checkOut", width: 20 },
+      { header: "Worked Minutes", key: "workedMinutes", width: 16 },
+      { header: "Worked Hours (HH:mm)", key: "workedHours", width: 20 },
+      {
+        header: "Overtime Minutes Over 7 Hours",
+        key: "overtimeMinutes",
+        width: 28,
+      },
+      {
+        header: "Overtime Hours Over 7 Hours (HH:mm)",
+        key: "overtimeHours",
+        width: 30,
+      },
+    ];
+
+    overtimeRows.forEach((row) => detailSheet.addRow(row));
+
+    const summarySheet = workbook.addWorksheet("Summary");
+    summarySheet.columns = [
+      { header: "Metric", key: "metric", width: 24 },
+      { header: "Value", key: "value", width: 40 },
+    ];
+    summarySheet.addRows([
+      { metric: "Start Date", value: dto.startDate },
+      { metric: "End Date", value: dto.endDate },
+      { metric: "Recipient Email", value: dto.email },
+      { metric: "Project ID", value: projectId },
+      { metric: "Project Name", value: projectName },
+      { metric: "Date Format", value: "YYYY-MM-DD" },
+      { metric: "Date Sample", value: "2026-05-18" },
+      { metric: "Exported Row Count", value: exportedRowCount },
+      { metric: "Total Overtime Minutes", value: totalOvertimeMinutes },
+      { metric: "Total Overtime Hours", value: totalOvertimeHours },
+      { metric: "Filename", value: filename },
+    ]);
+
+    [detailSheet, summarySheet].forEach((sheet) => {
+      sheet.getRow(1).font = { bold: true };
+      sheet.views = [{ state: "frozen", ySplit: 1 }];
+    });
+
+    const workbookBufferRaw = await workbook.xlsx.writeBuffer();
+    const workbookBuffer = Buffer.isBuffer(workbookBufferRaw)
+      ? workbookBufferRaw
+      : Buffer.from(workbookBufferRaw);
+
+    const emailSent = await this.mailService.sendEmail({
+      toEmail: dto.email,
+      subject: `Attendance Overtime Report ${dto.startDate} to ${dto.endDate}`,
+      text: `Attached is the attendance overtime report for ${dto.startDate} to ${dto.endDate}.`,
+      attachments: [
+        {
+          filename,
+          content: workbookBuffer,
+          contentType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      ],
+    });
+
+    if (!emailSent) {
+      throw new BadRequestException(
+        "Failed to send attendance overtime report email",
+      );
+    }
+
+    return {
+      success: true,
+      message: "Attendance overtime report sent successfully",
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      email: dto.email,
+      projectId,
+      projectName,
+      dateFormat: "YYYY-MM-DD",
+      dateSample: "2026-05-18",
+      exportedRowCount,
+      totalOvertimeMinutes,
+      totalOvertimeHours,
+      filename,
+    };
+  }
+
+  private async resolveProjectIdForAttendanceExport(authUser: User) {
+    if (authUser?.project_id) {
+      return authUser.project_id;
+    }
+
+    if (authUser?.project?.id) {
+      return authUser.project.id;
+    }
+
+    const user = await this.userRepo.findOne({
+      where: { id: authUser.id },
+      relations: ["project", "branch", "branch.project"],
+    });
+
+    if (user?.project_id) {
+      return user.project_id;
+    }
+
+    if (user?.project?.id) {
+      return user.project.id;
+    }
+
+    if (user?.branch?.project?.id) {
+      return user.branch.project.id;
+    }
+
+    throw new ForbiddenException("User is not assigned to any project");
+  }
+
+  private formatMinutesAsHours(totalMinutes: number): string {
+    const safeMinutes = Math.max(0, Math.floor(totalMinutes));
+    const hours = Math.floor(safeMinutes / 60);
+    const minutes = safeMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  }
+
+  private formatExportDateTime(value: Date | string): string {
+    return dayjs(value).format("YYYY-MM-DD HH:mm");
+  }
+
+  private isEmailLike(value: string): boolean {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+  }
 
   // ===== Live Location =====
 

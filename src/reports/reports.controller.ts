@@ -1,4 +1,10 @@
-import { Controller, Get, Res, UseGuards, Param } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Param,
+  Res,
+  UseGuards,
+} from "@nestjs/common";
 import { ReportsService } from "./reports.service";
 import { Response } from "express";
 import { AuthGuard } from "../auth/auth.guard";

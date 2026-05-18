@@ -23,6 +23,7 @@ import { PromoterLocation } from "entities/promoter-location.entity";
 import { LocationLog } from "entities/location-log.entity";
 import { LocationGateway } from "./location.gateway";
 import { AuthModule } from "src/auth/auth.module";
+import { MailModule } from "src/mail/mail.module";
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { AuthModule } from "src/auth/auth.module";
       secret: process.env.JWT_SECRET,
     }),
     NotificationModule,
+    MailModule,
   ],
   controllers: [JourneyController],
   providers: [JourneyService, JourneyCron, UsersService, LocationGateway],

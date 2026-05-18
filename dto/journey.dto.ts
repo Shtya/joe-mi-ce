@@ -1,4 +1,4 @@
-import { IsUUID, IsArray, ArrayNotEmpty, IsString, IsOptional, IsDateString, IsObject } from 'class-validator';
+import { IsUUID, IsArray, ArrayNotEmpty, IsString, IsOptional, IsDateString, IsObject, IsEmail } from 'class-validator';
 
 export class CreateJourneyPlanDto {
   @IsUUID()
@@ -178,4 +178,15 @@ export class UserStatsResponseDto {
     monthlySales: number;
     weeklySales: number;
   };
+}
+
+export class ExportJourneyAttendanceOvertimeDto {
+  @IsDateString()
+  startDate: string;
+
+  @IsDateString()
+  endDate: string;
+
+  @IsEmail()
+  email: string;
 }

@@ -16,6 +16,8 @@ import {
   UseInterceptors,
   NotFoundException,
   Res,
+  UsePipes,
+  ValidationPipe,
 } from "@nestjs/common";
 import { Response } from "express";
 import { JourneyService } from "./journey.service";
@@ -28,6 +30,7 @@ import {
   UpdateJourneyPlanDto,
   AdminCheckInOutDto,
   AssignShiftAllDaysDto,
+  ExportJourneyAttendanceOvertimeDto,
 } from "dto/journey.dto";
 import { EPermission } from "enums/Permissions.enum";
 import { Permissions } from "decorators/permissions.decorators";
@@ -1461,6 +1464,15 @@ export class JourneyController {
       fromDate,
       toDate,
     );
+  }
+
+  @Post("attendance/export/overtime-excel")
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  async exportAttendanceOvertimeExcel(
+    @Body() dto: ExportJourneyAttendanceOvertimeDto,
+    @Req() req: any,
+  ) {
+    return this.journeyService.exportAttendanceOvertimeExcel(dto, req.user);
   }
 
   // ===== Cron test endpoint =====
