@@ -127,12 +127,6 @@ export class JourneyService {
     }
 
     const projectId = await this.resolveProjectIdForAttendanceExport(authUser);
-    const project = await this.projectRepo.findOne({
-      where: { id: projectId },
-      select: ["id", "name"],
-    });
-    const projectName = project?.name || "-";
-
     const journeys = await this.journeyRepo
       .createQueryBuilder("journey")
       .leftJoinAndSelect("journey.checkin", "checkin")
@@ -170,14 +164,10 @@ export class JourneyService {
           return null;
         }
 
-        const username = journey.user?.username || "";
-        const email = this.isEmailLike(username) ? username : "";
-
         return {
           date: journey.date,
-          project: projectName,
           employeeName: journey.user?.name || "-",
-          email,
+          username: journey.user?.username || "-",
           department:
             journey.branch?.chain?.name || journey.branch?.name || "-",
           checkIn: this.formatExportDateTime(checkInTime),
@@ -206,9 +196,8 @@ export class JourneyService {
     const detailSheet = workbook.addWorksheet("Attendance Overtime");
     detailSheet.columns = [
       { header: "Date", key: "date", width: 14 },
-      { header: "Project", key: "project", width: 24 },
       { header: "Employee Name", key: "employeeName", width: 28 },
-      { header: "Email", key: "email", width: 28 },
+      { header: "Username", key: "username", width: 28 },
       { header: "Department", key: "department", width: 24 },
       { header: "Check In", key: "checkIn", width: 20 },
       { header: "Check Out", key: "checkOut", width: 20 },
@@ -238,7 +227,6 @@ export class JourneyService {
       { metric: "End Date", value: dto.endDate },
       { metric: "Recipient Email", value: dto.email },
       { metric: "Project ID", value: projectId },
-      { metric: "Project Name", value: projectName },
       { metric: "Date Format", value: "YYYY-MM-DD" },
       { metric: "Date Sample", value: "2026-05-18" },
       { metric: "Exported Row Count", value: exportedRowCount },
@@ -284,7 +272,6 @@ export class JourneyService {
       endDate: dto.endDate,
       email: dto.email,
       projectId,
-      projectName,
       dateFormat: "YYYY-MM-DD",
       dateSample: "2026-05-18",
       exportedRowCount,
@@ -332,10 +319,6 @@ export class JourneyService {
 
   private formatExportDateTime(value: Date | string): string {
     return dayjs(value).format("YYYY-MM-DD HH:mm");
-  }
-
-  private isEmailLike(value: string): boolean {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
   }
 
   // ===== Live Location =====
