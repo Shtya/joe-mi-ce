@@ -99,6 +99,7 @@ export class MailService {
             ...formData.getHeaders(),
             Authorization: `Basic ${auth}`,
           },
+          timeout: 60000,
         }),
       );
 
@@ -107,6 +108,7 @@ export class MailService {
     } catch (error) {
       this.logger.error(`Failed to send email: ${error.message}`);
       if (error.response) {
+        this.logger.error(`Mailgun status: ${error.response.status}`);
         this.logger.error(JSON.stringify(error.response.data));
       }
       return false;
@@ -163,6 +165,7 @@ export class MailService {
             ...formData.getHeaders(),
             Authorization: `Basic ${auth}`,
           },
+          timeout: 60000,
         }),
       );
 
@@ -171,6 +174,7 @@ export class MailService {
     } catch (error) {
       this.logger.error(`Failed to send test email: ${error.message}`);
       if (error.response) {
+        this.logger.error(`Mailgun status: ${error.response.status}`);
         this.logger.error(JSON.stringify(error.response.data));
       }
       return false;

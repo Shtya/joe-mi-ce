@@ -1,5 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
+import { Cron } from "@nestjs/schedule";
 import { ReportsService } from "./reports.service";
 import { MailService } from "../mail/mail.service";
 import * as path from "path";
@@ -7,14 +7,28 @@ import * as path from "path";
 @Injectable()
 export class ReportsCron {
   private readonly logger = new Logger(ReportsCron.name);
+  private isMonthlyReportRunning = false;
+  private isGatemeaReportRunning = false;
 
   constructor(
     private readonly reportsService: ReportsService,
     private readonly mailService: MailService,
   ) {}
 
-  @Cron("0 8 * * *", { timeZone: "Asia/Riyadh" })
+  @Cron("0 8 * * *", {
+    name: "joe-mi-ci-monthly-report",
+    timeZone: "Asia/Riyadh",
+    waitForCompletion: true,
+  })
   async handleMonthlyReportCron() {
+    if (this.isMonthlyReportRunning) {
+      this.logger.warn(
+        "Skipping JOE MI CI monthly report cron job because a previous run is still in progress.",
+      );
+      return;
+    }
+
+    this.isMonthlyReportRunning = true;
     this.logger.log("Starting JOE MI CI monthly report cron job");
 
     try {
@@ -90,13 +104,27 @@ export class ReportsCron {
       if (error.stack) {
         this.logger.error(error.stack);
       }
+    } finally {
+      this.isMonthlyReportRunning = false;
     }
 
     this.logger.log("Finished JOE MI CI monthly report cron job");
   }
 
-  @Cron("0 8 * * *", { timeZone: "Asia/Riyadh" })
+  @Cron("10 8 * * *", {
+    name: "gatemea-daily-report",
+    timeZone: "Asia/Riyadh",
+    waitForCompletion: true,
+  })
   async handleGatemeaReport() {
+    if (this.isGatemeaReportRunning) {
+      this.logger.warn(
+        "Skipping Gatemea report cron job because a previous run is still in progress.",
+      );
+      return;
+    }
+
+    this.isGatemeaReportRunning = true;
     this.logger.log("Starting Gatemea report cron job (Daily Yesterday)");
 
     try {
@@ -188,6 +216,8 @@ export class ReportsCron {
       if (error.stack) {
         this.logger.error(error.stack);
       }
+    } finally {
+      this.isGatemeaReportRunning = false;
     }
 
     this.logger.log("Finished Gatemea report cron job");

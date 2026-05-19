@@ -1070,7 +1070,7 @@ export class ReportsService {
       });
     });
 
-    const executionDateStr = now.format("YYYY_MM_DD");
+    const executionDateStr = now.format("YYYY_MM_DD_HHmmss_SSS");
     const filename = `monthly_report_${executionDateStr}.xlsx`;
     const tempFilePath = path.join(os.tmpdir(), filename);
 
@@ -1505,7 +1505,7 @@ export class ReportsService {
       row.getCell(1).border = borderObj;
     });
 
-    const executionDateStr = yesterday.format("YYYY_MM_DD");
+    const executionDateStr = now.format("YYYY_MM_DD_HHmmss_SSS");
     const filename = `gatemea_report_6_7_${executionDateStr}.xlsx`;
     const tempFilePath = path.join(os.tmpdir(), filename);
 

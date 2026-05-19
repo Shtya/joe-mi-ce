@@ -203,8 +203,7 @@ export class VacationController {
       transformedQuery.sortBy,
       transformedQuery.sortOrder,
     );
-  }
-
+  }ج
   // 🔹 Manually reassign a vacation's branch (if data is incorrect, use this to correct it)
   @Patch(":id/reassign-branch")
   @Permissions(EPermission.VACATION_UPDATE)
