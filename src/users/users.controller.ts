@@ -5,10 +5,11 @@ import {
   Param,
   Query,
   UseGuards,
-  Request,
   ParseUUIDPipe,
   UnauthorizedException,
   Delete,
+  Put,
+  Request,
   Req,
   Body,
   Post,
@@ -192,5 +193,17 @@ export class UsersController {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       throw err;
     }
+  }
+
+  @Put(":userId/inactive")
+  @Permissions(EPermission.USER_UPDATE)
+  async makeUserInactive(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.usersService.makeUserInactive(userId);
+  }
+
+  @Put(":userId/remove-branch")
+  @Permissions(EPermission.USER_UPDATE)
+  async removeUserFromBranch(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.usersService.removeUserFromBranch(userId);
   }
 }
