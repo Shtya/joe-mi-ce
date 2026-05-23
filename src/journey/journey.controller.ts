@@ -664,12 +664,8 @@ export class JourneyController {
                 branchIds: supervisorBranchIds,
               });
 
-              // 2. Activity performed by the supervisor's assigned team (at any branch)
-              if (teamUserIds.length > 0) {
-                subQb.orWhere("plan.userId IN (:...teamIds)", {
-                  teamIds: teamUserIds,
-                });
-              }
+              // Removed the condition that includes team members' activity at other branches
+              // to ensure supervisors only see activity occurring strictly at their branches.
             }),
           );
         } else {
@@ -726,17 +722,7 @@ export class JourneyController {
                 date: In(datesInRange),
                 branch: { id: In(supervisorBranchIds) },
                 user: { role: { name: ERole.PROMOTER } },
-              },
-              ...(teamUserIds.length > 0
-                ? [
-                    {
-                      projectId,
-                      type: JourneyType.UNPLANNED,
-                      date: In(datesInRange),
-                      user: { id: In(teamUserIds), role: { name: ERole.PROMOTER } },
-                    },
-                  ]
-                : []),
+              }
             ]
           : {
               projectId,
