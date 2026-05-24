@@ -647,6 +647,7 @@ export class JourneyController {
     delete filters.date;
 
     const extraWhere = (qb: any) => {
+      qb.andWhere("plan_user.is_active = :isActive", { isActive: true });
       if (user.role.name === ERole.SUPERVISOR) {
         // Exclude the supervisor themselves from the plans (if they are also a user in the system)
         qb.andWhere("plan.userId != :excludedId", { excludedId: user.id });
@@ -721,7 +722,7 @@ export class JourneyController {
                 type: JourneyType.UNPLANNED,
                 date: In(datesInRange),
                 branch: { id: In(supervisorBranchIds) },
-                user: { role: { name: ERole.PROMOTER } },
+                user: { role: { name: ERole.PROMOTER }, is_active: true },
               }
             ]
           : {
@@ -729,8 +730,8 @@ export class JourneyController {
               type: JourneyType.UNPLANNED,
               date: In(datesInRange),
               ...(user.role.name === ERole.PROMOTER
-                ? { user: { id: user.id } }
-                : {}),
+                ? { user: { id: user.id, is_active: true } }
+                : { user: { is_active: true } }),
             },
       relations: [
         "user",
@@ -752,6 +753,7 @@ export class JourneyController {
           branch: { id: In(supervisorBranchIds) },
           role: { name: ERole.PROMOTER },
           project_id: projectId,
+          is_active: true,
         },
         relations: ["branch", "role", "branch.city", "branch.city.region"],
       });

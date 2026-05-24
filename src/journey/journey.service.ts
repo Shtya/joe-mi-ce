@@ -1376,6 +1376,7 @@ export class JourneyService {
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
       .andWhere("user.deleted_at IS NULL")
+      .andWhere("user.is_active = :isActive", { isActive: true })
       .andWhere("branch.deleted_at IS NULL");
 
     if (userId) {
@@ -1491,6 +1492,7 @@ export class JourneyService {
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
       .andWhere("user.deleted_at IS NULL")
+      .andWhere("user.is_active = :isActive", { isActive: true })
       .andWhere("branch.deleted_at IS NULL");
 
     if (userId) {
@@ -1572,6 +1574,7 @@ export class JourneyService {
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
       .andWhere("user.deleted_at IS NULL")
+      .andWhere("user.is_active = :isActive", { isActive: true })
       .andWhere("branch.deleted_at IS NULL");
 
     const plans = await qb.getMany();

@@ -201,6 +201,12 @@ export class UsersController {
     return this.usersService.makeUserInactive(userId);
   }
 
+  @Put(":userId/toggle-active")
+  @Permissions(EPermission.USER_UPDATE)
+  async toggleUserActive(@Param("userId", ParseUUIDPipe) userId: string) {
+    return this.usersService.toggleUserActive(userId);
+  }
+
   @Put(":userId/remove-branch")
   @Permissions(EPermission.USER_UPDATE)
   async removeUserFromBranch(@Param("userId", ParseUUIDPipe) userId: string) {

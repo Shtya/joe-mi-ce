@@ -295,6 +295,21 @@ export class UsersService {
     return { success: true, message: 'User is now inactive' };
   }
 
+  async toggleUserActive(userId: string): Promise<{ success: boolean; message: string; is_active: boolean }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    
+    const newStatus = !user.is_active;
+    await this.userRepository.update({ id: userId }, { is_active: newStatus });
+    return { 
+      success: true, 
+      message: newStatus ? 'User is now active' : 'User is now inactive',
+      is_active: newStatus 
+    };
+  }
+
   async removeUserFromBranch(userId: string): Promise<{ success: boolean; message: string }> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
