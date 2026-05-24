@@ -51,10 +51,20 @@ export class MailService {
 
       const formData = new FormData();
       formData.append("from", fromEmail);
-      formData.append("to", options.toEmail || defaultToEmail);
-      if (options.ccEmail) {
-        formData.append("cc", options.ccEmail);
+      
+      const toStr = options.toEmail || defaultToEmail;
+      const toRecipients = toStr.split(',').map(e => e.trim()).filter(e => e);
+      for (const to of toRecipients) {
+        formData.append("to", to);
       }
+
+      if (options.ccEmail) {
+        const ccRecipients = options.ccEmail.split(',').map(e => e.trim()).filter(e => e);
+        for (const cc of ccRecipients) {
+          formData.append("cc", cc);
+        }
+      }
+      
       formData.append("subject", options.subject || "Daily Team Report");
 
       if (options.text) formData.append("text", options.text);
