@@ -1079,7 +1079,7 @@ export class ReportsService {
 
     return tempFilePath;
   }
-  async generateGatemeaReport(): Promise<string> {
+  async generateGatemeaReport(givenDate?: string | Date): Promise<string> {
     this.logger.log("Started generating GATEMEA Daily report...");
 
     const projectName = "gatemea";
@@ -1096,7 +1096,9 @@ export class ReportsService {
       return null;
     }
 
-    const now = dayjs().tz("Asia/Riyadh");
+    const now = givenDate
+      ? dayjs(givenDate).tz("Asia/Riyadh")
+      : dayjs().tz("Asia/Riyadh");
     const yesterday = now.clone().subtract(1, "day");
 
     // Custom Reporting Period: 7 AM Yesterday to 5 AM Today (Saudi Time)
