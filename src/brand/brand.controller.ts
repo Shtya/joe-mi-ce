@@ -75,15 +75,9 @@ export class BrandController {
       );
     }
 
-    // Regular users: brands in the project OR owned by the user
-    const projectId =
-      await this.brandService.userService.resolveProjectIdFromUser(user.id);
-    console.log(projectId);
-    // Define OR filters as an array
-    const orFilters = [
-      { project: { id: projectId } },
-      { ownerUserId: user.id },
-    ];
+    const scope = await this.brandService.userService.resolveBrandAccessScope(
+      user.id,
+    );
 
     return CRUD.findAll(
       this.brandService.brandRepository,
@@ -95,8 +89,13 @@ export class BrandController {
       query.sortOrder,
       ["categories"],
       ["name"],
-      undefined, // regular filters (none in this case)
-      orFilters, // OR filters
+      undefined,
+      undefined,
+      (qb) => this.brandService.userService.applyBrandScopeToBrandQuery(
+        qb,
+        "brand",
+        scope,
+      ),
     );
   }
 

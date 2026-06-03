@@ -29,6 +29,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
+import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
 @Injectable()
 export class ProductService {
   private readonly uploadPath = "./uploads/products";
@@ -72,7 +73,7 @@ export class ProductService {
     const [brand, category, project] = await Promise.all([
       dto.brand_id
         ? this.brandRepository.findOne({
-            where: { id: dto.brand_id },
+            where: { id: dto.brand_id, project_id: dto.project_id },
           })
         : Promise.resolve(undefined),
       this.categoryRepository.findOne({
@@ -86,7 +87,9 @@ export class ProductService {
 
     // Validations
     if (dto.brand_id && !brand) {
-      throw new NotFoundException(`Brand with ID ${dto.brand_id} not found`);
+      throw new NotFoundException(
+        `Brand with ID ${dto.brand_id} not found in this project`,
+      );
     }
     if (!category) {
       throw new NotFoundException(
@@ -225,12 +228,26 @@ export class ProductService {
   }
 
   async findOne(id: string, user: any) {
+    const scope = await this.userService.resolveBrandAccessScope(user.id);
     const product = await this.productRepository.findOne({
       where: { id },
       relations: ["brand", "category", "stock", "project"],
     });
 
     if (!product) throw new NotFoundException("Product not found");
+
+    if (!scope.isSuper) {
+      if (product.project_id !== scope.projectId) {
+        throw new NotFoundException("Product not found");
+      }
+      if (
+        scope.mode === BrandAssignmentMode.CUSTOM &&
+        !this.userService.canAccessBrand(scope, product.brand?.id)
+      ) {
+        throw new NotFoundException("Product not found");
+      }
+    }
+
     return product;
   }
   async update(id: string, dto: UpdateProductDto, user: any): Promise<Product> {
@@ -238,7 +255,7 @@ export class ProductService {
 
     if (dto.brand_id) {
       const brand = await this.brandRepository.findOne({
-        where: { id: dto.brand_id },
+        where: { id: dto.brand_id, project_id: product.project.id },
       });
       if (!brand) {
         throw new NotFoundException(`Brand not found in your project`);
@@ -292,20 +309,27 @@ export class ProductService {
     user: any,
   ) {
     const { search, sortBy = "name", sortOrder = "ASC" } = query;
-    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
-    const where: any = {};
+    const scope = await this.userService.resolveBrandAccessScope(user.id);
+    if (!this.userService.canAccessBrand(scope, brandId)) {
+      return { success: true, data: [] };
+    }
 
-    if (search) where.name = ILike(`%${search}%`);
+    const qb = this.productRepository
+      .createQueryBuilder("product")
+      .leftJoin("product.brand", "brand")
+      .leftJoin("product.category", "category")
+      .where("category.id = :categoryId", { categoryId })
+      .andWhere("brand.id = :brandId", { brandId })
+      .select(["product.id", "product.name", "product.price", "product.image_url"])
+      .orderBy(`product.${sortBy}`, sortOrder);
 
-    const products = await this.productRepository.find({
-      where: {
-        category: { id: categoryId },
-        brand: { id: brandId },
-        ...where,
-      },
-      select: ["id", "name", "price", "image_url"],
-      order: { [sortBy]: sortOrder },
-    });
+    this.userService.applyBrandScopeToProductQuery(qb, "product", scope);
+
+    if (search) {
+      qb.andWhere("product.name ILIKE :search", { search: `%${search}%` });
+    }
+
+    const products = await qb.getMany();
 
     return { success: true, data: products };
   }

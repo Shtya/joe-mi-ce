@@ -224,13 +224,10 @@ export class ProductController {
   async findAll(@Query() q: any, @Req() req: any) {
     const user = req.user;
 
-    // 🔐 Always resolve project from user (never from query)
-    const projectId =
-      await this.productService.userService.resolveProjectIdFromUser(user.id);
+    const scope =
+      await this.productService.userService.resolveBrandAccessScope(user.id);
 
-    const filters: any = {
-      project: { id: projectId },
-    };
+    const filters: any = {};
 
     // ✅ Support filters[brand][id]
     if (q?.filters?.brand?.id) {
@@ -256,6 +253,11 @@ export class ProductController {
       relations,
       searchFields,
       filters,
+      (qb) => this.productService.userService.applyBrandScopeToProductQuery(
+        qb,
+        "product",
+        scope,
+      ),
     );
   }
 

@@ -1,4 +1,4 @@
-import { Entity, Column, OneToMany, ManyToOne, JoinColumn, Index, OneToOne } from 'typeorm';
+import { Entity, Column, OneToMany, ManyToOne, JoinColumn, Index, OneToOne, ManyToMany, JoinTable } from 'typeorm';
 import { CoreEntity } from './core.entity';
 import { Asset } from './assets.entity';
 import { Role } from './role.entity';
@@ -6,9 +6,11 @@ import { Project } from './project.entity';
 import { Branch } from './branch.entity';
  import { Audit } from './audit.entity';
  import { Vacation } from './employee/vacation.entity';
- import { Sale } from './products/sale.entity';
+import { Sale } from './products/sale.entity';
 import { Journey } from './all_plans.entity';
 import { DocumentBuilder } from './documentbuilder.entity';
+import { Brand } from './products/brand.entity';
+import { BrandAssignmentMode } from 'enums/BrandAssignmentMode.enum';
 
 
 @Entity('users')
@@ -54,6 +56,21 @@ export class User extends CoreEntity {
 
   @Column({ default: true })
   is_active: boolean;
+
+  @Column({
+    type: 'enum',
+    enum: BrandAssignmentMode,
+    default: BrandAssignmentMode.ALL,
+  })
+  brandAssignmentMode: BrandAssignmentMode;
+
+  @ManyToMany(() => Brand)
+  @JoinTable({
+    name: 'user_assigned_brands',
+    joinColumn: { name: 'user_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'brand_id', referencedColumnName: 'id' },
+  })
+  assignedBrands: Brand[];
 
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'created_by_id' })

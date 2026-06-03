@@ -23,6 +23,7 @@ import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { ProjectService } from "src/project/project.service";
+import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
 const PROMOTER_HEADER_MAP: Record<string, string> = {
   "promoter username": "username",
   username: "username",
@@ -220,7 +221,7 @@ export class AuthService {
       username: dto.username,
       password: await argon2.hash(dto.password),
       name: dto.name,
-      project_id: project.id,
+      project_id: project?.id ?? dto.project_id ?? null,
       manager_id: dto.manager_id || null,
       national_id: dto.national_id || null,
       role,
@@ -234,6 +235,13 @@ export class AuthService {
       account_name: dto.account_name,
       iban: dto.iban,
     });
+
+    await this.userService.applyBrandAssignment(
+      user,
+      project?.id,
+      dto.brandAssignmentMode || BrandAssignmentMode.ALL,
+      dto.brandIds || [],
+    );
 
     const savedUser = await this.userRepository.save(user);
 
@@ -328,7 +336,7 @@ export class AuthService {
   async getCurrentUser(user: User) {
     const userWithRelations = await this.userRepository.findOne({
       where: { id: user.id },
-      relations: ["role", "project", "branch", "created_by"],
+      relations: ["role", "project", "branch", "created_by", "assignedBrands"],
     });
 
     if (!userWithRelations) throw new NotFoundException("User not found");
@@ -346,12 +354,18 @@ export class AuthService {
       national_id: userWithRelations.national_id,
       account_name: userWithRelations.account_name,
       iban: userWithRelations.iban,
+      brandAssignmentMode:
+        userWithRelations.brandAssignmentMode || BrandAssignmentMode.ALL,
+      assignedBrands: (userWithRelations.assignedBrands || []).map((brand) => ({
+        id: brand.id,
+        name: brand.name,
+      })),
     };
   }
   async getUserById(userId: string) {
     const userWithRelations = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ["role", "project", "branch", "created_by"],
+      relations: ["role", "project", "branch", "created_by", "assignedBrands"],
     });
 
     if (!userWithRelations) throw new BadRequestException("User not found");
@@ -370,11 +384,11 @@ export class AuthService {
   async getUsersCreatedByOrAll(requester: User) {
     const relations = ["role", "project", "branch", "created_by"];
     if (requester.role.name === ERole.SUPER_ADMIN) {
-      return this.userRepository.find({ relations });
+      return this.userRepository.find({ relations: [...relations, "assignedBrands"] });
     } else {
       return this.userRepository.find({
         where: { created_by: { id: requester.id } },
-        relations,
+        relations: [...relations, "assignedBrands"],
       });
     }
   }
@@ -432,6 +446,7 @@ export class AuthService {
   ) {
     const user = await this.userRepository.findOne({
       where: { id: userId },
+      relations: ["assignedBrands"],
       withDeleted: true,
     });
 
@@ -469,7 +484,7 @@ export class AuthService {
       user.password = await argon2.hash(dto.password);
     }
     if (dto.role_id) {
-      this.updateUserRole(userId, dto.role_id, requester);
+      await this.updateUserRole(userId, dto.role_id, requester);
     }
 
     if (dto.username) {
@@ -494,7 +509,23 @@ export class AuthService {
     } else if (dto.avatar) {
       user.avatar_url = dto.avatar;
     }
-    const { password, ...updateData } = dto;
+    const shouldUpdateBrandAssignment =
+      dto.brandAssignmentMode !== undefined || dto.brandIds !== undefined;
+    if (shouldUpdateBrandAssignment) {
+      const requestedMode =
+        dto.brandAssignmentMode ||
+        (dto.brandIds !== undefined
+          ? BrandAssignmentMode.CUSTOM
+          : user.brandAssignmentMode || BrandAssignmentMode.ALL);
+      await this.userService.applyBrandAssignment(
+        user,
+        user.project_id,
+        requestedMode,
+        dto.brandIds || [],
+      );
+    }
+
+    const { password, brandIds, ...updateData } = dto;
     Object.assign(user, updateData);
     return await this.userRepository.save(user);
   }
@@ -538,6 +569,7 @@ export class AuthService {
         national_id: user.national_id,
         account_name: user.account_name,
         iban: user.iban,
+        brandAssignmentMode: user.brandAssignmentMode || BrandAssignmentMode.ALL,
       },
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,

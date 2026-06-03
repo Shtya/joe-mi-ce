@@ -142,10 +142,15 @@ export class BrandService {
   }
 
   async findOne(id: string, user: any): Promise<Brand> {
-    const brand = await this.brandRepository.findOne({
-      where: await this.projectOrOwnerWhere(user, { id }),
-      relations: ["categories"],
-    });
+    const scope = await this.userService.resolveBrandAccessScope(user.id);
+    const qb = this.brandRepository
+      .createQueryBuilder("brand")
+      .leftJoinAndSelect("brand.categories", "categories")
+      .where("brand.id = :id", { id });
+
+    this.userService.applyBrandScopeToBrandQuery(qb, "brand", scope);
+
+    const brand = await qb.getOne();
 
     if (!brand) throw new NotFoundException("brand.not_found");
     return brand;
@@ -157,16 +162,14 @@ export class BrandService {
   }
   async findBrandsForMobile(query: PaginationQueryDto, user: any) {
     const { search, sortBy = "name", sortOrder = "ASC" } = query;
-
-    // Resolve the project ID for this user
-    const projectId = await this.userService.resolveProjectIdFromUser(user.id);
+    const scope = await this.userService.resolveBrandAccessScope(user.id);
 
     const qb = this.brandRepository
       .createQueryBuilder("brand")
-      .innerJoin("brand.project", "project") // just join first
-      .where("project.id = :projectId", { projectId }) // apply where on joined table
       .select(["brand.id", "brand.name"])
       .orderBy(`brand.${sortBy}`, sortOrder);
+
+    this.userService.applyBrandScopeToBrandQuery(qb, "brand", scope);
 
     // Optional search filter
     if (search) {

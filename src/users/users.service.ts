@@ -3,17 +3,28 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { In, Repository } from "typeorm";
+import { DataSource, In, Repository } from "typeorm";
 import { User } from "entities/user.entity";
 import { Branch } from "entities/branch.entity";
 import { Project } from "entities/project.entity";
+import { Brand } from "entities/products/brand.entity";
+import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
+import { ERole } from "enums/Role.enum";
 import {
   UserResponseDto,
   UsersByBranchResponseDto,
   ProjectUsersResponseDto,
 } from "dto/users.dto";
+
+export interface BrandAccessScope {
+  isSuper: boolean;
+  projectId?: string;
+  mode: BrandAssignmentMode;
+  brandIds?: string[];
+}
 
 @Injectable()
 export class UsersService {
@@ -24,12 +35,17 @@ export class UsersService {
     private readonly branchRepository: Repository<Branch>,
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
+    private readonly dataSource: DataSource,
   ) {}
+
+  private get brandRepository(): Repository<Brand> {
+    return this.dataSource.getRepository(Brand);
+  }
 
   async getUserProfile(userId: string): Promise<UserResponseDto> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ["role", "branch", "project"],
+      relations: ["role", "branch", "project", "assignedBrands"],
     });
 
     if (!user) {
@@ -59,7 +75,7 @@ export class UsersService {
         id: userId,
         project_id: projectId,
       },
-      relations: ["role", "branch"],
+      relations: ["role", "branch", "assignedBrands"],
     });
 
     if (!user) {
@@ -98,7 +114,7 @@ export class UsersService {
   ): Promise<UsersByBranchResponseDto[]> {
     const branches = await this.branchRepository.find({
       where: { project: { id: projectId } },
-      relations: ["team", "team.role"],
+      relations: ["team", "team.role", "team.assignedBrands"],
     });
 
     return branches.map((branch) => ({
@@ -117,7 +133,7 @@ export class UsersService {
         id: branchId,
         project: { id: projectId },
       },
-      relations: ["team", "team.role"],
+      relations: ["team", "team.role", "team.assignedBrands"],
     });
 
     if (!branch) {
@@ -134,7 +150,7 @@ export class UsersService {
   async getUsersInProject(projectId: string): Promise<UserResponseDto[]> {
     const users = await this.userRepository.find({
       where: { project_id: projectId },
-      relations: ["role", "branch"],
+      relations: ["role", "branch", "assignedBrands"],
     });
 
     return users.map((user) => this.mapUserToDto(user));
@@ -150,6 +166,11 @@ export class UsersService {
       device_id: user.device_id,
       is_active: user.is_active,
       role: user.role?.name,
+      brandAssignmentMode: user.brandAssignmentMode || BrandAssignmentMode.ALL,
+      assignedBrands: (user.assignedBrands || []).map((brand) => ({
+        id: brand.id,
+        name: brand.name,
+      })),
       national_id: user.national_id,
       account_name: user.account_name,
       iban: user.iban,
@@ -173,7 +194,7 @@ export class UsersService {
           name: In(["promoter", "supervisor"]),
         },
       },
-      relations: ["role", "branch"],
+      relations: ["role", "branch", "assignedBrands"],
     });
 
     return users.map((user) => this.mapUserToDto(user));
@@ -203,6 +224,137 @@ export class UsersService {
     }
 
     throw new ForbiddenException("User is not assigned to any project");
+  }
+
+  async validateBrandAssignment(
+    projectId: string | null | undefined,
+    mode: BrandAssignmentMode = BrandAssignmentMode.ALL,
+    brandIds: string[] = [],
+  ): Promise<Brand[]> {
+    const normalizedMode = mode || BrandAssignmentMode.ALL;
+
+    if (normalizedMode === BrandAssignmentMode.ALL) {
+      return [];
+    }
+
+    if (!projectId) {
+      throw new BadRequestException("Project ID is required for brand assignment");
+    }
+
+    const uniqueBrandIds = [...new Set(brandIds || [])];
+    if (uniqueBrandIds.length === 0) {
+      throw new BadRequestException(
+        "brandIds is required when brandAssignmentMode is custom",
+      );
+    }
+
+    const brands = await this.brandRepository.find({
+      where: {
+        id: In(uniqueBrandIds),
+        project_id: projectId,
+      },
+    });
+
+    if (brands.length !== uniqueBrandIds.length) {
+      throw new BadRequestException(
+        "All assigned brands must belong to the user's project",
+      );
+    }
+
+    return brands;
+  }
+
+  async applyBrandAssignment(
+    user: User,
+    projectId: string | null | undefined,
+    mode: BrandAssignmentMode = BrandAssignmentMode.ALL,
+    brandIds: string[] = [],
+  ): Promise<User> {
+    const normalizedMode = mode || BrandAssignmentMode.ALL;
+    user.brandAssignmentMode = normalizedMode;
+    user.assignedBrands =
+      normalizedMode === BrandAssignmentMode.CUSTOM
+        ? await this.validateBrandAssignment(projectId, normalizedMode, brandIds)
+        : [];
+    return user;
+  }
+
+  async resolveBrandAccessScope(userOrId: User | string): Promise<BrandAccessScope> {
+    const userId = typeof userOrId === "string" ? userOrId : userOrId.id;
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ["role", "project", "branch", "branch.project", "assignedBrands"],
+    });
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    const roleName = user.role?.name;
+    const isSuper = roleName === ERole.SUPER_ADMIN;
+    const mode = user.brandAssignmentMode || BrandAssignmentMode.ALL;
+
+    if (isSuper) {
+      return { isSuper: true, mode };
+    }
+
+    const projectId = await this.resolveProjectIdFromUser(user.id);
+
+    if (mode === BrandAssignmentMode.CUSTOM) {
+      return {
+        isSuper: false,
+        projectId,
+        mode,
+        brandIds: (user.assignedBrands || []).map((brand) => brand.id),
+      };
+    }
+
+    return {
+      isSuper: false,
+      projectId,
+      mode: BrandAssignmentMode.ALL,
+    };
+  }
+
+  applyBrandScopeToBrandQuery(qb: any, alias: string, scope: BrandAccessScope) {
+    if (scope.isSuper) return;
+
+    qb.andWhere(`${alias}.project_id = :brandScopeProjectId`, {
+      brandScopeProjectId: scope.projectId,
+    });
+
+    if (scope.mode === BrandAssignmentMode.CUSTOM) {
+      if (!scope.brandIds?.length) {
+        qb.andWhere("1 = 0");
+        return;
+      }
+      qb.andWhere(`${alias}.id IN (:...brandScopeBrandIds)`, {
+        brandScopeBrandIds: scope.brandIds,
+      });
+    }
+  }
+
+  applyBrandScopeToProductQuery(qb: any, productAlias: string, scope: BrandAccessScope) {
+    if (scope.isSuper) return;
+
+    qb.andWhere(`${productAlias}.project_id = :productScopeProjectId`, {
+      productScopeProjectId: scope.projectId,
+    });
+
+    if (scope.mode === BrandAssignmentMode.CUSTOM) {
+      if (!scope.brandIds?.length) {
+        qb.andWhere("1 = 0");
+        return;
+      }
+      qb.andWhere(`${productAlias}.brand_id IN (:...productScopeBrandIds)`, {
+        productScopeBrandIds: scope.brandIds,
+      });
+    }
+  }
+
+  canAccessBrand(scope: BrandAccessScope, brandId?: string | null): boolean {
+    if (scope.isSuper || scope.mode === BrandAssignmentMode.ALL) return true;
+    return !!brandId && !!scope.brandIds?.includes(brandId);
   }
   async registerFcmToken(
     userId: string,

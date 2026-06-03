@@ -1,4 +1,6 @@
 // dtos/user.dto.ts
+import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
+
 export class UserResponseDto {
   id: string;
   username: string;
@@ -11,6 +13,11 @@ export class UserResponseDto {
   account_name: string;
   iban: string;
   role: string;
+  brandAssignmentMode?: BrandAssignmentMode;
+  assignedBrands?: {
+    id: string;
+    name: string;
+  }[];
   branch?: {
     id: string;
     name: string;

@@ -1,5 +1,6 @@
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ERole } from '../enums/Role.enum';
+import { BrandAssignmentMode } from 'enums/BrandAssignmentMode.enum';
 
 export class RegisterDto {
   @IsString()
@@ -47,6 +48,15 @@ export class RegisterDto {
   @IsOptional()
   branch_id?: string;
 
+  @IsEnum(BrandAssignmentMode)
+  @IsOptional()
+  brandAssignmentMode?: BrandAssignmentMode;
+
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  brandIds?: string[];
+
   @IsString()
   @IsOptional()
   salesTargetType?: 'monthly' | 'quarterly';
@@ -84,6 +94,15 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   branch_id?: string;
+
+  @IsEnum(BrandAssignmentMode)
+  @IsOptional()
+  brandAssignmentMode?: BrandAssignmentMode;
+
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  brandIds?: string[];
 
   @IsOptional()
   @IsString()
