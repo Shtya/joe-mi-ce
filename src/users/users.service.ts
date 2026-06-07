@@ -6,11 +6,12 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { DataSource, In, Repository } from "typeorm";
+import { DataSource, EntityManager, In, Repository } from "typeorm";
 import { User } from "entities/user.entity";
 import { Branch } from "entities/branch.entity";
 import { Project } from "entities/project.entity";
 import { Brand } from "entities/products/brand.entity";
+import { CheckIn, Journey, JourneyPlan } from "entities/all_plans.entity";
 import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
 import { ERole } from "enums/Role.enum";
 import {
@@ -376,13 +377,58 @@ export class UsersService {
       );
     }
 
-    await this.userRepository.softRemove(user);
+    await this.dataSource.transaction(async (manager) => {
+      await this.softDeleteEmployeeJourneyData(user.id, manager);
+      await manager.getRepository(User).softRemove(user);
+    });
 
     return {
       success: true,
       code: 200,
       message:
         lang === "ar" ? "تم حذف المستخدم بنجاح" : "User deleted successfully",
+    };
+  }
+
+  async removeEmployeeJourneys(userId: string): Promise<{
+    checkIns: number;
+    journeys: number;
+    journeyPlans: number;
+  }> {
+    return this.dataSource.transaction((manager) =>
+      this.softDeleteEmployeeJourneyData(userId, manager),
+    );
+  }
+
+  private async softDeleteEmployeeJourneyData(
+    userId: string,
+    manager: EntityManager,
+  ): Promise<{ checkIns: number; journeys: number; journeyPlans: number }> {
+    const checkInsResult = await manager
+      .getRepository(CheckIn)
+      .createQueryBuilder()
+      .softDelete()
+      .where('"userId" = :userId', { userId })
+      .execute();
+
+    const journeysResult = await manager
+      .getRepository(Journey)
+      .createQueryBuilder()
+      .softDelete()
+      .where('"userId" = :userId', { userId })
+      .execute();
+
+    const journeyPlansResult = await manager
+      .getRepository(JourneyPlan)
+      .createQueryBuilder()
+      .softDelete()
+      .where('"userId" = :userId', { userId })
+      .execute();
+
+    return {
+      checkIns: checkInsResult.affected || 0,
+      journeys: journeysResult.affected || 0,
+      journeyPlans: journeyPlansResult.affected || 0,
     };
   }
 

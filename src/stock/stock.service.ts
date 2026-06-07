@@ -1101,16 +1101,10 @@ export class StockService {
     branchId: string,
     threshold: number = 0,
     search?: string,
-    page: any = 1,
-    limit: any = 10,
     sortBy?: string,
     sortOrder: "ASC" | "DESC" = "DESC",
     filters?: any,
   ) {
-    const pageNumber = Number(page) || 1;
-    const limitNumber = Number(limit) || 10;
-    const skip = (pageNumber - 1) * limitNumber;
-
     // Get user with branch info
     const user = await this.userRepo.findOne({
       where: { id: userId },
@@ -1160,9 +1154,7 @@ export class StockService {
       .where("product.project_id = :projectId", {
         projectId: user.project_id || user.project?.id,
       })
-      .andWhere("COALESCE(stock.quantity, 0) <= :threshold", { threshold })
-      .skip(skip)
-      .take(limitNumber);
+      .andWhere("COALESCE(stock.quantity, 0) <= :threshold", { threshold });
 
     // Apply search if provided
     if (search) {
@@ -1244,8 +1236,8 @@ export class StockService {
 
     return {
       total_records,
-      current_page: pageNumber,
-      per_page: limitNumber,
+      current_page: 1,
+      per_page: total_records,
       threshold: threshold,
       branch: {
         id: branch.id,

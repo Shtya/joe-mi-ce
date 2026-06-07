@@ -434,8 +434,12 @@ export class AuthService {
       }
     }
 
+    const removedJourneyData = await this.userService.removeEmployeeJourneys(
+      user.id,
+    );
     await this.userRepository.softDelete(user.id);
-    return { success: true, deletedUserId: user.id };
+
+    return { success: true, deletedUserId: user.id, removedJourneyData };
   }
 
   async updateUser(
