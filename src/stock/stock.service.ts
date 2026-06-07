@@ -1140,6 +1140,7 @@ export class StockService {
         "product.sku",
         "product.price",
         "product.discount",
+        "product.created_at",
         "stock.id",
         "stock.quantity",
         "stock.created_at",
@@ -1199,7 +1200,7 @@ export class StockService {
       ? sortBy.includes(".")
         ? sortBy
         : `product.${sortBy}`
-      : "product.name";
+      : "COALESCE(stock.created_at, product.created_at)";
     qb.orderBy(sortField, sortOrder);
 
     const [records, total_records] = await qb.getManyAndCount();

@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, EntityManager, In, Repository } from "typeorm";
@@ -281,7 +282,15 @@ export class UsersService {
   }
 
   async resolveBrandAccessScope(userOrId: User | string): Promise<BrandAccessScope> {
+    if (!userOrId) {
+      throw new UnauthorizedException("Authenticated user is required");
+    }
+
     const userId = typeof userOrId === "string" ? userOrId : userOrId.id;
+    if (!userId) {
+      throw new UnauthorizedException("Authenticated user is required");
+    }
+
     const user = await this.userRepository.findOne({
       where: { id: userId },
       relations: ["role", "project", "branch", "branch.project", "assignedBrands"],

@@ -268,20 +268,20 @@ export class ProductController {
     @Param("brandId", new ParseUUIDPipe()) brandId: string,
 
     @Query() query: PaginationQueryDto,
-    @Req() user: any,
+    @Req() req: any,
   ) {
     return this.productService.findAllForMobile(
       query,
       categoryId,
       brandId,
-      user,
+      req.user,
     );
   }
 
   @Get(":id")
   @Permissions(EPermission.PRODUCT_READ)
-  findOne(@Param("id") id: string, @Req() user: any) {
-    return this.productService.findOne(id, user);
+  findOne(@Param("id") id: string, @Req() req: any) {
+    return this.productService.findOne(id, req.user);
   }
 
   @Put(":id")
@@ -289,9 +289,9 @@ export class ProductController {
   update(
     @Param("id") id: string,
     @Body() updateProductDto: UpdateProductDto,
-    @Req() user: any,
+    @Req() req: any,
   ) {
-    return this.productService.update(id, updateProductDto, user);
+    return this.productService.update(id, updateProductDto, req.user);
   }
 
   @Delete(":id")
