@@ -41,6 +41,9 @@ export class JourneyPlan extends CoreEntity {
   @Column({ type: 'text', array: true })
   days: string[];
 
+  @Column({ default: true })
+  is_active: boolean;
+
   @OneToMany(() => Journey, journey => journey.journeyPlan)
   journeys: Relation<Journey[]>;
 }
@@ -65,6 +68,9 @@ export class Journey extends CoreEntity {
   @Column({ type: 'enum', enum: JourneyStatus, default: JourneyStatus.ABSENT, nullable: true })
   status: JourneyStatus;
 
+  @Column({ default: true })
+  is_active: boolean;
+
   @ManyToOne(() => JourneyPlan, { nullable: true, onDelete: 'CASCADE' })
   journeyPlan?: Relation<JourneyPlan>;
 
@@ -80,7 +86,7 @@ export class Journey extends CoreEntity {
 
 @Entity('check_ins')
 export class CheckIn extends CoreEntity {
-  @OneToOne(() => Journey, journey => journey.checkin, { onDelete: 'CASCADE' })
+  @OneToOne(() => Journey, journey => journey.checkin, { onDelete: 'SET NULL', nullable: true })
   @JoinColumn()
   journey: Relation<Journey>;
 

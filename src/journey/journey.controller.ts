@@ -183,6 +183,7 @@ export class JourneyController {
     const filters: any = {
       projectId,
       ...query.filters,
+      is_active: true,
     };
 
     delete filters.fromDate;
@@ -239,6 +240,7 @@ export class JourneyController {
     const filters: any = {
       projectId,
       ...query.filters,
+      is_active: true,
     };
 
     // Handle status filter from query body if not present in query params
@@ -619,6 +621,7 @@ export class JourneyController {
     const filters: any = {
       projectId,
       ...query.filters,
+      is_active: true,
       ...(user.role.name !== ERole.SUPERVISOR &&
       user.role.name !== ERole.PROMOTER &&
       user.branch
@@ -647,6 +650,7 @@ export class JourneyController {
     delete filters.date;
 
     const extraWhere = (qb: any) => {
+      qb.andWhere("plan.is_active = :planIsActive", { planIsActive: true });
       qb.andWhere("plan_user.is_active = :isActive", { isActive: true });
       if (user.role.name === ERole.SUPERVISOR) {
         // Exclude the supervisor themselves from the plans (if they are also a user in the system)
@@ -721,6 +725,7 @@ export class JourneyController {
                 projectId,
                 type: JourneyType.UNPLANNED,
                 date: In(datesInRange),
+                is_active: true,
                 branch: { id: In(supervisorBranchIds) },
                 user: { role: { name: ERole.PROMOTER }, is_active: true },
               }
@@ -729,6 +734,7 @@ export class JourneyController {
               projectId,
               type: JourneyType.UNPLANNED,
               date: In(datesInRange),
+              is_active: true,
               ...(user.role.name === ERole.PROMOTER
                 ? { user: { id: user.id, is_active: true } }
                 : { user: { is_active: true } }),
@@ -1202,19 +1208,13 @@ export class JourneyController {
   @Get("plans/:id")
   @Permissions(EPermission.JOURNEY_READ)
   async getPlan(@Param("id") id: string) {
-    return CRUD.findOne(this.journeyService.journeyPlanRepo, "plans", id, [
-      "user",
-      "branch",
-      "branch.city",
-      "branch.city.region",
-      "shift",
-    ]);
+    return this.journeyService.getPlanById(id);
   }
 
   @Delete("plans/:id")
   @Permissions(EPermission.JOURNEY_DELETE)
   async deletePlan(@Param("id") id: string) {
-    return this.journeyService.journeyPlanRepo.delete(id);
+    return this.journeyService.deletePlan(id);
   }
 
   @Delete("plans/user/:userId")
@@ -1262,6 +1262,7 @@ export class JourneyController {
     const filters: any = {
       projectId,
       ...query.filters,
+      is_active: true,
     };
 
     // Handle nested status filter (e.g. filters[status][id])
@@ -1398,13 +1399,7 @@ export class JourneyController {
   @Get(":id")
   @Permissions(EPermission.JOURNEY_READ)
   async getJourney(@Param("id") id: string) {
-    return CRUD.findOne(this.journeyService.journeyRepo, "journey", id, [
-      "user",
-      "branch",
-      "branch.city",
-      "branch.city.region",
-      "shift",
-    ]);
+    return this.journeyService.getJourneyById(id);
   }
 
   @Get(":id/status-check")
@@ -1422,7 +1417,7 @@ export class JourneyController {
   @Delete(":id")
   @Permissions(EPermission.JOURNEY_DELETE)
   async deleteJourney(@Param("id") id: string) {
-    return this.journeyService.journeyRepo.delete(id);
+    return this.journeyService.deleteJourney(id);
   }
 
   // ✅ Mobile: get today's journeys for logged-in user

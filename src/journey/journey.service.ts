@@ -135,6 +135,9 @@ export class JourneyService {
       .leftJoinAndSelect("branch.chain", "chain")
       .leftJoinAndSelect("journey.shift", "shift")
       .where("journey.projectId = :projectId", { projectId })
+      .andWhere("journey.is_active = :journeyIsActive", {
+        journeyIsActive: true,
+      })
       .andWhere("journey.date BETWEEN :startDate AND :endDate", {
         startDate: start.format("YYYY-MM-DD"),
         endDate: end.format("YYYY-MM-DD"),
@@ -355,7 +358,7 @@ export class JourneyService {
 
     if (journeyId) {
       const journey = await this.journeyRepo.findOne({
-        where: { id: journeyId },
+        where: { id: journeyId, is_active: true },
         relations: ["branch", "branch.chain"],
       });
       if (journey) {
@@ -365,7 +368,7 @@ export class JourneyService {
     } else {
       const today = dayjs().format("YYYY-MM-DD");
       const journey = await this.journeyRepo.findOne({
-        where: { user: { id: userId }, date: today },
+        where: { user: { id: userId }, date: today, is_active: true },
         relations: ["branch", "branch.chain"],
         order: { created_at: "DESC" },
       });
@@ -500,7 +503,10 @@ export class JourneyService {
         },
       });
 
-      for (const plan of existing) {
+      const inactivePlan = existing.find((plan) => !plan.is_active);
+      const activePlans = existing.filter((plan) => plan.is_active);
+
+      for (const plan of activePlans) {
         const overlap = plan.days.filter((d) => dto.days.includes(d));
         if (overlap.length > 0) {
           throw new ConflictException({
@@ -510,6 +516,19 @@ export class JourneyService {
         }
       }
 
+      if (inactivePlan) {
+        inactivePlan.user = user;
+        inactivePlan.branch = branch;
+        inactivePlan.shift = shift;
+        inactivePlan.projectId = branch.project.id;
+        inactivePlan.days = dto.days;
+        inactivePlan.createdBy = user;
+        inactivePlan.is_active = true;
+        const savedPlan = await this.journeyPlanRepo.save(inactivePlan);
+        savedPlans.push(savedPlan);
+        continue;
+      }
+
       const newPlan = this.journeyPlanRepo.create({
         user,
         branch,
@@ -517,6 +536,7 @@ export class JourneyService {
         projectId: branch.project.id,
         days: dto.days,
         createdBy: user,
+        is_active: true,
       });
 
       const savedPlan = await this.journeyPlanRepo.save(newPlan);
@@ -532,7 +552,7 @@ export class JourneyService {
 
   async updatePlan(id: string, dto: UpdateJourneyPlanDto) {
     const plan = await this.journeyPlanRepo.findOne({
-      where: { id },
+      where: { id, is_active: true },
       relations: ["user", "branch", "shift", "branch.project"],
     });
 
@@ -576,6 +596,7 @@ export class JourneyService {
         branch: { id: plan.branch.id },
         shift: { id: plan.shift.id },
         id: Not(plan.id), // Exclude self
+        is_active: true,
       },
     });
 
@@ -590,6 +611,43 @@ export class JourneyService {
     }
 
     return this.journeyPlanRepo.save(plan);
+  }
+
+  async getPlanById(id: string) {
+    const plan = await this.journeyPlanRepo.findOne({
+      where: { id, is_active: true },
+      relations: [
+        "user",
+        "branch",
+        "branch.city",
+        "branch.city.region",
+        "shift",
+      ],
+    });
+
+    if (!plan) {
+      throw new NotFoundException("Journey plan not found");
+    }
+
+    return plan;
+  }
+
+  async deletePlan(id: string) {
+    const plan = await this.journeyPlanRepo.findOne({
+      where: { id, is_active: true },
+    });
+
+    if (!plan) {
+      throw new NotFoundException("Journey plan not found");
+    }
+
+    plan.is_active = false;
+    await this.journeyPlanRepo.save(plan);
+
+    return {
+      message: "Journey plan deleted successfully",
+      id,
+    };
   }
 
   // ===== الرحلات الطارئة =====
@@ -624,12 +682,25 @@ export class JourneyService {
         user: { id: dto.userId },
         date: today,
         type: JourneyType.UNPLANNED,
-        shift: shift,
-        branch: branch,
+        shift: { id: shift.id },
+        branch: { id: branch.id },
       },
+      withDeleted: true,
     });
 
     if (existingJourney) {
+      if (!existingJourney.is_active || existingJourney.deleted_at) {
+        existingJourney.user = user;
+        existingJourney.branch = branch;
+        existingJourney.shift = shift;
+        existingJourney.projectId = branch.project.id;
+        existingJourney.status = JourneyStatus.UNPLANNED_ABSENT;
+        existingJourney.createdBy = createdBy;
+        existingJourney.is_active = true;
+        existingJourney.deleted_at = null;
+        return this.journeyRepo.save(existingJourney);
+      }
+
       throw new ConflictException(
         "Unplanned journey already exists for this user today",
       );
@@ -644,6 +715,7 @@ export class JourneyService {
       type: JourneyType.UNPLANNED,
       status: JourneyStatus.UNPLANNED_ABSENT,
       createdBy,
+      is_active: true,
     });
 
     return this.journeyRepo.save(newJourney);
@@ -651,7 +723,7 @@ export class JourneyService {
 
   async updateJourney(id: string, dto: UpdateJourneyDto) {
     const journey = await this.journeyRepo.findOne({
-      where: { id },
+      where: { id, is_active: true },
       relations: ["user", "branch", "shift", "branch.project"],
     });
 
@@ -695,6 +767,7 @@ export class JourneyService {
         date: journey.date,
         shift: { id: journey.shift.id },
         id: Not(journey.id), // Exclude self
+        is_active: true,
         status: Not(
           In([
             JourneyStatus.UNPLANNED_ABSENT,
@@ -714,6 +787,64 @@ export class JourneyService {
     return this.journeyRepo.save(journey);
   }
 
+  async deleteJourney(id: string) {
+    const journey = await this.journeyRepo.findOne({
+      where: { id, is_active: true },
+      relations: ["checkin"],
+    });
+
+    if (!journey) {
+      throw new NotFoundException("Journey not found");
+    }
+
+    journey.is_active = false;
+    await this.journeyRepo.save(journey);
+
+    return {
+      message: "Journey deleted successfully",
+      id,
+    };
+  }
+
+  async getJourneyById(id: string) {
+    const journey = await this.journeyRepo.findOne({
+      where: { id, is_active: true },
+      relations: [
+        "user",
+        "branch",
+        "branch.city",
+        "branch.city.region",
+        "shift",
+      ],
+    });
+
+    if (!journey) {
+      throw new NotFoundException("Journey not found");
+    }
+
+    return journey;
+  }
+
+  private async restorePlannedJourney(
+    journey: Journey,
+    plan: JourneyPlan,
+    date: string,
+    status: JourneyStatus,
+  ) {
+    journey.user = plan.user;
+    journey.branch = plan.branch;
+    journey.shift = plan.shift;
+    journey.projectId = plan.projectId || plan.branch.project?.id;
+    journey.date = date;
+    journey.type = JourneyType.PLANNED;
+    journey.status = status;
+    journey.journeyPlan = plan;
+    journey.is_active = true;
+    journey.deleted_at = null;
+
+    return this.journeyRepo.save(journey);
+  }
+
   async getTodayJourneysForUserMobile(userId: string, lang: string = "en") {
     const today = dayjs().format("YYYY-MM-DD");
 
@@ -721,6 +852,7 @@ export class JourneyService {
       where: {
         user: { id: userId },
         date: today,
+        is_active: true,
       },
       relations: [
         "branch",
@@ -842,11 +974,13 @@ export class JourneyService {
 
     const qb = this.checkInRepo
       .createQueryBuilder("c")
+      .withDeleted()
       .innerJoinAndSelect("c.journey", "j")
       .innerJoinAndSelect("j.branch", "b")
       .innerJoinAndSelect("j.shift", "shift")
       .innerJoinAndSelect("c.user", "u")
-      .where("b.id IN (:...branchIds)", { branchIds });
+      .where("b.id IN (:...branchIds)", { branchIds })
+      .andWhere("j.is_active = :journeyIsActive", { journeyIsActive: true });
 
     if (date) {
       qb.andWhere("j.date = :date", { date });
@@ -879,7 +1013,7 @@ export class JourneyService {
 
   async checkInOut(dto: CheckInOutDto, lang: string = "en") {
     const journey = await this.journeyRepo.findOne({
-      where: { id: dto.journeyId },
+      where: { id: dto.journeyId, is_active: true },
       relations: [
         "branch",
         "branch.supervisor",
@@ -1090,7 +1224,7 @@ export class JourneyService {
     lang: string = "en",
   ) {
     const journey = await this.journeyRepo.findOne({
-      where: { id: dto.journeyId },
+      where: { id: dto.journeyId, is_active: true },
       relations: [
         "branch",
         "branch.supervisor",
@@ -1225,6 +1359,7 @@ export class JourneyService {
     const where: any = {};
     if (journeyId) {
       where.id = journeyId;
+      where.is_active = true;
     } else {
       throw new BadRequestException("journeyId must be provided");
     }
@@ -1257,6 +1392,7 @@ export class JourneyService {
     const where: any = {};
     if (journeyId) {
       where.id = journeyId;
+      where.is_active = true;
     } else {
       throw new BadRequestException("journeyId must be provided");
     }
@@ -1290,7 +1426,7 @@ export class JourneyService {
 
   async validateJourneyStatus(id: string) {
     const journey = await this.journeyRepo.findOne({
-      where: { id },
+      where: { id, is_active: true },
     });
 
     if (!journey) {
@@ -1346,9 +1482,14 @@ export class JourneyService {
         projectId,
       };
     }
+    where.journey = {
+      ...(where.journey || {}),
+      is_active: true,
+    };
 
     const checkIns = await this.checkInRepo.find({
       where,
+      withDeleted: true,
       relations: [
         "journey",
         "journey.branch",
@@ -1375,6 +1516,7 @@ export class JourneyService {
       .leftJoinAndSelect("branch.project", "project")
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
+      .andWhere("plan.is_active = :planIsActive", { planIsActive: true })
       .andWhere("user.deleted_at IS NULL")
       .andWhere("user.is_active = :isActive", { isActive: true })
       .andWhere("branch.deleted_at IS NULL");
@@ -1397,17 +1539,6 @@ export class JourneyService {
         continue;
       }
 
-      const exists = await this.journeyRepo.findOne({
-        where: {
-          user: { id: plan.user.id },
-          shift: { id: plan.shift.id },
-          date: tomorrow,
-          branch: { id: plan.branch.id },
-        },
-      });
-
-      if (exists) continue;
-
       const onVacation = await this.vacationDateRepo.findOne({
         where: {
           date: tomorrow,
@@ -1417,6 +1548,32 @@ export class JourneyService {
           },
         },
       });
+      const initialStatus = onVacation
+        ? JourneyStatus.VACATION
+        : JourneyStatus.ABSENT;
+
+      const exists = await this.journeyRepo.findOne({
+        where: {
+          user: { id: plan.user.id },
+          shift: { id: plan.shift.id },
+          date: tomorrow,
+          branch: { id: plan.branch.id },
+        },
+        withDeleted: true,
+      });
+
+      if (exists) {
+        if (!exists.is_active || exists.deleted_at) {
+          await this.restorePlannedJourney(
+            exists,
+            plan,
+            tomorrow,
+            initialStatus,
+          );
+          createdCount++;
+        }
+        continue;
+      }
 
       const journey = this.journeyRepo.create({
         user: plan.user,
@@ -1425,8 +1582,9 @@ export class JourneyService {
         projectId: plan.projectId || plan.branch.project?.id,
         date: tomorrow,
         type: JourneyType.PLANNED,
-        status: onVacation ? JourneyStatus.VACATION : JourneyStatus.ABSENT,
+        status: initialStatus,
         journeyPlan: plan,
+        is_active: true,
       });
 
       await this.journeyRepo.save(journey);
@@ -1491,6 +1649,7 @@ export class JourneyService {
       .leftJoinAndSelect("branch.project", "project")
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
+      .andWhere("plan.is_active = :planIsActive", { planIsActive: true })
       .andWhere("user.deleted_at IS NULL")
       .andWhere("user.is_active = :isActive", { isActive: true })
       .andWhere("branch.deleted_at IS NULL");
@@ -1514,6 +1673,19 @@ export class JourneyService {
         continue;
       }
 
+      const onVacation = await this.vacationDateRepo.findOne({
+        where: {
+          date: today,
+          vacation: {
+            user: { id: plan.user.id },
+            overall_status: "approved",
+          },
+        },
+      });
+      const initialStatus = onVacation
+        ? JourneyStatus.VACATION
+        : JourneyStatus.ABSENT;
+
       const exists = await this.journeyRepo.findOne({
         where: {
           user: { id: plan.user.id },
@@ -1528,19 +1700,16 @@ export class JourneyService {
             ]),
           ),
         },
+        withDeleted: true,
       });
 
-      if (exists) continue;
-
-      const onVacation = await this.vacationDateRepo.findOne({
-        where: {
-          date: today,
-          vacation: {
-            user: { id: plan.user.id },
-            overall_status: "approved",
-          },
-        },
-      });
+      if (exists) {
+        if (!exists.is_active || exists.deleted_at) {
+          await this.restorePlannedJourney(exists, plan, today, initialStatus);
+          createdCount++;
+        }
+        continue;
+      }
 
       const journey = this.journeyRepo.create({
         user: plan.user,
@@ -1549,8 +1718,9 @@ export class JourneyService {
         projectId: plan.projectId || plan.branch.project?.id,
         date: today,
         type: JourneyType.PLANNED,
-        status: onVacation ? JourneyStatus.VACATION : JourneyStatus.ABSENT,
+        status: initialStatus,
         journeyPlan: plan,
+        is_active: true,
       });
 
       await this.journeyRepo.save(journey);
@@ -1573,13 +1743,14 @@ export class JourneyService {
       .leftJoinAndSelect("branch.project", "project")
       .leftJoinAndSelect("plan.shift", "shift")
       .where(":dayName = ANY(plan.days)", { dayName })
+      .andWhere("plan.is_active = :planIsActive", { planIsActive: true })
       .andWhere("user.deleted_at IS NULL")
       .andWhere("user.is_active = :isActive", { isActive: true })
       .andWhere("branch.deleted_at IS NULL");
 
     const plans = await qb.getMany();
 
-    const restoredCount = 0;
+    let restoredCount = 0;
     let createdCount = 0;
     const errors = [];
 
@@ -1587,7 +1758,7 @@ export class JourneyService {
       if (!plan.user || !plan.branch || !plan.shift) continue;
 
       try {
-        // 2. Check if journey exists (ACTIVE only)
+        // 2. Check if journey exists, including inactive rows that can be restored.
         const journey = await this.journeyRepo.findOne({
           where: {
             user: { id: plan.user.id },
@@ -1602,16 +1773,20 @@ export class JourneyService {
               ]),
             ),
           },
-          // createJourneysForTomorrow checks for Unplanned status exclusion, let's match that to be safe
-          // But here we are looking for PLANNED journeys mainly.
-          // Actually, let's keep it simple: if ANY journey exists for this plan/date/shift, we are good.
-          // If it's soft-deleted, findOne won't find it (default behavior), so we go to 'else' and create new.
+          withDeleted: true,
         });
 
         if (journey) {
-          // Journey exists and is active. Do nothing.
+          if (!journey.is_active || journey.deleted_at) {
+            await this.restorePlannedJourney(
+              journey,
+              plan,
+              targetDate,
+              JourneyStatus.ABSENT,
+            );
+            restoredCount++;
+          }
         } else {
-          // 3. If doesn't exist (or was soft-deleted), create it
           console.log(
             `🆕 Creating missing journey for user ${plan.user.name} on ${targetDate}`,
           );
@@ -1624,6 +1799,7 @@ export class JourneyService {
             type: JourneyType.PLANNED,
             status: JourneyStatus.ABSENT,
             journeyPlan: plan,
+            is_active: true,
           });
           await this.journeyRepo.save(newJourney);
           createdCount++;
@@ -1650,8 +1826,8 @@ export class JourneyService {
     // Find all journeys with PRESENT or UNPLANNED_PRESENT status
     const openJourneys = await this.journeyRepo.find({
       where: [
-        { status: JourneyStatus.PRESENT },
-        { status: JourneyStatus.UNPLANNED_PRESENT },
+        { status: JourneyStatus.PRESENT, is_active: true },
+        { status: JourneyStatus.UNPLANNED_PRESENT, is_active: true },
       ],
       relations: ["user", "branch", "shift"],
     });
@@ -2003,6 +2179,7 @@ export class JourneyService {
             user: { id: user.id },
             branch: { id: branch.id },
             shift: { id: shift.id },
+            is_active: true,
           },
         });
 
@@ -2040,14 +2217,25 @@ export class JourneyService {
     }
 
     const plans = await this.journeyPlanRepo.find({
-      where: { user: { id: userId } },
+      where: { user: { id: userId }, is_active: true },
     });
 
     if (!plans.length) {
       throw new NotFoundException(`No journey plans found for user: ${userId}`);
     }
 
-    return this.journeyPlanRepo.delete({ user: { id: userId } });
+    await this.journeyPlanRepo
+      .createQueryBuilder()
+      .update(JourneyPlan)
+      .set({ is_active: false })
+      .where('"userId" = :userId', { userId })
+      .andWhere("is_active = :isActive", { isActive: true })
+      .execute();
+
+    return {
+      message: `Journey plans deleted successfully for user: ${userId}`,
+      count: plans.length,
+    };
   }
 
   async assignShiftToAllPromoters(dto: AssignShiftAllDaysDto, adminUser: User) {
@@ -2090,6 +2278,9 @@ export class JourneyService {
         .innerJoin("journey.checkin", "checkin")
         .leftJoinAndSelect("journey.branch", "branch")
         .where("journey.user.id = :userId", { userId: promoter.id })
+        .andWhere("journey.is_active = :journeyIsActive", {
+          journeyIsActive: true,
+        })
         .orderBy("checkin.checkInTime", "DESC")
         .getOne();
 
@@ -2104,13 +2295,13 @@ export class JourneyService {
 
       // 2. Fetch existing plans for safe deactivation (clearing days instead of deleting)
       const existingPlans = await this.journeyPlanRepo.find({
-        where: { user: { id: promoter.id } },
+        where: { user: { id: promoter.id }, is_active: true },
       });
 
       await this.journeyRepo.manager.transaction(async (em) => {
-        // 3. Deactivate existing plans by clearing their days
+        // 3. Deactivate existing plans
         for (const plan of existingPlans) {
-          plan.days = [];
+          plan.is_active = false;
           await em.save(JourneyPlan, plan);
         }
 
@@ -2122,6 +2313,7 @@ export class JourneyService {
           projectId: projectId,
           days: allDays,
           createdBy: adminUser,
+          is_active: true,
         });
 
         await em.save(JourneyPlan, newPlan);
@@ -2144,6 +2336,7 @@ export class JourneyService {
       where: {
         date: targetDate,
         shift: { name: ILike("%night%") },
+        is_active: true,
       },
       relations: ["shift", "checkin"],
     });
@@ -2186,7 +2379,7 @@ export class JourneyService {
 
     // Attendance Stats
     const journeys = await this.journeyRepo.find({
-      where: { user: { id: userId } },
+      where: { user: { id: userId }, is_active: true },
       relations: ["shift", "checkin"],
     });
 
