@@ -119,4 +119,7 @@ export class CheckIn extends CoreEntity {
 
   @Column({ default: false })
   isWithinRadius: boolean;
+
+  @Column({ default: false })
+  isAutoClosed: boolean;
 }

@@ -1113,6 +1113,7 @@ export class JourneyService {
         checkIn.checkOutTime = dto.checkOutTime as any;
         checkIn.checkOutDocument = dto.checkOutDocument;
         checkIn.noteOut = dto.noteOut;
+        checkIn.isAutoClosed = false;
         journey.status =
           journey.type === JourneyType.PLANNED
             ? JourneyStatus.CLOSED
@@ -1139,6 +1140,7 @@ export class JourneyService {
         noteIn: dto.noteIn,
         noteOut: dto.noteOut,
         isWithinRadius: isWithinGeofence,
+        isAutoClosed: false,
       });
 
       journey.status =
@@ -1265,6 +1267,7 @@ export class JourneyService {
 
       if (dto.checkOutTime) {
         checkIn.checkOutTime = dto.checkOutTime as any;
+        checkIn.isAutoClosed = false;
         journey.status =
           journey.type === JourneyType.PLANNED
             ? JourneyStatus.CLOSED
@@ -1272,6 +1275,7 @@ export class JourneyService {
       } else if (!dto.checkInTime && !checkIn.checkOutTime) {
         // Fallback: If no specific times given and journey is open, assume Check Out Now
         checkIn.checkOutTime = now;
+        checkIn.isAutoClosed = false;
         journey.status =
           journey.type === JourneyType.PLANNED
             ? JourneyStatus.CLOSED
@@ -1292,6 +1296,7 @@ export class JourneyService {
         noteIn: "",
         noteOut: "",
         isWithinRadius: true,
+        isAutoClosed: false,
       });
 
       journey.status =
@@ -1886,6 +1891,8 @@ export class JourneyService {
         });
 
         if (checkIn) {
+          checkIn.isAutoClosed = true;
+          await this.checkInRepo.save(checkIn);
           // Only update if there's no checkout time already
           logger.warn(
             `Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`,

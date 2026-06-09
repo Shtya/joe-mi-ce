@@ -79,6 +79,7 @@ export class ReportsService {
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
     const mgTab2Sheet = workbook.addWorksheet(`MG SAR Entries`);
     const tab3Sheet = workbook.addWorksheet("Check-in - Check-out");
+    const overtimeSheet = workbook.addWorksheet("Overtime");
     // const durationSheet = workbook.addWorksheet("Attendance Duration");
     // const branchPromoterSalesSheet = workbook.addWorksheet(
     //   "Branch Promoter Sales",
@@ -99,6 +100,7 @@ export class ReportsService {
 
     const dateColumnsForAttendance = [];
     const dateColumnsForSales = [];
+    const overtimeDateColumns = [];
     const checkinDateColumns = [];
     const durationDateColumns = [];
 
@@ -129,6 +131,11 @@ export class ReportsService {
           key: `day_${i}`,
           width: 15,
         });
+        overtimeDateColumns.push({
+          header: dateStr,
+          key: `day_${i}`,
+          width: 15,
+        });
       }
     }
 
@@ -151,6 +158,11 @@ export class ReportsService {
       ...checkinDateColumns,
       { header: "TLL DAYS", key: "ttl_days_tab3", width: 15 },
       { header: "LATE", key: "ttl_late_tab3", width: 15 },
+    ];
+    overtimeSheet.columns = [
+      { header: "Employee Name", key: "name", width: 30 },
+      ...overtimeDateColumns,
+      { header: "Total", key: "total_overtime", width: 15 },
     ];
     // durationSheet.columns = [
     //   ...baseColumns,
@@ -219,8 +231,10 @@ export class ReportsService {
         "checkin.id",
         "checkin.checkInTime",
         "checkin.checkOutTime",
+        "checkin.isAutoClosed",
         "shift.id",
         "shift.startTime",
+        "shift.endTime",
       ])
       .getMany();
     this.logger.log(`Fetched ${journeys.length} journeys.`);
@@ -315,6 +329,7 @@ export class ReportsService {
     const tab2Rows: any[] = [];
     const mgTab2Rows: any[] = [];
     const tab3Rows: any[] = [];
+    const overtimeRows: any[] = [];
     const durationRows: any[] = [];
 
     const formatDuration = (ms: number) => {
@@ -323,6 +338,57 @@ export class ReportsService {
       const hours = Math.floor(totalMinutes / 60);
       const minutes = totalMinutes % 60;
       return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    };
+
+    const buildShiftDateTime = (
+      dateStr: string,
+      time: string,
+      reference?: dayjs.Dayjs,
+    ) => {
+      const [hours, minutes] = time.split(":").map(Number);
+      const value = dayjs(`${dateStr}T00:00:00`)
+        .hour(hours)
+        .minute(minutes)
+        .second(0)
+        .millisecond(0);
+
+      if (reference && value.isBefore(reference, "minute")) {
+        return value.add(1, "day");
+      }
+
+      return value;
+    };
+
+    const calculateJourneyOvertimeMinutes = (journey: Journey) => {
+      if (!journey.checkin?.checkInTime || !journey.shift?.startTime) {
+        return null;
+      }
+
+      const checkInSaudi = dayjs(journey.checkin.checkInTime).add(3, "hour");
+      const shiftStart = buildShiftDateTime(
+        journey.date,
+        journey.shift.startTime,
+      );
+      let totalMinutes = checkInSaudi.diff(shiftStart, "minute");
+
+      if (
+        !journey.checkin.isAutoClosed &&
+        journey.checkin.checkOutTime &&
+        journey.shift.endTime
+      ) {
+        const checkOutSaudi = dayjs(journey.checkin.checkOutTime).add(
+          3,
+          "hour",
+        );
+        const shiftEnd = buildShiftDateTime(
+          journey.date,
+          journey.shift.endTime,
+          shiftStart,
+        );
+        totalMinutes += shiftEnd.diff(checkOutSaudi, "minute");
+      }
+
+      return totalMinutes;
     };
 
     let rowNo = 1;
@@ -374,12 +440,14 @@ export class ReportsService {
         baseRowData.channel,
         baseRowData.store,
       ];
+      const overtimeRow = { name: user.name };
       const durationRow = { ...baseRowData };
 
       let ttlDays = 0;
       let ttlAttendance = 0;
       let ttlLate = 0;
       let totalSales = 0;
+      let totalOvertimeMinutes = 0;
       let totalDurationMs = 0;
       let daysOfWork = 0;
 
@@ -398,6 +466,7 @@ export class ReportsService {
           t3RowArr.push("Vacation");
           durationRow[`duration_${i}`] = "Vacation";
           durationRow[`shift_count_${i}`] = "Vacation";
+          if (i <= daysInMonthForSales) overtimeRow[dayKey] = "Vacation";
           if (i <= daysInMonthForSales) t2Row[dayKey] = "";
           continue;
         }
@@ -500,7 +569,15 @@ export class ReportsService {
         // Calculate daily duration sum
         if (dayJourneys.length > 0) {
           let dayDurationMs = 0;
+          let dayOvertimeMinutes = 0;
+          let hasOvertimeValue = false;
           dayJourneys.forEach((j) => {
+            const overtimeMinutes = calculateJourneyOvertimeMinutes(j);
+            if (overtimeMinutes !== null) {
+              dayOvertimeMinutes += overtimeMinutes;
+              hasOvertimeValue = true;
+            }
+
             if (j.checkin?.checkInTime && j.checkin?.checkOutTime) {
               const start = dayjs(j.checkin.checkInTime);
               const end = dayjs(j.checkin.checkOutTime);
@@ -512,9 +589,17 @@ export class ReportsService {
           durationRow[`duration_${i}`] = formatDuration(dayDurationMs);
           durationRow[`shift_count_${i}`] = dayJourneys.length;
           totalDurationMs += dayDurationMs;
+          if (i <= daysInMonthForSales) {
+            overtimeRow[dayKey] = hasOvertimeValue ? dayOvertimeMinutes : "";
+            if (hasOvertimeValue) {
+              totalOvertimeMinutes += dayOvertimeMinutes;
+            }
+          }
           if (dayDurationMs > 0) {
             daysOfWork++;
           }
+        } else if (i <= daysInMonthForSales) {
+          overtimeRow[dayKey] = "";
         }
 
         if (i <= daysInMonthForSales) {
@@ -550,6 +635,8 @@ export class ReportsService {
         tab2Rows.push(t2Row);
       }
       tab3Rows.push(t3RowArr);
+      overtimeRow["total_overtime"] = totalOvertimeMinutes;
+      overtimeRows.push(overtimeRow);
 
       durationRow["total_hours"] = formatDuration(totalDurationMs);
       durationRow["days_of_work"] = daysOfWork;
@@ -614,6 +701,7 @@ export class ReportsService {
     tab3Rows.forEach((r) => {
       tab3Sheet.addRow(r);
     });
+    overtimeRows.forEach((r) => overtimeSheet.addRow(r));
 
     // durationRows.forEach((r) => {
     //   durationSheet.addRow(r);
@@ -1004,12 +1092,14 @@ export class ReportsService {
       tab2Sheet,
       mgTab2Sheet,
       tab3Sheet,
+      overtimeSheet,
       // durationSheet,
       // branchPromoterSalesSheet,
       salesByModelSheet,
       salesDetailSheet,
     ].forEach((sheet) => {
       const isTab3 = sheet.name === "Check-in - Check-out";
+      const isOvertime = sheet.name === "Overtime";
       // const isBPMatrix = sheet.name === "Branch Promoter Sales";
       const isSalesByModel = sheet.name === "Sales by Model";
       const isSalesDetail = sheet.name === "Sales Detail";
@@ -1026,7 +1116,8 @@ export class ReportsService {
       }
       // if (isBPMatrix) effectiveBaseColCount = 1;
 
-      const startRow = isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
+      const startRow =
+        isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
 
       if (sheet.rowCount > startRow && sheet.columnCount > 0) {
         sheet.autoFilter = {
@@ -1052,7 +1143,8 @@ export class ReportsService {
           if (isHeader) {
             if (
               colNumber > effectiveBaseColCount &&
-              colNumber < sheet.columnCount
+              colNumber < sheet.columnCount &&
+              !isOvertime
             ) {
               cell.font = headerDateFont;
             } else {
