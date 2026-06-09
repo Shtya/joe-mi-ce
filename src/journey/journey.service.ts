@@ -544,6 +544,7 @@ export class JourneyService {
     }
 
     if (dto.includeToday) {
+      await this.removeTodayPlannedJourneysForUser(dto.userId);
       await this.createJourneysForToday(dto.userId);
     }
 
@@ -608,6 +609,13 @@ export class JourneyService {
           overlappingDays: overlap,
         });
       }
+    }
+
+    if (dto.includeToday) {
+      const savedPlan = await this.journeyPlanRepo.save(plan);
+      await this.removeTodayPlannedJourneysForUser(savedPlan.user.id);
+      await this.createJourneysForToday(savedPlan.user.id);
+      return savedPlan;
     }
 
     return this.journeyPlanRepo.save(plan);
@@ -1728,6 +1736,42 @@ export class JourneyService {
     }
 
     return { createdCount, date: today };
+  }
+
+  private async removeTodayPlannedJourneysForUser(userId: string) {
+    const today = dayjs().format("YYYY-MM-DD");
+    const journeys = await this.journeyRepo.find({
+      where: {
+        user: { id: userId },
+        date: today,
+        type: JourneyType.PLANNED,
+      },
+      relations: ["checkin"],
+      withDeleted: true,
+    });
+
+    if (journeys.length === 0) {
+      return { removedJourneyCount: 0, removedCheckInCount: 0, date: today };
+    }
+
+    const journeyIds = journeys.map((journey) => journey.id);
+    const checkInIds = journeys
+      .map((journey) => journey.checkin?.id)
+      .filter(Boolean);
+
+    await this.journeyRepo.manager.transaction(async (em) => {
+      if (checkInIds.length > 0) {
+        await em.delete(CheckIn, { id: In(checkInIds) });
+      }
+
+      await em.delete(Journey, { id: In(journeyIds) });
+    });
+
+    return {
+      removedJourneyCount: journeyIds.length,
+      removedCheckInCount: checkInIds.length,
+      date: today,
+    };
   }
 
   // ===== Recovery Cron Job =====

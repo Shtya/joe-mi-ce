@@ -16,7 +16,7 @@ export class CreateJourneyPlanDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   days: string[];
-  
+
   @IsOptional()
   includeToday?: boolean;
 
@@ -30,7 +30,8 @@ export class UpdateJourneyPlanDto {
 
   @IsOptional()
   shiftId?: string;
-
+  @IsOptional()
+  includeToday?: boolean;
   @IsOptional()
   @IsArray()
   @ArrayNotEmpty()
