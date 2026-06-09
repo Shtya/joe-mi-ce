@@ -100,7 +100,6 @@ export class ReportsService {
 
     const dateColumnsForAttendance = [];
     const dateColumnsForSales = [];
-    const overtimeDateColumns = [];
     const checkinDateColumns = [];
     const durationDateColumns = [];
 
@@ -131,11 +130,6 @@ export class ReportsService {
           key: `day_${i}`,
           width: 15,
         });
-        overtimeDateColumns.push({
-          header: dateStr,
-          key: `day_${i}`,
-          width: 15,
-        });
       }
     }
 
@@ -160,9 +154,32 @@ export class ReportsService {
       { header: "LATE", key: "ttl_late_tab3", width: 15 },
     ];
     overtimeSheet.columns = [
-      { header: "Employee Name", key: "name", width: 30 },
-      ...overtimeDateColumns,
-      { header: "Total", key: "total_overtime", width: 15 },
+      { header: "user name", key: "user_name", width: 25 },
+      { header: "user username", key: "user_username", width: 18 },
+      { header: "city name", key: "city_name", width: 18 },
+      { header: "Chain", key: "chain", width: 18 },
+      { header: "branch name", key: "branch_name", width: 25 },
+      { header: "Check in time", key: "check_in_time", width: 16 },
+      { header: "Check out time", key: "check_out_time", width: 16 },
+      { header: "date", key: "date", width: 14 },
+      { header: "Check in image", key: "check_in_image", width: 45 },
+      { header: "Check out image", key: "check_out_image", width: 45 },
+      { header: "status", key: "status", width: 16 },
+      { header: "shift startTime", key: "shift_start_time", width: 16 },
+      { header: "shift endTime", key: "shift_end_time", width: 16 },
+      { header: "Duration", key: "duration", width: 14 },
+      { header: "Is Late", key: "is_late", width: 10 },
+      { header: "Late Time", key: "late_time", width: 16 },
+      { header: "Check-in Diff Minutes", key: "check_in_diff_minutes", width: 20 },
+      {
+        header: "Check-out Diff Minutes",
+        key: "check_out_diff_minutes",
+        width: 21,
+      },
+      { header: "Total Time Minutes", key: "total_time_minutes", width: 18 },
+      { header: "Total Late Time", key: "total_late_time", width: 16 },
+      { header: "Auto Closed", key: "auto_closed", width: 13 },
+      { header: "Status Code", key: "status_code", width: 12 },
     ];
     // durationSheet.columns = [
     //   ...baseColumns,
@@ -211,6 +228,7 @@ export class ReportsService {
     const journeys = await this.journeyRepository.createQueryBuilder("journey")
       .leftJoinAndSelect("journey.user", "user")
       .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("branch.city", "journeyCity")
       .leftJoinAndSelect("branch.chain", "chain")
       .leftJoinAndSelect("journey.checkin", "checkin")
       .leftJoinAndSelect("journey.shift", "shift")
@@ -224,13 +242,19 @@ export class ReportsService {
         "journey.date",
         "journey.status",
         "user.id",
+        "user.name",
+        "user.username",
         "branch.id",
         "branch.name",
+        "journeyCity.id",
+        "journeyCity.name",
         "chain.id",
         "chain.name",
         "checkin.id",
         "checkin.checkInTime",
         "checkin.checkOutTime",
+        "checkin.checkInDocument",
+        "checkin.checkOutDocument",
         "checkin.isAutoClosed",
         "shift.id",
         "shift.startTime",
@@ -359,7 +383,53 @@ export class ReportsService {
       return value;
     };
 
-    const calculateJourneyOvertimeMinutes = (journey: Journey) => {
+    const formatHumanMinutes = (minutes: number) => {
+      const absMinutes = Math.abs(minutes);
+      const hours = Math.floor(absMinutes / 60);
+      const mins = absMinutes % 60;
+      const sign = minutes < 0 ? "-" : "";
+
+      return hours > 0
+        ? `${sign}${hours}h ${mins}m`
+        : `${sign}${mins} mins`;
+    };
+
+    const formatJourneyDuration = (journey: Journey) => {
+      if (!journey.checkin?.checkInTime || !journey.checkin?.checkOutTime) {
+        return "-";
+      }
+
+      const start = dayjs(journey.checkin.checkInTime);
+      const end = dayjs(journey.checkin.checkOutTime);
+
+      if (!start.isValid() || !end.isValid()) {
+        return "-";
+      }
+
+      const diffMins = end.diff(start, "minute");
+      if (diffMins < 0) {
+        return "Invalid (Out before In)";
+      }
+
+      return `${Math.floor(diffMins / 60)}h ${diffMins % 60}m`;
+    };
+
+    const formatReportTime = (date?: Date | string) =>
+      date ? dayjs(date).add(3, "hour").format("HH:mm:ss") : "-";
+
+    const formatImageUrl = (value?: string) => value || "-";
+
+    const getStatusCode = (status?: JourneyStatus) =>
+      [
+        JourneyStatus.PRESENT,
+        JourneyStatus.CLOSED,
+        JourneyStatus.UNPLANNED_PRESENT,
+        JourneyStatus.UNPLANNED_CLOSED,
+      ].includes(status as any)
+        ? 1
+        : 0;
+
+    const calculateJourneyTimeVariance = (journey: Journey) => {
       if (!journey.checkin?.checkInTime || !journey.shift?.startTime) {
         return null;
       }
@@ -369,7 +439,13 @@ export class ReportsService {
         journey.date,
         journey.shift.startTime,
       );
-      let totalMinutes = shiftStart.diff(checkInSaudi, "minute");
+      const checkInDiffMinutes = shiftStart.diff(checkInSaudi, "minute");
+      const lateMinutes = Math.max(
+        checkInSaudi.diff(shiftStart, "minute"),
+        0,
+      );
+      let checkOutDiffMinutes: number | null = null;
+      let totalMinutes = checkInDiffMinutes;
 
       if (
         !journey.checkin.isAutoClosed &&
@@ -385,10 +461,17 @@ export class ReportsService {
           journey.shift.endTime,
           shiftStart,
         );
-        totalMinutes += checkOutSaudi.diff(shiftEnd, "minute");
+        checkOutDiffMinutes = checkOutSaudi.diff(shiftEnd, "minute");
+        totalMinutes += checkOutDiffMinutes;
       }
 
-      return totalMinutes;
+      return {
+        checkInDiffMinutes,
+        checkOutDiffMinutes,
+        totalMinutes,
+        lateMinutes,
+        isLate: lateMinutes > 0,
+      };
     };
 
     let rowNo = 1;
@@ -440,14 +523,12 @@ export class ReportsService {
         baseRowData.channel,
         baseRowData.store,
       ];
-      const overtimeRow = { name: user.name };
       const durationRow = { ...baseRowData };
 
       let ttlDays = 0;
       let ttlAttendance = 0;
       let ttlLate = 0;
       let totalSales = 0;
-      let totalOvertimeMinutes = 0;
       let totalDurationMs = 0;
       let daysOfWork = 0;
 
@@ -466,7 +547,6 @@ export class ReportsService {
           t3RowArr.push("Vacation");
           durationRow[`duration_${i}`] = "Vacation";
           durationRow[`shift_count_${i}`] = "Vacation";
-          if (i <= daysInMonthForSales) overtimeRow[dayKey] = "Vacation";
           if (i <= daysInMonthForSales) t2Row[dayKey] = "";
           continue;
         }
@@ -569,15 +649,7 @@ export class ReportsService {
         // Calculate daily duration sum
         if (dayJourneys.length > 0) {
           let dayDurationMs = 0;
-          let dayOvertimeMinutes = 0;
-          let hasOvertimeValue = false;
           dayJourneys.forEach((j) => {
-            const overtimeMinutes = calculateJourneyOvertimeMinutes(j);
-            if (overtimeMinutes !== null) {
-              dayOvertimeMinutes += overtimeMinutes;
-              hasOvertimeValue = true;
-            }
-
             if (j.checkin?.checkInTime && j.checkin?.checkOutTime) {
               const start = dayjs(j.checkin.checkInTime);
               const end = dayjs(j.checkin.checkOutTime);
@@ -589,17 +661,9 @@ export class ReportsService {
           durationRow[`duration_${i}`] = formatDuration(dayDurationMs);
           durationRow[`shift_count_${i}`] = dayJourneys.length;
           totalDurationMs += dayDurationMs;
-          if (i <= daysInMonthForSales) {
-            overtimeRow[dayKey] = hasOvertimeValue ? dayOvertimeMinutes : "";
-            if (hasOvertimeValue) {
-              totalOvertimeMinutes += dayOvertimeMinutes;
-            }
-          }
           if (dayDurationMs > 0) {
             daysOfWork++;
           }
-        } else if (i <= daysInMonthForSales) {
-          overtimeRow[dayKey] = "";
         }
 
         if (i <= daysInMonthForSales) {
@@ -635,8 +699,6 @@ export class ReportsService {
         tab2Rows.push(t2Row);
       }
       tab3Rows.push(t3RowArr);
-      overtimeRow["total_overtime"] = totalOvertimeMinutes;
-      overtimeRows.push(overtimeRow);
 
       durationRow["total_hours"] = formatDuration(totalDurationMs);
       durationRow["days_of_work"] = daysOfWork;
@@ -644,6 +706,72 @@ export class ReportsService {
       durationRow["avg_duration"] = formatDuration(avgMs);
       durationRows.push(durationRow);
     }
+
+    const reportPromoterIds = new Set(
+      users.filter((user) => isPromoter(user)).map((user) => user.id),
+    );
+    const monthlyOvertimeJourneys = journeys
+      .filter((journey) => {
+        if (!journey.date?.startsWith(currentMonthPrefix)) return false;
+        if (!journey.user?.id || !reportPromoterIds.has(journey.user.id)) {
+          return false;
+        }
+        return !isRoaming(journey.branch?.chain?.name);
+      })
+      .sort((a, b) => {
+        const dateCompare = b.date.localeCompare(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.user?.name || "").localeCompare(b.user?.name || "");
+      });
+
+    const totalLateMinutesByUser: Record<string, number> = {};
+    monthlyOvertimeJourneys.forEach((journey) => {
+      const variance = calculateJourneyTimeVariance(journey);
+      if (!variance || !journey.user?.id) return;
+
+      totalLateMinutesByUser[journey.user.id] =
+        (totalLateMinutesByUser[journey.user.id] || 0) + variance.lateMinutes;
+    });
+
+    monthlyOvertimeJourneys.forEach((journey) => {
+      const variance = calculateJourneyTimeVariance(journey);
+      const userTotalLateMinutes = journey.user?.id
+        ? totalLateMinutesByUser[journey.user.id] || 0
+        : 0;
+
+      overtimeRows.push({
+        user_name: journey.user?.name || "-",
+        user_username: journey.user?.username || "-",
+        city_name: journey.branch?.city?.name || "-",
+        chain: journey.branch?.chain?.name || "-",
+        branch_name: journey.branch?.name || "-",
+        check_in_time: formatReportTime(journey.checkin?.checkInTime),
+        check_out_time: formatReportTime(journey.checkin?.checkOutTime),
+        date: journey.date,
+        check_in_image: formatImageUrl(journey.checkin?.checkInDocument),
+        check_out_image: formatImageUrl(journey.checkin?.checkOutDocument),
+        status: journey.status || "-",
+        shift_start_time: journey.shift?.startTime || "-",
+        shift_end_time: journey.shift?.endTime || "-",
+        duration: formatJourneyDuration(journey),
+        is_late: variance ? variance.isLate : false,
+        late_time:
+          variance && variance.lateMinutes > 0
+            ? formatHumanMinutes(variance.lateMinutes)
+            : variance
+              ? "On time"
+              : "-",
+        check_in_diff_minutes: variance?.checkInDiffMinutes ?? "",
+        check_out_diff_minutes: variance?.checkOutDiffMinutes ?? "",
+        total_time_minutes: variance?.totalMinutes ?? "",
+        total_late_time:
+          userTotalLateMinutes > 0
+            ? formatHumanMinutes(userTotalLateMinutes)
+            : "-",
+        auto_closed: Boolean(journey.checkin?.isAutoClosed),
+        status_code: getStatusCode(journey.status),
+      });
+    });
 
     const totalsRowData: Record<string, any> = {
       joe_user_1: "Total",
