@@ -369,7 +369,7 @@ export class ReportsService {
         journey.date,
         journey.shift.startTime,
       );
-      let totalMinutes = checkInSaudi.diff(shiftStart, "minute");
+      let totalMinutes = shiftStart.diff(checkInSaudi, "minute");
 
       if (
         !journey.checkin.isAutoClosed &&
@@ -385,7 +385,7 @@ export class ReportsService {
           journey.shift.endTime,
           shiftStart,
         );
-        totalMinutes += shiftEnd.diff(checkOutSaudi, "minute");
+        totalMinutes += checkOutSaudi.diff(shiftEnd, "minute");
       }
 
       return totalMinutes;
