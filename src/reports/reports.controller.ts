@@ -444,7 +444,7 @@ export class ReportsController {
       { name: "usersFile", maxCount: 1 },
       { name: "excel", maxCount: 1 },
     ]),
-gf  )
+  )
   async postTestMonthlyEmailEndpoint(
     @Param("email") email: string,
     @UploadedFiles() files: Record<string, Express.Multer.File[]>,
