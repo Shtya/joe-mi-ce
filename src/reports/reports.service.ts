@@ -70,6 +70,16 @@ export class ReportsService {
 
     const currentMonthPrefix = now.format("YYYY-MM");
     const endOfReportingPeriod = now.endOf("day");
+    const overtimeStart = now.month(3).date(24).startOf("day");
+    const overtimeEnd = now.month(4).date(16).endOf("day");
+    const journeyQueryStart = overtimeStart.isBefore(
+      startOfMonth.subtract(1, "day"),
+    )
+      ? overtimeStart
+      : startOfMonth.subtract(1, "day");
+    const journeyQueryEnd = overtimeEnd.isAfter(endOfReportingPeriod)
+      ? overtimeEnd
+      : endOfReportingPeriod;
 
     const workbook = new exceljs.Workbook();
     workbook.creator = "System Cron";
@@ -234,8 +244,8 @@ export class ReportsService {
       .leftJoinAndSelect("journey.shift", "shift")
       .where("journey.projectId = :projectId", { projectId })
       .andWhere("journey.date BETWEEN :start AND :end", {
-        start: startOfMonth.subtract(1, "day").format("YYYY-MM-DD"),
-        end: endOfReportingPeriod.format("YYYY-MM-DD"),
+        start: journeyQueryStart.format("YYYY-MM-DD"),
+        end: journeyQueryEnd.format("YYYY-MM-DD"),
       })
       .select([
         "journey.id",
@@ -710,9 +720,17 @@ export class ReportsService {
     const reportPromoterIds = new Set(
       users.filter((user) => isPromoter(user)).map((user) => user.id),
     );
+    const overtimeStartDate = overtimeStart.format("YYYY-MM-DD");
+    const overtimeEndDate = overtimeEnd.format("YYYY-MM-DD");
     const monthlyOvertimeJourneys = journeys
       .filter((journey) => {
-        if (!journey.date?.startsWith(currentMonthPrefix)) return false;
+        if (
+          !journey.date ||
+          journey.date < overtimeStartDate ||
+          journey.date > overtimeEndDate
+        ) {
+          return false;
+        }
         if (!journey.user?.id || !reportPromoterIds.has(journey.user.id)) {
           return false;
         }
