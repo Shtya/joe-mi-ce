@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Between } from "typeorm";
 import * as exceljs from "exceljs";
@@ -43,7 +43,10 @@ export class ReportsService {
     private readonly vacationDateRepository: Repository<VacationDate>,
   ) {}
 
-  async generateMonthlyReport(givenDate?: string | Date): Promise<string> {
+  async generateMonthlyReport(
+    givenDate?: string | Date,
+    options?: { overtimeStartDate?: string; overtimeEndDate?: string },
+  ): Promise<string> {
     this.logger.log("Started generating monthly report...");
 
     const projectName = "taqnia";
@@ -60,8 +63,8 @@ export class ReportsService {
     }
 
     // Use yesterday as the reference date by default, or the provided date.
-    const now = givenDate 
-      ? dayjs(givenDate).tz("Asia/Riyadh") 
+    const now = givenDate
+      ? dayjs(givenDate).tz("Asia/Riyadh")
       : dayjs().tz("Asia/Riyadh").subtract(1, "day");
     const startOfMonth = now.startOf("month");
 
@@ -70,8 +73,25 @@ export class ReportsService {
 
     const currentMonthPrefix = now.format("YYYY-MM");
     const endOfReportingPeriod = now.endOf("day");
-    const overtimeStart = now.month(3).date(24).startOf("day");
-    const overtimeEnd = now.month(4).date(16).endOf("day");
+    const overtimeStart = options?.overtimeStartDate
+      ? dayjs(options.overtimeStartDate).tz("Asia/Riyadh").startOf("day")
+      : startOfMonth.startOf("day");
+    const overtimeEnd = options?.overtimeEndDate
+      ? dayjs(options.overtimeEndDate).tz("Asia/Riyadh").endOf("day")
+      : now.endOf("month").endOf("day");
+
+    if (!overtimeStart.isValid() || !overtimeEnd.isValid()) {
+      throw new BadRequestException(
+        "Invalid overtimeStartDate or overtimeEndDate",
+      );
+    }
+
+    if (overtimeStart.isAfter(overtimeEnd)) {
+      throw new BadRequestException(
+        "overtimeStartDate cannot be after overtimeEndDate",
+      );
+    }
+
     const journeyQueryStart = overtimeStart.isBefore(
       startOfMonth.subtract(1, "day"),
     )
@@ -187,7 +207,11 @@ export class ReportsService {
         width: 21,
       },
       { header: "Total Time Minutes", key: "total_time_minutes", width: 18 },
-      { header: "Total Late Time", key: "total_late_time", width: 16 },
+      {
+        header: "Period Total Overtime Minutes",
+        key: "period_total_overtime_minutes",
+        width: 28,
+      },
       { header: "Auto Closed", key: "auto_closed", width: 13 },
       { header: "Status Code", key: "status_code", width: 12 },
     ];
@@ -357,7 +381,7 @@ export class ReportsService {
       dailyAttendanceTotals[`day_${i}`] = 0;
       mgDailyAttendanceTotals[`day_${i}`] = 0;
     }
- 
+
     const attendanceRows: any[] = [];
     const mgAttendanceRows: any[] = [];
     const tab2Rows: any[] = [];
@@ -742,19 +766,20 @@ export class ReportsService {
         return (a.user?.name || "").localeCompare(b.user?.name || "");
       });
 
-    const totalLateMinutesByUser: Record<string, number> = {};
+    const periodOvertimeMinutesByUser: Record<string, number> = {};
     monthlyOvertimeJourneys.forEach((journey) => {
       const variance = calculateJourneyTimeVariance(journey);
       if (!variance || !journey.user?.id) return;
 
-      totalLateMinutesByUser[journey.user.id] =
-        (totalLateMinutesByUser[journey.user.id] || 0) + variance.lateMinutes;
+      periodOvertimeMinutesByUser[journey.user.id] =
+        (periodOvertimeMinutesByUser[journey.user.id] || 0) +
+        variance.totalMinutes;
     });
 
     monthlyOvertimeJourneys.forEach((journey) => {
       const variance = calculateJourneyTimeVariance(journey);
-      const userTotalLateMinutes = journey.user?.id
-        ? totalLateMinutesByUser[journey.user.id] || 0
+      const userPeriodOvertimeMinutes = journey.user?.id
+        ? periodOvertimeMinutesByUser[journey.user.id] || 0
         : 0;
 
       overtimeRows.push({
@@ -782,10 +807,7 @@ export class ReportsService {
         check_in_diff_minutes: variance?.checkInDiffMinutes ?? "",
         check_out_diff_minutes: variance?.checkOutDiffMinutes ?? "",
         total_time_minutes: variance?.totalMinutes ?? "",
-        total_late_time:
-          userTotalLateMinutes > 0
-            ? formatHumanMinutes(userTotalLateMinutes)
-            : "-",
+        period_total_overtime_minutes: userPeriodOvertimeMinutes,
         auto_closed: Boolean(journey.checkin?.isAutoClosed),
         status_code: getStatusCode(journey.status),
       });

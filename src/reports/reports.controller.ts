@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Param,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -244,10 +245,15 @@ export class ReportsController {
   @Get("test-monthly-email/:email")
   async sendTestMonthlyEmailEndpoint(
     @Param("email") email: string,
+    @Query("overtimeStartDate") overtimeStartDate: string,
+    @Query("overtimeEndDate") overtimeEndDate: string,
     @Res() res: Response,
   ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport();
+      const filePath = await this.reportsService.generateMonthlyReport(
+        undefined,
+        { overtimeStartDate, overtimeEndDate },
+      );
       if (!filePath) {
         return res.status(404).json({
           success: false,
@@ -322,9 +328,16 @@ export class ReportsController {
   }
 
   @Get("test")
-  async testReportGeneration(@Res() res: Response) {
+  async testReportGeneration(
+    @Query("overtimeStartDate") overtimeStartDate: string,
+    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Res() res: Response,
+  ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport();
+      const filePath = await this.reportsService.generateMonthlyReport(
+        undefined,
+        { overtimeStartDate, overtimeEndDate },
+      );
       return res.status(200).json({
         success: true,
         message: "Report generated successfully (test mode)",
@@ -340,9 +353,16 @@ export class ReportsController {
   }
 
   @Get("download")
-  async downloadReport(@Res() res: Response) {
+  async downloadReport(
+    @Query("overtimeStartDate") overtimeStartDate: string,
+    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Res() res: Response,
+  ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport();
+      const filePath = await this.reportsService.generateMonthlyReport(
+        undefined,
+        { overtimeStartDate, overtimeEndDate },
+      );
       const fileName = path.basename(filePath);
 
       res.setHeader(
@@ -364,10 +384,15 @@ export class ReportsController {
   @Get("monthly/:date")
   async downloadMonthlyReportByDate(
     @Param("date") date: string,
+    @Query("overtimeStartDate") overtimeStartDate: string,
+    @Query("overtimeEndDate") overtimeEndDate: string,
     @Res() res: Response,
   ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport(date);
+      const filePath = await this.reportsService.generateMonthlyReport(date, {
+        overtimeStartDate,
+        overtimeEndDate,
+      });
       if (!filePath) {
         return res.status(404).json({
           success: false,
@@ -396,10 +421,15 @@ export class ReportsController {
   async sendMonthlyReportEmailByDate(
     @Param("date") date: string,
     @Param("email") email: string,
+    @Query("overtimeStartDate") overtimeStartDate: string,
+    @Query("overtimeEndDate") overtimeEndDate: string,
     @Res() res: Response,
   ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport(date);
+      const filePath = await this.reportsService.generateMonthlyReport(date, {
+        overtimeStartDate,
+        overtimeEndDate,
+      });
       if (!filePath) {
         return res.status(404).json({
           success: false,
