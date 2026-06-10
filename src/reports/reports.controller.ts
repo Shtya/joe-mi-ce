@@ -2,16 +2,21 @@ import {
   Controller,
   Get,
   Param,
+  Post,
   Query,
   Res,
+  UploadedFile,
+  UseInterceptors,
   UseGuards,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import { ReportsService } from "./reports.service";
 import { Response } from "express";
 import { AuthGuard } from "../auth/auth.guard";
 import { MailService } from "../mail/mail.service";
 import * as path from "path";
 import { ReportsCron } from "./reports.cron";
+import * as XLSX from "xlsx";
 
 @Controller("reports")
 @UseGuards(AuthGuard)
@@ -21,6 +26,65 @@ export class ReportsController {
     private readonly mailService: MailService,
     private readonly reportsCron: ReportsCron,
   ) {}
+
+  private parseYesNo(value: any): boolean | undefined {
+    if (value === undefined || value === null || value === "") return undefined;
+
+    const normalized = String(value).trim().toLowerCase();
+    if (["yes", "true", "1"].includes(normalized)) return true;
+    if (["no", "false", "0"].includes(normalized)) return false;
+
+    return undefined;
+  }
+
+  private getMonthlyReportOptions(
+    query: Record<string, any> = {},
+    usernames?: string[],
+  ) {
+    return {
+      overtimeStartDate: query.overtimeStartDate,
+      overtimeEndDate: query.overtimeEndDate,
+      usernames,
+      tabs: {
+        attendance: this.parseYesNo(query.attendance),
+        mgAttendance: this.parseYesNo(query.mgAttendance),
+        sarEntries: this.parseYesNo(query.sarEntries),
+        mgSarEntries: this.parseYesNo(query.mgSarEntries),
+        checkInOut: this.parseYesNo(query.checkInOut),
+        overtime: this.parseYesNo(query.overtime),
+        salesByModel: this.parseYesNo(query.salesByModel),
+        salesDetail: this.parseYesNo(query.salesDetail),
+      },
+    };
+  }
+
+  private getUsernamesFromExcel(file: Express.Multer.File): string[] {
+    const workbook = XLSX.read(file.buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      raw: false,
+      defval: "",
+    }) as any[][];
+
+    if (rows.length === 0) return [];
+
+    const headers = rows[0].map((cell) =>
+      String(cell || "")
+        .trim()
+        .toLowerCase(),
+    );
+    const userColumnIndex = Math.max(
+      headers.indexOf("user"),
+      headers.indexOf("username"),
+    );
+    const columnIndex = userColumnIndex >= 0 ? userColumnIndex : 0;
+
+    return rows
+      .slice(1)
+      .map((row) => String(row[columnIndex] || "").trim())
+      .filter(Boolean);
+  }
 
   @Get("trigger-monthly-email")
   async triggerMonthlyEmail(@Res() res: Response) {
@@ -245,14 +309,13 @@ export class ReportsController {
   @Get("test-monthly-email/:email")
   async sendTestMonthlyEmailEndpoint(
     @Param("email") email: string,
-    @Query("overtimeStartDate") overtimeStartDate: string,
-    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
     try {
       const filePath = await this.reportsService.generateMonthlyReport(
         undefined,
-        { overtimeStartDate, overtimeEndDate },
+        this.getMonthlyReportOptions(query),
       );
       if (!filePath) {
         return res.status(404).json({
@@ -329,14 +392,13 @@ export class ReportsController {
 
   @Get("test")
   async testReportGeneration(
-    @Query("overtimeStartDate") overtimeStartDate: string,
-    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
     try {
       const filePath = await this.reportsService.generateMonthlyReport(
         undefined,
-        { overtimeStartDate, overtimeEndDate },
+        this.getMonthlyReportOptions(query),
       );
       return res.status(200).json({
         success: true,
@@ -354,14 +416,13 @@ export class ReportsController {
 
   @Get("download")
   async downloadReport(
-    @Query("overtimeStartDate") overtimeStartDate: string,
-    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
     try {
       const filePath = await this.reportsService.generateMonthlyReport(
         undefined,
-        { overtimeStartDate, overtimeEndDate },
+        this.getMonthlyReportOptions(query),
       );
       const fileName = path.basename(filePath);
 
@@ -384,15 +445,14 @@ export class ReportsController {
   @Get("monthly/:date")
   async downloadMonthlyReportByDate(
     @Param("date") date: string,
-    @Query("overtimeStartDate") overtimeStartDate: string,
-    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport(date, {
-        overtimeStartDate,
-        overtimeEndDate,
-      });
+      const filePath = await this.reportsService.generateMonthlyReport(
+        date,
+        this.getMonthlyReportOptions(query),
+      );
       if (!filePath) {
         return res.status(404).json({
           success: false,
@@ -417,19 +477,65 @@ export class ReportsController {
     }
   }
 
+  @Post("monthly/:date/users-file")
+  @UseInterceptors(FileInterceptor("file"))
+  async downloadMonthlyReportByDateAndUsersFile(
+    @Param("date") date: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Query() query: Record<string, any>,
+    @Res() res: Response,
+  ) {
+    try {
+      if (!file) {
+        return res.status(400).json({
+          success: false,
+          message: "Excel file is required",
+        });
+      }
+
+      const usernames = this.getUsernamesFromExcel(file);
+      const filePath = await this.reportsService.generateMonthlyReport(
+        date,
+        this.getMonthlyReportOptions(query, usernames),
+      );
+
+      if (!filePath) {
+        return res.status(404).json({
+          success: false,
+          message: "Report generation failed",
+        });
+      }
+
+      const fileName = path.basename(filePath);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+
+      return res.download(filePath, fileName);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to generate report for uploaded users",
+        error: error.message,
+      });
+    }
+  }
+
   @Get("monthly-email/:date/:email")
   async sendMonthlyReportEmailByDate(
     @Param("date") date: string,
     @Param("email") email: string,
-    @Query("overtimeStartDate") overtimeStartDate: string,
-    @Query("overtimeEndDate") overtimeEndDate: string,
+    @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
     try {
-      const filePath = await this.reportsService.generateMonthlyReport(date, {
-        overtimeStartDate,
-        overtimeEndDate,
-      });
+      const filePath = await this.reportsService.generateMonthlyReport(
+        date,
+        this.getMonthlyReportOptions(query),
+      );
       if (!filePath) {
         return res.status(404).json({
           success: false,

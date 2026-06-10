@@ -20,6 +20,24 @@ import { Project } from "entities/project.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 
+type MonthlyReportTabOptions = {
+  attendance?: boolean;
+  mgAttendance?: boolean;
+  sarEntries?: boolean;
+  mgSarEntries?: boolean;
+  checkInOut?: boolean;
+  overtime?: boolean;
+  salesByModel?: boolean;
+  salesDetail?: boolean;
+};
+
+type MonthlyReportOptions = {
+  overtimeStartDate?: string;
+  overtimeEndDate?: string;
+  usernames?: string[];
+  tabs?: MonthlyReportTabOptions;
+};
+
 @Injectable()
 export class ReportsService {
   private readonly logger = new Logger(ReportsService.name);
@@ -45,7 +63,7 @@ export class ReportsService {
 
   async generateMonthlyReport(
     givenDate?: string | Date,
-    options?: { overtimeStartDate?: string; overtimeEndDate?: string },
+    options?: MonthlyReportOptions,
   ): Promise<string> {
     this.logger.log("Started generating monthly report...");
 
@@ -116,6 +134,8 @@ export class ReportsService {
     // );
     const salesByModelSheet = workbook.addWorksheet("Sales by Model");
     const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
+    const includeTab = (tab: keyof MonthlyReportTabOptions) =>
+      options?.tabs?.[tab] !== false;
 
     const baseColumns = [
       { header: "JOE M.I. USER", key: "joe_user_1", width: 15 },
@@ -234,7 +254,13 @@ export class ReportsService {
     //   durationSheet.getColumn(i).width = 15;
     // }
 
-    const users = await this.userRepository.createQueryBuilder("user")
+    const requestedUsernames = new Set(
+      (options?.usernames || [])
+        .map((username) => username?.trim().toUpperCase())
+        .filter(Boolean),
+    );
+
+    let users = await this.userRepository.createQueryBuilder("user")
       .leftJoinAndSelect("user.role", "role")
       .leftJoinAndSelect("user.branch", "branch")
       .leftJoinAndSelect("branch.city", "city")
@@ -259,7 +285,16 @@ export class ReportsService {
       ])
       .getMany();
 
-    const journeys = await this.journeyRepository.createQueryBuilder("journey")
+    if (requestedUsernames.size > 0) {
+      users = users.filter((user) =>
+        requestedUsernames.has((user.username || "").trim().toUpperCase()),
+      );
+    }
+
+    const reportUserIds = new Set(users.map((user) => user.id));
+
+    const journeys = (
+      await this.journeyRepository.createQueryBuilder("journey")
       .leftJoinAndSelect("journey.user", "user")
       .leftJoinAndSelect("journey.branch", "branch")
       .leftJoinAndSelect("branch.city", "journeyCity")
@@ -294,10 +329,12 @@ export class ReportsService {
         "shift.startTime",
         "shift.endTime",
       ])
-      .getMany();
+      .getMany()
+    ).filter((journey) => !requestedUsernames.size || reportUserIds.has(journey.user?.id));
     this.logger.log(`Fetched ${journeys.length} journeys.`);
 
-    const sales = await this.saleRepository.createQueryBuilder("sale")
+    const sales = (
+      await this.saleRepository.createQueryBuilder("sale")
       .leftJoinAndSelect("sale.user", "user")
       .leftJoinAndSelect("user.role", "role")
       .leftJoinAndSelect("sale.product", "product")
@@ -332,7 +369,8 @@ export class ReportsService {
         "branch.name",
         "chain.name",
       ])
-      .getMany();
+      .getMany()
+    ).filter((sale) => !requestedUsernames.size || reportUserIds.has(sale.user?.id));
 
     const vacations = await this.vacationRepository.find({
       where: {
@@ -1328,6 +1366,21 @@ export class ReportsService {
           }
         });
       });
+    });
+
+    [
+      { key: "attendance" as const, sheet: attendanceSheet },
+      { key: "mgAttendance" as const, sheet: mgAttendanceSheet },
+      { key: "sarEntries" as const, sheet: tab2Sheet },
+      { key: "mgSarEntries" as const, sheet: mgTab2Sheet },
+      { key: "checkInOut" as const, sheet: tab3Sheet },
+      { key: "overtime" as const, sheet: overtimeSheet },
+      { key: "salesByModel" as const, sheet: salesByModelSheet },
+      { key: "salesDetail" as const, sheet: salesDetailSheet },
+    ].forEach(({ key, sheet }) => {
+      if (!includeTab(key)) {
+        workbook.removeWorksheet(sheet.id);
+      }
     });
 
     const executionDateStr = now.format("YYYY_MM_DD_HHmmss_SSS");
