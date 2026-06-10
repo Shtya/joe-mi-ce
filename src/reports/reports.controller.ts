@@ -5,11 +5,11 @@ import {
   Post,
   Query,
   Res,
-  UploadedFile,
+  UploadedFiles,
   UseInterceptors,
   UseGuards,
 } from "@nestjs/common";
-import { FileInterceptor } from "@nestjs/platform-express";
+import { FileFieldsInterceptor } from "@nestjs/platform-express";
 import { ReportsService } from "./reports.service";
 import { Response } from "express";
 import { AuthGuard } from "../auth/auth.guard";
@@ -58,6 +58,23 @@ export class ReportsController {
     };
   }
 
+  private getUploadedExcelFile(
+    files:
+      | Record<string, Express.Multer.File[]>
+      | Express.Multer.File[]
+      | undefined,
+  ): Express.Multer.File | undefined {
+    if (!files) return undefined;
+    if (Array.isArray(files)) return files[0];
+
+    return (
+      files.file?.[0] ||
+      files.users?.[0] ||
+      files.usersFile?.[0] ||
+      files.excel?.[0]
+    );
+  }
+
   private getUsernamesFromExcel(file: Express.Multer.File): string[] {
     const workbook = XLSX.read(file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -78,7 +95,27 @@ export class ReportsController {
       headers.indexOf("user"),
       headers.indexOf("username"),
     );
-    const columnIndex = userColumnIndex >= 0 ? userColumnIndex : 0;
+    let columnIndex = userColumnIndex >= 0 ? userColumnIndex : -1;
+
+    if (columnIndex < 0) {
+      const maxColumns = Math.max(...rows.map((row) => row.length));
+      let bestColumn = 0;
+      let bestCount = 0;
+
+      for (let index = 0; index < maxColumns; index++) {
+        const count = rows
+          .slice(1)
+          .filter((row) => /^AEC-\d+$/i.test(String(row[index] || "").trim()))
+          .length;
+
+        if (count > bestCount) {
+          bestColumn = index;
+          bestCount = count;
+        }
+      }
+
+      columnIndex = bestColumn;
+    }
 
     return rows
       .slice(1)
@@ -153,6 +190,7 @@ export class ReportsController {
         return res.status(200).json({
           success: true,
           message: `Test monthly report email sent successfully to ${email}`,
+          filteredUsers: usernames?.length || 0,
         });
       }
 
@@ -248,7 +286,7 @@ export class ReportsController {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Gatemea SixSeven Daily Performance Report</strong> for ${date}. This is a system test email.</p>
-      
+
       <div class="highlights">
         <p><strong>This report includes:</strong></p>
         <ul>
@@ -256,7 +294,7 @@ export class ReportsController {
           <li>Daily attendance records for all scheduled personnel</li>
         </ul>
       </div>
-      
+
       <p>The report is attached to this email as an Excel spreadsheet. Please review the data at your earliest convenience.</p>
       <p>Should you have any questions or require further details, please do not hesitate to reach out to the administrative team.</p>
     </div>
@@ -340,7 +378,7 @@ export class ReportsController {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Gatemea SixSeven Daily Performance Report</strong> for yesterday. This is a system test email.</p>
-      
+
       <div class="highlights">
         <p><strong>This report includes:</strong></p>
         <ul>
@@ -348,7 +386,7 @@ export class ReportsController {
           <li>Daily attendance records for all scheduled personnel</li>
         </ul>
       </div>
-      
+
       <p>The report is attached to this email as an Excel spreadsheet. Please review the data at your earliest convenience.</p>
       <p>Should you have any questions or require further details, please do not hesitate to reach out to the administrative team.</p>
     </div>
@@ -399,13 +437,21 @@ export class ReportsController {
   }
 
   @Post("test-monthly-email/:email")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: "file", maxCount: 1 },
+      { name: "users", maxCount: 1 },
+      { name: "usersFile", maxCount: 1 },
+      { name: "excel", maxCount: 1 },
+    ]),
+gf  )
   async postTestMonthlyEmailEndpoint(
     @Param("email") email: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Record<string, Express.Multer.File[]>,
     @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
+    const file = this.getUploadedExcelFile(files);
     const usernames = file ? this.getUsernamesFromExcel(file) : undefined;
     return this.sendTestMonthlyReportEmail(email, query, res, usernames);
   }
@@ -498,14 +544,22 @@ export class ReportsController {
   }
 
   @Post("monthly/:date/users-file")
-  @UseInterceptors(FileInterceptor("file"))
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: "file", maxCount: 1 },
+      { name: "users", maxCount: 1 },
+      { name: "usersFile", maxCount: 1 },
+      { name: "excel", maxCount: 1 },
+    ]),
+  )
   async downloadMonthlyReportByDateAndUsersFile(
     @Param("date") date: string,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFiles() files: Record<string, Express.Multer.File[]>,
     @Query() query: Record<string, any>,
     @Res() res: Response,
   ) {
     try {
+      const file = this.getUploadedExcelFile(files);
       if (!file) {
         return res.status(400).json({
           success: false,
