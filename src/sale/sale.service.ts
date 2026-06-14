@@ -28,6 +28,118 @@ export class SaleService {
     public salesTargetRepo: Repository<SalesTarget>,
   ) {}
 
+  private formatDashboardSale(sale: Sale) {
+    const unitPrice = Number(sale.price ?? sale.product?.price ?? 0);
+    const quantity = Number(sale.quantity ?? 0);
+    const discount = Number(sale.product?.discount ?? 0);
+
+    return {
+      id: sale.id,
+      price: unitPrice,
+      quantity,
+      total_amount: Number(sale.total_amount ?? 0),
+      status: sale.status,
+      sale_date: sale.sale_date,
+      isFromOrigin: sale.isFromOrigin,
+      created_at: sale.created_at,
+      updated_at: sale.updated_at,
+      user: sale.user
+        ? {
+            id: sale.user.id,
+            name: sale.user.name,
+            username: sale.user.username,
+          }
+        : null,
+      branch: sale.branch
+        ? {
+            id: sale.branch.id,
+            name: sale.branch.name,
+            city: sale.branch.city ?? null,
+            chain: sale.branch.chain ?? null,
+            project: sale.branch.project
+              ? {
+                  id: sale.branch.project.id,
+                  name: sale.branch.project.name,
+                }
+              : null,
+          }
+        : null,
+      product: sale.product
+        ? {
+            id: sale.product.id,
+            name: sale.product.name,
+            sku: sale.product.sku,
+            price: Number(sale.product.price ?? unitPrice),
+            discount,
+            brand: sale.product.brand ?? null,
+            category: sale.product.category ?? null,
+            unit_amount: unitPrice,
+            total_amount: unitPrice * quantity,
+            discounted_amount: unitPrice * quantity * (1 - discount / 100),
+          }
+        : null,
+    };
+  }
+
+  private async assertDashboardEntitiesInProject(params: {
+    projectId: string;
+    branchId?: string;
+    userId?: string;
+    productId?: string;
+  }) {
+    const { projectId, branchId, userId, productId } = params;
+
+    if (branchId) {
+      const branch = await this.branchRepo.findOne({
+        where: { id: branchId, project: { id: projectId } },
+      });
+      if (!branch) {
+        throw new NotFoundException("Branch not found in this project");
+      }
+    }
+
+    if (userId) {
+      const user = await this.userRepo.findOne({
+        where: { id: userId, project_id: projectId },
+      });
+      if (!user) {
+        throw new NotFoundException("User not found in this project");
+      }
+    }
+
+    if (productId) {
+      const product = await this.productRepo.findOne({
+        where: { id: productId, project_id: projectId },
+      });
+      if (!product) {
+        throw new NotFoundException("Product not found in this project");
+      }
+    }
+  }
+
+  private async findSaleForDashboard(id: string, withDeleted = false) {
+    const sale = await this.saleRepo.findOne({
+      where: { id },
+      withDeleted,
+      relations: [
+        "product",
+        "product.brand",
+        "product.category",
+        "user",
+        "branch",
+        "branch.project",
+        "branch.chain",
+        "branch.city",
+      ],
+    });
+
+    if (!sale) {
+      throw new NotFoundException("Sale not found");
+    }
+
+    return sale;
+  }
+
   async create(dto: CreateSaleDto) {
     const product = await this.productRepo.findOne({
       where: { id: dto.productId },
@@ -93,6 +205,38 @@ export class SaleService {
     await this.updateSalesTargetProgress(branch.id, totalAmount);
 
     return savedSale;
+  }
+
+  async createForDashboard(dto: CreateSaleDto) {
+    const createdSale = await this.create(dto);
+    const sale = await this.findSaleForDashboard(createdSale.id);
+    return this.formatDashboardSale(sale);
+  }
+
+  async createForDashboardWithProject(dto: CreateSaleDto, projectId: string) {
+    await this.assertDashboardEntitiesInProject({
+      projectId,
+      branchId: dto.branchId,
+      userId: dto.userId,
+      productId: dto.productId,
+    });
+
+    const createdSale = await this.create(dto);
+    const sale = await this.findSaleForDashboard(createdSale.id);
+    return this.formatDashboardSale(sale);
+  }
+
+  async findOneForDashboard(id: string) {
+    const sale = await this.findSaleForDashboard(id);
+    return this.formatDashboardSale(sale);
+  }
+
+  async findOneForDashboardWithProject(id: string, projectId: string) {
+    const sale = await this.findSaleForDashboard(id);
+    if (sale.projectId !== projectId) {
+      throw new NotFoundException("Sale not found in this project");
+    }
+    return this.formatDashboardSale(sale);
   }
 
   async update(id: string, dto: UpdateSaleDto) {
@@ -309,6 +453,51 @@ export class SaleService {
     await this.saleRepo.softDelete(id);
 
     return response;
+  }
+
+  async updateForDashboard(id: string, dto: UpdateSaleDto) {
+    await this.update(id, dto);
+    const sale = await this.findSaleForDashboard(id);
+    return this.formatDashboardSale(sale);
+  }
+
+  async updateForDashboardWithProject(
+    id: string,
+    dto: UpdateSaleDto,
+    projectId: string,
+  ) {
+    await this.assertDashboardEntitiesInProject({
+      projectId,
+      branchId: dto.branchId,
+      userId: dto.userId,
+      productId: dto.productId,
+    });
+
+    await this.update(id, dto);
+    const sale = await this.findSaleForDashboard(id);
+
+    if (sale.projectId !== projectId) {
+      throw new NotFoundException("Sale not found in this project");
+    }
+
+    return this.formatDashboardSale(sale);
+  }
+
+  async deleteForDashboard(id: string) {
+    await this.delete(id);
+    const sale = await this.findSaleForDashboard(id, true);
+    return this.formatDashboardSale(sale);
+  }
+
+  async deleteForDashboardWithProject(id: string, projectId: string) {
+    const sale = await this.findSaleForDashboard(id);
+    if (sale.projectId !== projectId) {
+      throw new NotFoundException("Sale not found in this project");
+    }
+
+    await this.delete(id);
+    const deletedSale = await this.findSaleForDashboard(id, true);
+    return this.formatDashboardSale(deletedSale);
   }
 
   async restore(id: string) {

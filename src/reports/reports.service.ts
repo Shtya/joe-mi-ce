@@ -125,7 +125,7 @@ export class ReportsService {
     const attendanceSheet = workbook.addWorksheet(`Attendance`);
     const mgAttendanceSheet = workbook.addWorksheet(`MG Attendance`);
     const tab2Sheet = workbook.addWorksheet(`SAR Entries`);
-    const mgTab2Sheet = workbook.addWorksheet(`MG SAR Entries`);
+    // const mgTab2Sheet = workbook.addWorksheet(`MG SAR Entries`);
     const tab3Sheet = workbook.addWorksheet("Check-in - Check-out");
     const overtimeSheet = workbook.addWorksheet("Overtime");
     // const durationSheet = workbook.addWorksheet("Attendance Duration");
@@ -196,7 +196,7 @@ export class ReportsService {
       ...dateColumnsForSales,
       { header: "TLL DAYS", key: "tll_days_tab2", width: 15 },
     ];
-    mgTab2Sheet.columns = tab2Sheet.columns;
+    // mgTab2Sheet.columns = tab2Sheet.columns;
     tab3Sheet.columns = [
       ...baseColumns,
       ...checkinDateColumns,
@@ -898,9 +898,9 @@ export class ReportsService {
       .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
       .forEach((r) => tab2Sheet.addRow(r));
 
-    mgTab2Rows
-      .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
-      .forEach((r) => mgTab2Sheet.addRow(r));
+    // mgTab2Rows
+    //   .filter((r) => Number(r.tll_days_tab2 || 0) > 0)
+    //   .forEach((r) => mgTab2Sheet.addRow(r));
 
     // For Tab 3, we reserve Row 2 for the second header row
     tab3Sheet.addRow([]); // Row 2 dummy
@@ -1296,7 +1296,7 @@ export class ReportsService {
       attendanceSheet,
       mgAttendanceSheet,
       tab2Sheet,
-      mgTab2Sheet,
+      // mgTab2Sheet,
       tab3Sheet,
       overtimeSheet,
       // durationSheet,
@@ -1372,7 +1372,7 @@ export class ReportsService {
       { key: "attendance" as const, sheet: attendanceSheet },
       { key: "mgAttendance" as const, sheet: mgAttendanceSheet },
       { key: "sarEntries" as const, sheet: tab2Sheet },
-      { key: "mgSarEntries" as const, sheet: mgTab2Sheet },
+      // { key: "mgSarEntries" as const, sheet: mgTab2Sheet },
       { key: "checkInOut" as const, sheet: tab3Sheet },
       { key: "overtime" as const, sheet: overtimeSheet },
       { key: "salesByModel" as const, sheet: salesByModelSheet },

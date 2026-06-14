@@ -29,6 +29,12 @@ export class CreateSaleDto {
 
 export class UpdateSaleDto extends PartialType(CreateSaleDto) {}
 
+export class CreateSaleForDashboardDto extends CreateSaleDto {}
+
+export class UpdateSaleForDashboardDto extends PartialType(
+  CreateSaleForDashboardDto,
+) {}
+
 export class ReassignSalesDto {
   @IsUUID('4', { each: true })
   @IsNotEmpty()

@@ -16,7 +16,13 @@ import {
   ParseUUIDPipe,
 } from "@nestjs/common";
 import { SaleService } from "./sale.service";
-import { CreateSaleDto, UpdateSaleDto, ReassignSalesDto } from "dto/sale.dto";
+import {
+  CreateSaleDto,
+  CreateSaleForDashboardDto,
+  ReassignSalesDto,
+  UpdateSaleDto,
+  UpdateSaleForDashboardDto,
+} from "dto/sale.dto";
 import { CRUD } from "common/crud.service";
 import { AuthGuard } from "src/auth/auth.guard";
 import { Permissions } from "decorators/permissions.decorators";
@@ -274,6 +280,18 @@ export class SaleController {
     return this.saleService.create(dto);
   }
 
+  @Post("for-dashboard")
+  @Permissions(EPermission.SALE_CREATE)
+  async createForDashboard(
+    @Body() dto: CreateSaleForDashboardDto,
+    @Req() req: any,
+  ) {
+    const projectId = await this.userService.resolveProjectIdFromUser(
+      req.user.id,
+    );
+    return this.saleService.createForDashboardWithProject(dto, projectId);
+  }
+
   @Get("promoter/:id/today")
   @Permissions(EPermission.SALE_READ)
   async getPromoterSalesForToday(
@@ -377,10 +395,35 @@ export class SaleController {
   update(@Param("id") id: string, @Body() dto: UpdateSaleDto) {
     return this.saleService.update(id, dto);
   }
+
+  @Put(":id/for-dashboard")
+  @Permissions(EPermission.SALE_UPDATE)
+  async updateForDashboard(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() dto: UpdateSaleForDashboardDto,
+    @Req() req: any,
+  ) {
+    const projectId = await this.userService.resolveProjectIdFromUser(
+      req.user.id,
+    );
+    return this.saleService.updateForDashboardWithProject(id, dto, projectId);
+  }
   @Patch("reassign-project")
   @Permissions(EPermission.SALE_UPDATE)
   reassignProject(@Body() dto: ReassignSalesDto) {
     return this.saleService.reassignProject(dto.saleIds, dto.projectId);
+  }
+
+  @Get(":id/for-dashboard")
+  @Permissions(EPermission.SALE_READ)
+  async findOneForDashboard(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Req() req: any,
+  ) {
+    const projectId = await this.userService.resolveProjectIdFromUser(
+      req.user.id,
+    );
+    return this.saleService.findOneForDashboardWithProject(id, projectId);
   }
 
   // 🔹 Get sale by ID
@@ -399,6 +442,18 @@ export class SaleController {
   @Permissions(EPermission.SALE_DELETE)
   remove(@Param("id") id: string) {
     return this.saleService.delete(id);
+  }
+
+  @Delete(":id/for-dashboard")
+  @Permissions(EPermission.SALE_DELETE)
+  async removeForDashboard(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Req() req: any,
+  ) {
+    const projectId = await this.userService.resolveProjectIdFromUser(
+      req.user.id,
+    );
+    return this.saleService.deleteForDashboardWithProject(id, projectId);
   }
 
   @Patch(":id/restore")
