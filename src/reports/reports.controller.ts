@@ -241,6 +241,130 @@ export class ReportsController {
     }
   }
 
+  @Get("trigger-dreame-email")
+  async triggerDreameEmail(@Res() res: Response) {
+    try {
+      await this.reportsCron.handleDreameMonthlyReportCron();
+      return res.status(200).json({
+        success: true,
+        message: "Dreame monthly report email trigger initiated",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to trigger Dreame monthly report email",
+        error: error.message,
+      });
+    }
+  }
+
+  @Get("dreame-download")
+  async downloadDreameReport(
+    @Query("date") date: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const filePath = await this.reportsService.generateDreameMonthlyReport(
+        date || undefined,
+      );
+      const fileName = path.basename(filePath);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      );
+      res.setHeader("Content-Disposition", `attachment; filename=${fileName}`);
+
+      return res.download(filePath, fileName);
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to download Dreame monthly report",
+        error: error.message,
+      });
+    }
+  }
+
+  @Get("dreame-email/:date/:email")
+  async sendDreameReportEmailByDate(
+    @Param("date") date: string,
+    @Param("email") email: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const filePath = await this.reportsService.generateDreameMonthlyReport(date);
+      if (!filePath) {
+        return res.status(404).json({
+          success: false,
+          message: "Report generation failed",
+        });
+      }
+      const filename = path.basename(filePath);
+      const subject = `Dreame Monthly Performance Report - ${date}`;
+      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report for ${date}.\n\nBest regards,\nSystem Operations`;
+      const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    .header { background-color: #1F4E78; color: #ffffff; padding: 30px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 1px; }
+    .subheader { font-size: 14px; opacity: 0.8; margin-top: 5px; }
+    .content { padding: 30px; color: #333333; line-height: 1.6; }
+    .content p { margin: 0 0 15px; }
+    .footer { background-color: #f1f1f1; color: #888888; text-align: center; padding: 20px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>DREAME MONTHLY REPORT</h1>
+      <div class="subheader">System Operations - ${date}</div>
+    </div>
+    <div class="content">
+      <p>Dear Team,</p>
+      <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the period ending ${date}.</p>
+      <p>The report contains the <strong>Sales by Model</strong> and <strong>Sales Detail</strong> sheets, filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} System Operations. All rights reserved.<br>
+      This is an automated performance update.
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const emailSent = await this.mailService.sendReportEmail(
+        filePath,
+        filename,
+        email,
+        subject,
+        textBody,
+        emailHtml,
+      );
+
+      if (emailSent) {
+        return res.status(200).json({
+          success: true,
+          message: `Dreame monthly report email sent successfully to ${email}`,
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to send Dreame monthly report email. Check server logs.",
+        });
+      }
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Error sending Dreame monthly report email",
+        error: error.message,
+      });
+    }
+  }
+
   @Get("gatemea-email/:date/:email")
   async sendTestGatemeaEmailByDate(
     @Param("date") date: string,

@@ -1392,6 +1392,331 @@ export class ReportsService {
 
     return tempFilePath;
   }
+
+  async generateDreameMonthlyReport(
+    givenDate?: string | Date,
+  ): Promise<string> {
+    this.logger.log("Started generating Dreame monthly report...");
+
+    const projectName = "taqnia";
+    const project = await this.projectRepository.findOne({
+      where: { name: projectName },
+      relations: ["branches", "branches.chain"],
+    });
+    const projectId = project?.id;
+
+    if (!projectId) {
+      this.logger.warn(
+        `Project "${projectName}" not found. Report might be empty or unfiltered.`,
+      );
+    }
+
+    // Use yesterday as the reference date by default, or the provided date.
+    const now = givenDate
+      ? dayjs(givenDate).tz("Asia/Riyadh")
+      : dayjs().tz("Asia/Riyadh").subtract(1, "day");
+    const startOfMonth = now.startOf("month");
+
+    const daysInMonthForSales = now.date();
+
+    const currentMonthPrefix = now.format("YYYY-MM");
+    const endOfReportingPeriod = now.endOf("day");
+
+    const workbook = new exceljs.Workbook();
+    workbook.creator = "System Cron";
+
+    const salesByModelSheet = workbook.addWorksheet("Sales by Model");
+    const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
+
+    let users = await this.userRepository.createQueryBuilder("user")
+      .leftJoinAndSelect("user.role", "role")
+      .leftJoinAndSelect("user.branch", "branch")
+      .leftJoinAndSelect("branch.city", "city")
+      .leftJoinAndSelect("branch.chain", "chain")
+      .where("user.is_active = :isActive", { isActive: true })
+      .andWhere("user.project_id = :projectId", { projectId })
+      .andWhere("LOWER(role.name) = :roleName", { roleName: "promoter" })
+      .select([
+        "user.id",
+        "user.name",
+        "user.username",
+        "user.national_id",
+        "user.is_active",
+        "role.id",
+        "role.name",
+        "branch.id",
+        "branch.name",
+        "city.id",
+        "city.name",
+        "chain.id",
+        "chain.name",
+      ])
+      .getMany();
+
+    const reportUserIds = new Set(users.map((user) => user.id));
+
+    const sales = (
+      await this.saleRepository.createQueryBuilder("sale")
+      .leftJoinAndSelect("sale.user", "user")
+      .leftJoinAndSelect("user.role", "role")
+      .leftJoinAndSelect("sale.product", "product")
+      .leftJoinAndSelect("product.brand", "brand")
+      .leftJoinAndSelect("product.category", "category")
+      .leftJoinAndSelect("sale.branch", "branch")
+      .leftJoinAndSelect("branch.chain", "chain")
+      .where("sale.projectId = :projectId", { projectId })
+      .andWhere("LOWER(brand.name) = :brandName", { brandName: "dreame" })
+      .andWhere("sale.sale_date BETWEEN :start AND :end", {
+        start: startOfMonth.toDate(),
+        end: endOfReportingPeriod.toDate(),
+      })
+      .select([
+        "sale.id",
+        "sale.sale_date",
+        "sale.total_amount",
+        "sale.quantity",
+        "sale.price",
+        "user.id",
+        "user.name",
+        "user.username",
+        "user.national_id",
+        "user.mobile",
+        "role.name",
+        "product.id",
+        "product.name",
+        "product.model",
+        "product.sku",
+        "brand.name",
+        "category.name",
+        "branch.id",
+        "branch.name",
+        "chain.name",
+      ])
+      .getMany()
+    ).filter((sale) => reportUserIds.has(sale.user?.id));
+
+    const isRoaming = (name: string) => /roam|roma/i.test(name || "");
+    const isPromoter = (user: any) =>
+      user?.role?.name?.toLowerCase() === "promoter";
+
+    // --- Sales by Model Tab ---
+    const salesModelBaseColumns = [
+      { header: "Brand", key: "brand", width: 20 },
+      { header: "Category", key: "category", width: 20 },
+      { header: "Model", key: "model", width: 20 },
+      { header: "SKU", key: "sku", width: 20 },
+      { header: "Product Name", key: "name", width: 30 },
+    ];
+
+    const salesModelDateColumns = [];
+    for (let i = 1; i <= daysInMonthForSales; i++) {
+      const dateStr = `${currentMonthPrefix}-${String(i).padStart(2, "0")}`;
+      salesModelDateColumns.push({
+        header: dateStr,
+        key: `day_${i}`,
+        width: 15,
+      });
+    }
+
+    salesByModelSheet.columns = [
+      ...salesModelBaseColumns,
+      ...salesModelDateColumns,
+      { header: "Total Quantity", key: "quantity", width: 15 },
+      { header: "Total Amount", key: "total_amount", width: 20 },
+      { header: "Last Sale Date", key: "last_sale_date", width: 20 },
+    ];
+
+    const modelSalesMap = new Map<string, any>();
+    sales.forEach((s) => {
+      if (!isPromoter(s.user)) return;
+      if (isRoaming(s.branch?.chain?.name)) return;
+
+      const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
+      const reportingDay =
+        saleDate.hour() < 8 ? saleDate.subtract(1, "day") : saleDate;
+      const dayOfMonth = reportingDay.date();
+      const reportingDayStr = reportingDay.format("YYYY-MM-DD");
+
+      // Only include sales that belong to the current report month
+      if (!reportingDayStr.startsWith(currentMonthPrefix)) return;
+
+      const model = s.product?.model || "N/A";
+      const sku = s.product?.sku || "N/A";
+      const key = `${model}_${sku}`;
+
+      if (!modelSalesMap.has(key)) {
+        const initialData = {
+          brand: s.product?.brand?.name || "N/A",
+          category: s.product?.category?.name || "N/A",
+          model: model,
+          sku: sku,
+          name: s.product?.name || "N/A",
+          quantity: 0,
+          total_amount: 0,
+          last_sale_date: null,
+        };
+        for (let i = 1; i <= daysInMonthForSales; i++) {
+          initialData[`day_${i}`] = 0;
+        }
+        modelSalesMap.set(key, initialData);
+      }
+
+      const entry = modelSalesMap.get(key);
+
+      // Update daily quantity
+      if (dayOfMonth <= daysInMonthForSales) {
+        entry[`day_${dayOfMonth}`] += Number(s.quantity || 0);
+      }
+
+      // Update totals
+      entry.quantity += Number(s.quantity || 0);
+      entry.total_amount += Number(s.total_amount || 0);
+
+      // Update Last Sale Date
+      if (
+        !entry.last_sale_date ||
+        saleDate.isAfter(dayjs(entry.last_sale_date))
+      ) {
+        entry.last_sale_date = saleDate.format("YYYY-MM-DD hh:mm A");
+      }
+    });
+
+    modelSalesMap.forEach((value) => {
+      if (value.quantity > 0) {
+        salesByModelSheet.addRow({
+          ...value,
+          total_amount: `${value.total_amount.toFixed(2)}`,
+          last_sale_date: value.last_sale_date || "N/A",
+        });
+      }
+    });
+
+    // --- Sales Detail Tab ---
+    salesDetailSheet.columns = [
+      { header: "User Name", key: "user_name", width: 25 },
+      { header: "User Username", key: "user_username", width: 25 },
+      { header: "National ID", key: "user_national_id", width: 15 },
+      { header: "User Mobile", key: "user_mobile", width: 15 },
+      { header: "City Name", key: "city_name", width: 15 },
+      { header: "Chain", key: "chain", width: 15 },
+      { header: "Branch", key: "branch", width: 20 },
+      { header: "Brand", key: "brand", width: 15 },
+      { header: "Categories", key: "categories", width: 15 },
+      { header: "Product Model", key: "product_model", width: 20 },
+      { header: "Price", key: "price", width: 10 },
+      { header: "Total Amount", key: "total_amount", width: 15 },
+      { header: "Quantity", key: "quantity", width: 10 },
+      { header: "Date of Sale", key: "date_of_sale", width: 15 },
+      { header: "Time of Sale", key: "time_of_sale", width: 10 },
+    ];
+
+    // Sort sales by date and time (ascending)
+    const sortedSales = [...sales].sort((a, b) => {
+      const dateA = dayjs(a.sale_date);
+      const dateB = dayjs(b.sale_date);
+      return dateA.diff(dateB);
+    });
+
+    sortedSales.forEach((s) => {
+      if (!isPromoter(s.user)) return;
+      if (isRoaming(s.branch?.chain?.name)) return;
+
+      const saleDate = dayjs(s.sale_date);
+
+      salesDetailSheet.addRow({
+        user_name: s.user?.name || "-",
+        user_username: s.user?.username || "-",
+        user_national_id: s.user?.national_id || "-",
+        user_mobile: s.user?.mobile || "-",
+        city_name: s.branch?.city?.name || "-",
+        chain: s.branch?.chain?.name || "-",
+        branch: s.branch?.name || "-",
+        brand: s.product?.brand?.name || "-",
+        categories: s.product?.category?.name || "-",
+        product_model: s.product?.model || s.product?.name || "-",
+        price: s.price ?? "-",
+        total_amount: s.total_amount ?? "-",
+        quantity: s.quantity ?? "-",
+        date_of_sale: saleDate.format("YYYY-MM-DD"),
+        time_of_sale: saleDate.format("hh:mm:ss A"),
+      });
+    });
+
+    // Formatting
+    const headerFill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFEBF1DE" },
+    };
+    const headerDateFont = { bold: true, color: { argb: "FFFF0000" } };
+    const standardHeaderFont = { bold: true, color: { argb: "FF000000" } };
+
+    const cellBorder = {
+      top: { style: "thin", color: { argb: "FF000000" } },
+      left: { style: "thin", color: { argb: "FF000000" } },
+      bottom: { style: "thin", color: { argb: "FF000000" } },
+      right: { style: "thin", color: { argb: "FF000000" } },
+    };
+
+    [
+      salesByModelSheet,
+      salesDetailSheet,
+    ].forEach((sheet) => {
+      const isSalesByModel = sheet.name === "Sales by Model";
+      const isSalesDetail = sheet.name === "Sales Detail";
+
+      let effectiveBaseColCount = 0;
+      if (isSalesByModel) effectiveBaseColCount = 5;
+      if (isSalesDetail) effectiveBaseColCount = 0;
+
+      const startRow = 1;
+
+      if (sheet.rowCount > startRow && sheet.columnCount > 0) {
+        sheet.autoFilter = {
+          from: { row: startRow, column: 1 },
+          to: { row: sheet.rowCount, column: sheet.columnCount },
+        };
+      }
+
+      // Freeze headers
+      sheet.views = [
+        { state: "frozen", xSplit: 0, ySplit: startRow },
+      ];
+
+      sheet.eachRow((row, rowNumber) => {
+        const isHeader = rowNumber === 1;
+
+        row.eachCell((cell, colNumber) => {
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+
+          if (isHeader) {
+            if (
+              colNumber > effectiveBaseColCount &&
+              colNumber < sheet.columnCount
+            ) {
+              cell.font = headerDateFont;
+            } else {
+              cell.font = standardHeaderFont;
+            }
+            cell.fill = headerFill as exceljs.Fill;
+            cell.border = cellBorder as Partial<exceljs.Borders>;
+          } else {
+            cell.border = cellBorder as Partial<exceljs.Borders>;
+          }
+        });
+      });
+    });
+
+    const executionDateStr = now.format("YYYY_MM_DD_HHmmss_SSS");
+    const filename = `dreame_monthly_report_${executionDateStr}.xlsx`;
+    const tempFilePath = path.join(os.tmpdir(), filename);
+
+    await workbook.xlsx.writeFile(tempFilePath);
+    this.logger.log(`Dreame Monthly report successfully generated at ${tempFilePath}`);
+
+    return tempFilePath;
+  }
+
   async generateGatemeaReport(givenDate?: string | Date): Promise<string> {
     this.logger.log("Started generating GATEMEA Daily report...");
 

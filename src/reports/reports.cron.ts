@@ -9,13 +9,14 @@ export class ReportsCron {
   private readonly logger = new Logger(ReportsCron.name);
   private isMonthlyReportRunning = false;
   private isGatemeaReportRunning = false;
+  private isDreameReportRunning = false;
 
   constructor(
     private readonly reportsService: ReportsService,
     private readonly mailService: MailService,
   ) {}
 
-  @Cron("0 8 * * *", {
+  @Cron("0 5,8 * * *", {
     name: "joe-mi-ci-monthly-report",
     timeZone: "Asia/Riyadh",
     waitForCompletion: true,
@@ -221,5 +222,99 @@ export class ReportsCron {
     }
 
     this.logger.log("Finished Gatemea report cron job");
+  }
+
+  @Cron("0 5,8 * * *", {
+    name: "dreame-monthly-report",
+    timeZone: "Asia/Riyadh",
+    waitForCompletion: true,
+  })
+  async handleDreameMonthlyReportCron() {
+    if (this.isDreameReportRunning) {
+      this.logger.warn(
+        "Skipping Dreame monthly report cron job because a previous run is still in progress.",
+      );
+      return;
+    }
+
+    this.isDreameReportRunning = true;
+    this.logger.log("Starting Dreame monthly report cron job");
+
+    try {
+      const filePath = await this.reportsService.generateDreameMonthlyReport();
+      if (!filePath) {
+        this.logger.warn("Dreame report generation skipped or failed.");
+        return;
+      }
+      this.logger.log(`Excel report generated successfully at: ${filePath}`);
+
+      const filename = path.basename(filePath);
+      const subject = "Dreame Monthly Performance Report";
+      const toRecipient = "R.alzahrani@aecksa.com";
+      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report (Sales by Model and Sales Detail) up to yesterday.\n\nBest regards,\nSystem Operations`;
+      const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    .header { background-color: #1F4E78; color: #ffffff; padding: 30px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 1px; }
+    .subheader { font-size: 14px; opacity: 0.8; margin-top: 5px; }
+    .content { padding: 30px; color: #333333; line-height: 1.6; }
+    .content p { margin: 0 0 15px; }
+    .footer { background-color: #f1f1f1; color: #888888; text-align: center; padding: 20px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>DREAME MONTHLY REPORT</h1>
+      <div class="subheader">System Operations</div>
+    </div>
+    <div class="content">
+      <p>Dear Team,</p>
+      <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the current month up to yesterday.</p>
+      <p>The report contains the <strong>Sales by Model</strong> and <strong>Sales Detail</strong> sheets, filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+      <p>The report is attached to this email as an Excel spreadsheet.</p>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} System Operations. All rights reserved.<br>
+      This is an automated message.
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const emailSent = await this.mailService.sendReportEmail(
+        filePath,
+        filename,
+        toRecipient,
+        subject,
+        textBody,
+        emailHtml,
+      );
+
+      if (emailSent) {
+        this.logger.log("Dreame report email sent successfully.");
+      } else {
+        this.logger.warn(
+          "Dreame report generation succeeded, but email sending failed.",
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        "Error occurred during Dreame report cron job execution",
+      );
+      this.logger.error(error.message);
+      if (error.stack) {
+        this.logger.error(error.stack);
+      }
+    } finally {
+      this.isDreameReportRunning = false;
+    }
+
+    this.logger.log("Finished Dreame monthly report cron job");
   }
 }
