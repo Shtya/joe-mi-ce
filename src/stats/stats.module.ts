@@ -20,11 +20,12 @@ import {
 } from "entities/survey-feedback.entity";
 import { ProjectStatsService } from "./stats.service";
 import { ProjectStatsController } from "./stats.controller";
-import { SalesTargetService } from "src/sales-target/sales-target.service";
 import { SalesTarget } from "entities/sales-target.entity";
+import { SalesTargetModule } from "src/sales-target/sales-target.module";
 
 @Module({
   imports: [
+    SalesTargetModule,
     TypeOrmModule.forFeature([
       Project,
       Branch,
@@ -44,7 +45,7 @@ import { SalesTarget } from "entities/sales-target.entity";
       SalesTarget,
     ]),
   ],
-  providers: [ProjectStatsService, SalesTargetService],
+  providers: [ProjectStatsService],
   controllers: [ProjectStatsController],
   exports: [ProjectStatsService],
 })
