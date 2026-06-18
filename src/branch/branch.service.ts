@@ -28,6 +28,7 @@ import {
   SalesTarget,
   SalesTargetStatus,
   SalesTargetType,
+  SalesTargetMetricType,
 } from "entities/sales-target.entity";
 import { UsersService } from "src/users/users.service";
 import { Audit } from "entities/audit.entity";
@@ -200,6 +201,10 @@ export class BranchService {
         endDate,
         description: `this is the deafault target of the branch ${dto.name} and the target is ${dto.defaultSalesTargetAmount}`,
         targetAmount: savedBranch.defaultSalesTargetAmount,
+        targetQuantity: 0,
+        targetBrands: 0,
+        metricType: SalesTargetMetricType.AMOUNT,
+        brand: null,
         autoRenew: savedBranch.autoCreateSalesTargets,
         project: savedBranch.project,
       });
@@ -1012,6 +1017,9 @@ export class BranchService {
         status: SalesTargetStatus.ACTIVE,
         targetAmount:
           parseFloat(row.targetAmount) || branch.defaultSalesTargetAmount,
+        targetQuantity: parseInt(row.targetQuantity, 10) || 0,
+        targetBrands: parseInt(row.targetBrands, 10) || 0,
+        metricType: row.metricType || SalesTargetMetricType.AMOUNT,
         currentAmount: 0,
         startDate:
           this.parseDate(row.targetStartDate) ||
@@ -1021,6 +1029,7 @@ export class BranchService {
           this.getEndDateForPeriod(branch.salesTargetType),
         autoRenew: true,
         branch: branch,
+        brand: null,
         createdBy: requester,
         project: branch.project,
       });
@@ -1056,11 +1065,15 @@ export class BranchService {
         type: branch.salesTargetType,
         status: SalesTargetStatus.ACTIVE,
         targetAmount: branch.defaultSalesTargetAmount,
+        targetQuantity: 0,
+        targetBrands: 0,
+        metricType: SalesTargetMetricType.AMOUNT,
         currentAmount: 0,
         startDate: startDate,
         endDate: endDate,
         autoRenew: true,
         branch: branch,
+        brand: null,
         createdBy: requester,
       });
 

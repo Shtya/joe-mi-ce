@@ -201,17 +201,31 @@ export class ProjectStatsService {
 
     const currentTargets = await Promise.all(salesTargetsPromises);
 
-    const salesTargets = currentTargets
-      .filter((t) => !!t)
-      .map((t) => ({
-        branchId: t.branch.id,
-        branchName: t.branch.name,
-        type: t.type,
-        targetAmount: t.targetAmount,
-        currentAmount: t.currentAmount,
-        progress: t.targetAmount ? (t.currentAmount / t.targetAmount) * 100 : 0,
-        status: t.status,
-      }));
+    const salesTargets = await Promise.all(
+      currentTargets.filter((t) => !!t).map(async (t) => {
+        const metrics =
+          await this.salesTargetService.getTargetAchievementMetrics(t);
+
+        return {
+          branchId: t.branch.id,
+          branchName: t.branch.name,
+          brandId: t.brand?.id || null,
+          brandName: t.brand?.name || null,
+          type: t.type,
+          metricType: t.metricType,
+          targetAmount: Number(t.targetAmount) || 0,
+          currentAmount: metrics.currentAmount,
+          targetQuantity: Number(t.targetQuantity) || 0,
+          currentQuantity: metrics.currentQuantity,
+          quantityProgress: metrics.quantityProgress,
+          targetBrands: Number(t.targetBrands) || 0,
+          currentBrands: metrics.currentBrands,
+          brandsProgress: metrics.brandsProgress,
+          progress: metrics.amountProgress,
+          status: t.status,
+        };
+      }),
+    );
     const salesPerPromoterRaw = await this.saleRepo
       .createQueryBuilder("s")
       .innerJoin("s.user", "p")

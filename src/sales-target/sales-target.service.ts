@@ -19,8 +19,11 @@ import {
   SalesTarget,
   SalesTargetType,
   SalesTargetStatus,
+  SalesTargetMetricType,
 } from "../../entities/sales-target.entity";
 import { Branch } from "../../entities/branch.entity";
+import { Sale } from "entities/products/sale.entity";
+import { Brand } from "entities/products/brand.entity";
 import {
   CreateSalesTargetDto,
   UpdateSalesTargetDto,
@@ -36,6 +39,10 @@ export class SalesTargetService {
     public readonly salesTargetRepository: Repository<SalesTarget>,
     @InjectRepository(Branch)
     private readonly branchRepository: Repository<Branch>,
+    @InjectRepository(Sale)
+    private readonly saleRepository: Repository<Sale>,
+    @InjectRepository(Brand)
+    private readonly brandRepository: Repository<Brand>,
   ) {}
   private getMonthPeriod(date: Date = new Date()) {
     const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
@@ -89,6 +96,24 @@ export class SalesTargetService {
     const salesTargets: SalesTarget[] = [];
 
     for (const branch of branches) {
+      let brand: Brand | null = null;
+      if (createDto.brandId) {
+        brand = await this.brandRepository.findOne({
+          where: {
+            id: createDto.brandId,
+            project: { id: branch.project.id },
+          },
+        });
+
+        if (!brand) {
+          throw new NotFoundException(
+            `Brand ${createDto.brandId} not found in branch project`,
+          );
+        }
+      }
+
+      const metricType =
+        createDto.metricType || SalesTargetMetricType.AMOUNT;
       const targetName =
         createDto.name ||
         `${branch.name} - ${targetType} Target - ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
@@ -97,6 +122,17 @@ export class SalesTargetService {
         `${targetType} sales target for ${branch.name} from ${startDate.toLocaleDateString()} to ${endDate.toLocaleDateString()}`;
       const targetAmount =
         createDto.targetAmount ?? branch.defaultSalesTargetAmount ?? 0;
+      const targetQuantity = createDto.targetQuantity ?? 0;
+      const targetBrands = createDto.targetBrands ?? 0;
+
+      if (
+        metricType === SalesTargetMetricType.QUANTITY &&
+        createDto.targetQuantity === undefined
+      ) {
+        throw new BadRequestException(
+          "targetQuantity is required when metricType is quantity",
+        );
+      }
 
       const existingTarget = await this.salesTargetRepository.findOne({
         where: {
@@ -119,11 +155,15 @@ export class SalesTargetService {
         startDate,
         endDate,
         targetAmount,
+        targetQuantity,
+        targetBrands,
         currentAmount: 0,
+        metricType,
         status: SalesTargetStatus.ACTIVE,
         type: targetType,
         branch,
         project: branch.project,
+        brand,
         createdBy: createdBy ? { id: createdBy } : null,
       });
 
@@ -150,7 +190,7 @@ export class SalesTargetService {
 
     return await this.salesTargetRepository.find({
       where,
-      relations: ["branch", "branch.supervisor", "createdBy"],
+      relations: ["branch", "branch.supervisor", "createdBy", "brand"],
       order: { startDate: "DESC" },
     });
   }
@@ -158,7 +198,7 @@ export class SalesTargetService {
   async findOne(id: string): Promise<SalesTarget> {
     const salesTarget = await this.salesTargetRepository.findOne({
       where: { id },
-      relations: ["branch", "branch.supervisor", "createdBy"],
+      relations: ["branch", "branch.supervisor", "createdBy", "brand"],
     });
 
     if (!salesTarget) {
@@ -180,7 +220,7 @@ export class SalesTargetService {
 
     return await this.salesTargetRepository.find({
       where,
-      relations: ["createdBy"],
+      relations: ["createdBy", "brand"],
       order: { startDate: "DESC" },
     });
   }
@@ -195,7 +235,7 @@ export class SalesTargetService {
         endDate: MoreThanOrEqual(today as any),
         status: SalesTargetStatus.ACTIVE,
       },
-      relations: ["branch", "createdBy"],
+      relations: ["branch", "createdBy", "brand"],
     });
   }
   async update(
@@ -245,6 +285,9 @@ export class SalesTargetService {
       name: targetName,
       type: targetType,
       targetAmount,
+      targetQuantity: 0,
+      targetBrands: 0,
+      metricType: SalesTargetMetricType.AMOUNT,
       startDate,
       endDate,
       branch,
@@ -252,9 +295,58 @@ export class SalesTargetService {
       autoRenew: branch.autoCreateSalesTargets,
       status: SalesTargetStatus.ACTIVE,
       currentAmount: 0,
+      brand: null,
     });
 
     return await this.salesTargetRepository.save(newTarget);
+  }
+
+  async getTargetAchievementMetrics(target: SalesTarget): Promise<{
+    currentAmount: number;
+    currentQuantity: number;
+    currentBrands: number;
+    amountProgress: number;
+    quantityProgress: number;
+    brandsProgress: number;
+  }> {
+    const salesAgg = this.saleRepository
+      .createQueryBuilder("sale")
+      .leftJoin("sale.product", "product")
+      .select("COALESCE(SUM(sale.total_amount), 0)", "currentAmount")
+      .addSelect("COALESCE(SUM(sale.quantity), 0)", "currentQuantity")
+      .addSelect("COUNT(DISTINCT product.brand_id)", "currentBrands")
+      .where("sale.branch_id = :branchId", { branchId: target.branch.id })
+      .andWhere("DATE(sale.sale_date) BETWEEN :startDate AND :endDate", {
+        startDate: target.startDate,
+        endDate: target.endDate,
+      });
+
+    if (target.brand?.id) {
+      salesAgg.andWhere("product.brand_id = :brandId", {
+        brandId: target.brand.id,
+      });
+    }
+
+    const salesRaw = await salesAgg.getRawOne();
+
+    const currentAmount = Number(salesRaw?.currentAmount) || 0;
+    const currentQuantity = Number(salesRaw?.currentQuantity) || 0;
+    const currentBrands = Number(salesRaw?.currentBrands) || 0;
+
+    return {
+      currentAmount,
+      currentQuantity,
+      currentBrands,
+      amountProgress: target.targetAmount
+        ? (currentAmount / Number(target.targetAmount)) * 100
+        : 0,
+      quantityProgress: target.targetQuantity
+        ? (currentQuantity / Number(target.targetQuantity)) * 100
+        : 0,
+      brandsProgress: target.targetBrands
+        ? (currentBrands / Number(target.targetBrands)) * 100
+        : 0,
+    };
   }
 
   /** Cron job runs on 1st day of every month at 2:00 AM */

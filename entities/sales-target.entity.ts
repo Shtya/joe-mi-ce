@@ -11,6 +11,7 @@ import {
   import { Branch } from './branch.entity';
   import { User } from './user.entity';
   import { Project } from './project.entity';
+  import { Brand } from './products/brand.entity';
   
   export enum SalesTargetType {
     MONTHLY = 'monthly',
@@ -21,6 +22,11 @@ import {
     ACTIVE = 'active',
     COMPLETED = 'completed',
     EXPIRED = 'expired'
+  }
+
+  export enum SalesTargetMetricType {
+    AMOUNT = 'amount',
+    QUANTITY = 'quantity'
   }
   
   @Entity('sales_targets')
@@ -47,11 +53,24 @@ import {
     })
     status: SalesTargetStatus;
   
-    @Column({ type: 'decimal', precision: 15, scale: 2 })
-    targetAmount: number;
+    @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+    targetAmount: number | null;
+
+    @Column({ type: 'integer', default: 0 })
+    targetQuantity: number;
+
+    @Column({ type: 'integer', default: 0 })
+    targetBrands: number;
   
     @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
     currentAmount: number;
+
+    @Column({
+      type: 'enum',
+      enum: SalesTargetMetricType,
+      default: SalesTargetMetricType.AMOUNT,
+    })
+    metricType: SalesTargetMetricType;
   
     @Column({ type: 'date' })
     startDate: Date;
@@ -68,6 +87,9 @@ import {
   
     @ManyToOne(() => Project, { nullable: true })
     project: Project;
+
+    @ManyToOne(() => Brand, { nullable: true, eager: true })
+    brand: Brand | null;
 
     @ManyToOne(() => User, { nullable: true })
     createdBy: User;

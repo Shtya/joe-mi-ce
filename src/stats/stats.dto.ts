@@ -3,9 +3,18 @@ import { JourneyStatus, JourneyType } from "entities/all_plans.entity";
 export interface SalesTargetDto {
   branchId: string;
   branchName: string;
+  brandId?: string | null;
+  brandName?: string | null;
   type: string; // or SalesTargetType if imported
+  metricType: string;
   targetAmount: number;
   currentAmount: number;
+  targetQuantity: number;
+  currentQuantity: number;
+  quantityProgress: number;
+  targetBrands: number;
+  currentBrands: number;
+  brandsProgress: number;
   progress: number;
   status: string; // or SalesTargetStatus if imported
 }

@@ -1,5 +1,5 @@
 // sales-target.dto.ts
-import {
+  import {
     IsString,
     IsEnum,
     IsNumber,
@@ -12,7 +12,11 @@ import {
     ValidateIf
   } from 'class-validator';
   import { Type } from 'class-transformer';
-  import { SalesTargetType, SalesTargetStatus } from '../entities/sales-target.entity';
+  import {
+    SalesTargetType,
+    SalesTargetStatus,
+    SalesTargetMetricType,
+  } from '../entities/sales-target.entity';
 
   export class CreateSalesTargetDto {
     @IsOptional()
@@ -26,8 +30,25 @@ import {
     @IsEnum(SalesTargetType)
     type: SalesTargetType;
 
+    @IsOptional()
     @IsNumber()
-    targetAmount: number;
+    targetAmount?: number;
+
+    @IsOptional()
+    @IsNumber()
+    targetQuantity?: number;
+
+    @IsOptional()
+    @IsNumber()
+    targetBrands?: number;
+
+    @IsOptional()
+    @IsUUID()
+    brandId?: string;
+
+    @IsOptional()
+    @IsEnum(SalesTargetMetricType)
+    metricType?: SalesTargetMetricType;
 
     @IsOptional()
     @IsDate()
@@ -68,6 +89,22 @@ import {
     @IsOptional()
     @IsNumber()
     targetAmount?: number;
+
+    @IsOptional()
+    @IsNumber()
+    targetQuantity?: number;
+
+    @IsOptional()
+    @IsNumber()
+    targetBrands?: number;
+
+    @IsOptional()
+    @IsUUID()
+    brandId?: string;
+
+    @IsOptional()
+    @IsEnum(SalesTargetMetricType)
+    metricType?: SalesTargetMetricType;
 
     @IsOptional()
     @IsBoolean()

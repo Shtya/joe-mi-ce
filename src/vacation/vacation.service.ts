@@ -327,6 +327,21 @@ export class VacationService {
         });
       }
 
+      if (whereConditions.city?.id || whereConditions.cityId) {
+        query.andWhere("city.id = :cityId", {
+          cityId: whereConditions.city?.id || whereConditions.cityId,
+        });
+      }
+
+      if (
+        whereConditions.cityName ||
+        typeof whereConditions.city === "string"
+      ) {
+        query.andWhere("city.name ILIKE :cityName", {
+          cityName: `%${whereConditions.cityName || whereConditions.city}%`,
+        });
+      }
+
       if (whereConditions.user?.id || whereConditions.userId) {
         query.andWhere("user.id = :userId", {
           userId: whereConditions.user?.id || whereConditions.userId,

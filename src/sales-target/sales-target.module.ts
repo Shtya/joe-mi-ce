@@ -11,10 +11,20 @@ import { UsersService } from "src/users/users.service";
 import { Project } from "entities/project.entity";
 import { JourneyModule } from "../journey/journey.module";
 import { CheckIn } from "entities/all_plans.entity";
+import { Sale } from "entities/products/sale.entity";
+import { Brand } from "entities/products/brand.entity";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SalesTarget, Branch, User, Project, CheckIn]),
+    TypeOrmModule.forFeature([
+      SalesTarget,
+      Branch,
+      User,
+      Project,
+      CheckIn,
+      Sale,
+      Brand,
+    ]),
     ScheduleModule.forRoot(),
     JourneyModule,
   ],
