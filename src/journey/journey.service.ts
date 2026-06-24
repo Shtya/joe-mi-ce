@@ -335,91 +335,97 @@ export class JourneyService {
     userId: string;
     lat: number;
     lng: number;
-    journeyId?: string;
-    recordedAt?: Date;
-    isOffline?: boolean;
+    offlineSince: Date | null; // time the device went offline (null = live ping)
+    projectId?: string | null;
   }): Promise<PromoterLocation> {
-    const {
-      userId,
-      lat,
-      lng,
-      journeyId,
-      recordedAt = new Date(),
-      isOffline = false,
-    } = params;
-
-    // Load user info for denormalised name/avatar stored in promoter_locations
+    const { userId, lat, lng, offlineSince } = params;
+    const recordedAt = new Date();
+    
+    // 1. Load user (needed for denormalised name/avatar in promoter_locations)
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException("User not found");
 
-    // Resolve projectId: from journey (if provided) or from today's open journey
-    let projectId: string | null = null;
+    // 2. Resolve active check-in → journeyId, checkInId, branch, projectId
+    let journeyId: string | null = null;
+    let checkInId: string | null = null;
+    let projectId: string | null = params.projectId || null;
     let branch: Branch | null = null;
 
-    if (journeyId) {
-      const journey = await this.journeyRepo.findOne({
-        where: { id: journeyId, is_active: true },
-        relations: ["branch", "branch.chain"],
-      });
-      if (journey) {
-        projectId = journey.projectId;
-        branch = journey.branch;
+    try {
+      const activeCheckIn = await this.getCurrentJourney(userId);
+      if (activeCheckIn?.journey) {
+        checkInId = activeCheckIn.id;
+        journeyId = activeCheckIn.journey.id;
+        const journey = await this.journeyRepo.findOne({
+          where: { id: journeyId },
+          relations: ["branch", "branch.chain"],
+        });
+        if (journey) {
+          if (!projectId) {
+            projectId = journey.projectId;
+          }
+          branch = journey.branch;
+        }
       }
-    } else {
-      const today = dayjs().format("YYYY-MM-DD");
-      const journey = await this.journeyRepo.findOne({
-        where: { user: { id: userId }, date: today, is_active: true },
-        relations: ["branch", "branch.chain"],
-        order: { created_at: "DESC" },
-      });
-      if (journey) {
-        projectId = journey.projectId;
-        branch = journey.branch;
+    } catch {
+      // No active check-in — location saved without a journey link
+    }
+
+    // Check if we need to auto-write as offline because of > 20 mins gap since last recorded ping
+    let resolvedOfflineSince = offlineSince;
+    if (checkInId && !resolvedOfflineSince) {
+      try {
+        const lastLog = await this.locationLogRepo.findOne({
+          where: { userId },
+          order: { recordedAt: "DESC" },
+        });
+        if (lastLog) {
+          const gapMinutes = dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute");
+          if (gapMinutes > 20) {
+            // More than 20 minutes gap: set offlineSince to the last recorded timestamp
+            resolvedOfflineSince = lastLog.recordedAt;
+          }
+        }
+      } catch (err) {
+        // Ignore error in fetching last log
       }
     }
 
-    // Determine geofence status
+    // 3. Geofence check
     let isOutside = false;
     if (branch) {
-      try {
-        const chainName = (branch as any).chain?.name ?? "";
-        const isCheckGeo = !chainName.toLowerCase().includes("roaming");
-        isOutside = isCheckGeo
-          ? !this.isWithinGeofencePublic(branch, `${lat},${lng}`)
-          : false;
-      } catch {
-        isOutside = false;
+      const chainName = (branch as any).chain?.name ?? "";
+      if (!chainName.toLowerCase().includes("roaming")) {
+        try {
+          isOutside = !this.isWithinGeofencePublic(branch, `${lat},${lng}`);
+        } catch {
+          isOutside = false;
+        }
       }
     }
 
-    // Upsert the single-row position record
-    await this.locationRepo.upsert(
-      {
-        userId,
-        lat,
-        lng,
-        projectId,
-        name: user.name,
-        avatar_url: user.avatar_url,
-        isOutside,
-      },
-      ["userId"],
-    );
+    // 4. Upsert latest position (one row per user)
+    await this.locationRepo.upsert({
+      userId, lat, lng, projectId, checkInId,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      isOutside,
+      offlineSince: resolvedOfflineSince,
+    }, ["userId"]);
 
-    // Always write to audit log
-    await this.locationLogRepo.save(
-      this.locationLogRepo.create({
-        userId,
-        journeyId,
-        lat,
-        lng,
-        isOutside,
-        isOffline,
-        recordedAt,
-      }),
-    );
+    // 5. Append to audit log (one row per ping)
+    await this.locationLogRepo.save(this.locationLogRepo.create({
+      userId,
+      journeyId,
+      checkInId,
+      projectId,
+      lat,
+      lng,
+      isOutside,
+      offlineSince: resolvedOfflineSince,
+      recordedAt,
+    }));
 
-    // Return the fresh row so the gateway can broadcast it
     return this.locationRepo.findOne({ where: { userId } });
   }
 
@@ -438,27 +444,62 @@ export class JourneyService {
     });
   }
 
-  /**
-   * Returns the raw location audit log for a user / journey.
-   */
   async getLocationLog(params: {
     userId?: string;
     journeyId?: string;
+    checkInId?: string;
+    projectId?: string;
     fromDate?: string;
     toDate?: string;
+    fromTime?: string;
+    toTime?: string;
+    page?: number;
+    limit?: number;
   }) {
-    const { userId, journeyId, fromDate, toDate } = params;
-    const where: any = {};
-    if (userId) where.userId = userId;
-    if (journeyId) where.journeyId = journeyId;
-    if (fromDate && toDate) {
-      where.recordedAt = Between(new Date(fromDate), new Date(toDate));
+    const { userId, journeyId, checkInId, projectId, fromDate, toDate, fromTime, toTime, page = 1, limit = 50 } = params;
+    const skip = (page - 1) * limit;
+
+    const qb = this.locationLogRepo.createQueryBuilder("log");
+
+    if (userId) {
+      qb.andWhere("log.userId = :userId", { userId });
     }
-    return this.locationLogRepo.find({
-      where,
-      order: { recordedAt: "DESC" },
-      take: 200,
-    });
+    if (journeyId) {
+      qb.andWhere("log.journeyId = :journeyId", { journeyId });
+    }
+    if (checkInId) {
+      qb.andWhere("log.checkInId = :checkInId", { checkInId });
+    }
+    if (projectId) {
+      qb.andWhere("log.projectId = :projectId", { projectId });
+    }
+
+    if (fromDate && toDate) {
+      const start = dayjs(fromDate).startOf("day").toDate();
+      const end = dayjs(toDate).endOf("day").toDate();
+      qb.andWhere("log.recordedAt BETWEEN :start AND :end", { start, end });
+    }
+
+    if (fromTime && toTime) {
+      qb.andWhere("CAST(log.recordedAt AS time) BETWEEN :fromTime::time AND :toTime::time", {
+        fromTime,
+        toTime,
+      });
+    }
+
+    qb.orderBy("log.recordedAt", "DESC")
+      .skip(skip)
+      .take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
   /** Exposed for the gateway – same geofence logic but public */
@@ -656,6 +697,18 @@ export class JourneyService {
       message: "Journey plan deleted successfully",
       id,
     };
+  }
+  async getCurrentJourney(userId: string) {
+    const journey = await this.checkInRepo.findOne({
+      where: { user: { id: userId }, checkOutTime: null, checkInTime: Not(null) },
+      relations: ["journey"],
+    });
+
+    if (!journey) {
+      throw new NotFoundException("Journey not found");
+    }
+
+    return journey;
   }
 
   // ===== الرحلات الطارئة =====
@@ -1065,7 +1118,7 @@ export class JourneyService {
           lat: geoCoords.lat,
           lng: geoCoords.lng,
           isOutside: !isWithinGeofence,
-          isOffline: false,
+          offlineSince: null,
           recordedAt: new Date(
             dto.checkInTime || dto.checkOutTime || Date.now(),
           ),

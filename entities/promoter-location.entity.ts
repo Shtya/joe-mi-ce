@@ -16,6 +16,9 @@ export class PromoterLocation {
   @Column({ nullable: true })
   projectId: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  checkInId: string;
+
   @Column({ nullable: true })
   name: string;
 
@@ -25,6 +28,10 @@ export class PromoterLocation {
   /** true when the promoter is outside the branch geofence */
   @Column({ default: false })
   isOutside: boolean;
+
+  /** The time the device went offline (null = currently online) */
+  @Column({ type: 'timestamptz', nullable: true })
+  offlineSince: Date | null;
 
   /** Auto-updated on every upsert — used for 30-min staleness check */
   @UpdateDateColumn({ type: 'timestamptz' })

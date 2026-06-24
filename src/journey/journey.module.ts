@@ -52,8 +52,8 @@ import { MailModule } from "src/mail/mail.module";
     NotificationModule,
     MailModule,
   ],
-  controllers: [JourneyController],
-  providers: [JourneyService, JourneyCron, UsersService, LocationGateway],
+  controllers: [JourneyController, LocationGateway],
+  providers: [JourneyService, JourneyCron, UsersService],
   exports: [JourneyService],
 })
 export class JourneyModule {}

@@ -20,6 +20,14 @@ export class LocationLog {
   @Column({ type: 'uuid', nullable: true })
   journeyId: string;
 
+  /** Optional: links this log entry to a specific check-in */
+  @Column({ type: 'uuid', nullable: true })
+  checkInId: string;
+
+  /** Optional: links this log entry to a specific project */
+  @Column({ nullable: true })
+  projectId: string;
+
   @Column('decimal', { precision: 9, scale: 6 })
   lat: number;
 
@@ -31,11 +39,11 @@ export class LocationLog {
   isOutside: boolean;
 
   /**
-   * true when this ping was queued while the app was offline
-   * and submitted later (recordedAt will differ from createdAt)
+   * The time the device went offline (null = live ping).
+   * When provided, recordedAt holds the GPS timestamp from that offline session.
    */
-  @Column({ default: false })
-  isOffline: boolean;
+  @Column({ type: 'timestamptz', nullable: true })
+  offlineSince: Date | null;
 
   /** Original GPS timestamp (may be in the past for offline pings) */
   @Column({ type: 'timestamptz' })
