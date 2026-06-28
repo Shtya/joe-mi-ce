@@ -5,10 +5,7 @@ import { NestFactory } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { Logger, ValidationPipe } from "@nestjs/common";
 import { join } from "path";
-import {
-  NestExpressApplication,
-  ExpressAdapter,
-} from "@nestjs/platform-express";
+import { NestExpressApplication } from "@nestjs/platform-express";
 import { LoggingValidationPipe } from "common/translationPipe";
 import { QueryFailedErrorFilter } from "common/QueryFailedErrorFilter";
 import { LoggingInterceptor } from "common/http-logging.interceptor";
@@ -19,18 +16,20 @@ import helmet from "helmet";
 
 dotenv.config();
 
-const isDev = process.env.NODE_ENV === "development";
-
 async function configureApp(app: NestExpressApplication) {
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
   app.useGlobalFilters(app.get(QueryFailedErrorFilter));
-  app.useStaticAssets(join(__dirname, "..", "..", "/uploads"), {
+
+  app.useStaticAssets(join(__dirname, "..", "..", "uploads"), {
     prefix: "/uploads/",
   });
-  app.useStaticAssets(join(__dirname, "..", "..", "/tmp"), {
+
+  app.useStaticAssets(join(__dirname, "..", "..", "tmp"), {
     prefix: "/tmp/",
   });
+
   app.useGlobalInterceptors(new LoggingInterceptor());
   app.use(helmet());
 
@@ -57,6 +56,7 @@ async function configureApp(app: NestExpressApplication) {
   );
 
   const instance = app.getHttpAdapter().getInstance() as express.Express;
+
   instance.set("query parser", (str: string) =>
     qs.parse(str, {
       depth: 10,
@@ -70,47 +70,18 @@ async function configureApp(app: NestExpressApplication) {
   return app;
 }
 
-if (isDev) {
-  (async () => {
-    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-      bodyParser: false,
-    });
-    await configureApp(app);
+async function bootstrap() {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
 
-    const port = process.env.PORT || 3030;
-    await app.listen(port);
+  await configureApp(app);
 
-    Logger.log(`Dev server running at http://localhost:${port}`);
-  })();
+  const port = Number(process.env.PORT) || 8081;
+
+  await app.listen(port, "0.0.0.0");
+
+  Logger.log(`🚀 Server running at http://0.0.0.0:${port}`);
 }
 
-let cachedApp: NestExpressApplication;
-
-async function bootstrapServerless() {
-  if (!cachedApp) {
-    const server = express();
-    const app = await NestFactory.create<NestExpressApplication>(
-      AppModule,
-      new ExpressAdapter(server),
-      { cors: false, bodyParser: false },
-    );
-
-    await configureApp(app);
-    await app.init();
-
-    cachedApp = app;
-  }
-
-  return cachedApp;
-}
-
-export default async function handler(req: any, res: any) {
-  if (isDev) {
-    res.status(400).send("Use the development server instead.");
-    return;
-  }
-
-  const app = await bootstrapServerless();
-  const expressInstance = app.getHttpAdapter().getInstance();
-  return expressInstance(req, res);
-}
+bootstrap();
