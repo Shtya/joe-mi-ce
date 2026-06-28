@@ -1335,7 +1335,7 @@ export class ProductService {
 
       // Determine file extension
       let fileExtension = ".png"; // default
-      const contentType = response.headers["content-type"];
+      const contentType = String(response.headers["content-type"] || "");
       if (contentType) {
         if (contentType.includes("jpeg") || contentType.includes("jpg")) {
           fileExtension = ".jpg";
@@ -1409,7 +1409,7 @@ export class ProductService {
 
       // Determine file extension
       let fileExtension = ".png";
-      const contentType = response.headers["content-type"];
+      const contentType = String(response.headers["content-type"] || "");
       if (contentType) {
         if (contentType.includes("jpeg") || contentType.includes("jpg")) {
           fileExtension = ".jpg";

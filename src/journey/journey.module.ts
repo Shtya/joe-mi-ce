@@ -24,6 +24,7 @@ import { LocationLog } from "entities/location-log.entity";
 import { LocationGateway } from "./location.gateway";
 import { AuthModule } from "src/auth/auth.module";
 import { MailModule } from "src/mail/mail.module";
+import { LocationCacheService } from "./location-cache.service";
 
 @Module({
   imports: [
@@ -53,7 +54,7 @@ import { MailModule } from "src/mail/mail.module";
     MailModule,
   ],
   controllers: [JourneyController, LocationGateway],
-  providers: [JourneyService, JourneyCron, UsersService],
+  providers: [JourneyService, JourneyCron, UsersService, LocationGateway, LocationCacheService],
   exports: [JourneyService],
 })
 export class JourneyModule {}

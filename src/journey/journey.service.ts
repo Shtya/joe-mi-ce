@@ -16,6 +16,7 @@ import {
   Not,
   ILike,
   MoreThan,
+  IsNull,
 } from "typeorm";
 import * as dayjs from "dayjs";
 import * as XLSX from "xlsx";
@@ -50,10 +51,33 @@ import { getDistance } from "geolib";
 import { CRUD } from "common/crud.service";
 import { NotificationService } from "src/notification/notification.service";
 import { toLocalISOString } from "common/date.util";
-import { logger } from "nestjs-i18n";
 import { ERole } from "enums/Role.enum";
 import { AuthService } from "src/auth/auth.service";
 import { MailService } from "src/mail/mail.service";
+import {
+  LocationContextCacheItem,
+  LatestLocationCacheItem,
+  LocationCacheService,
+} from "./location-cache.service";
+
+type LocationStatus = "inside" | "outside" | "too_far";
+
+export interface LocationPingResponse {
+  success: true;
+  userId: string;
+  projectId: string | null;
+  journeyId: string | null;
+  checkInId: string | null;
+  lat: number;
+  lng: number;
+  recordedAt: string;
+  distanceMeters: number | null;
+  locationStatus: LocationStatus;
+  isOutside: boolean;
+  message: string;
+  name?: string | null;
+  avatar_url?: string | null;
+}
 
 @Injectable()
 export class JourneyService {
@@ -109,6 +133,7 @@ export class JourneyService {
     private readonly notificationService: NotificationService,
     private readonly authService: AuthService,
     private readonly mailService: MailService,
+    private readonly locationCacheService: LocationCacheService,
   ) {}
 
   async exportAttendanceOvertimeExcel(
@@ -335,85 +360,69 @@ export class JourneyService {
     userId: string;
     lat: number;
     lng: number;
-    offlineSince: Date | null; // time the device went offline (null = live ping)
+    recordedAt?: Date | string | null;
+    lang?: "en" | "ar" | string;
     projectId?: string | null;
-  }): Promise<PromoterLocation> {
-    const { userId, lat, lng, offlineSince } = params;
-    const recordedAt = new Date();
-    
-    // 1. Load user (needed for denormalised name/avatar in promoter_locations)
-    const user = await this.userRepo.findOne({ where: { id: userId } });
-    if (!user) throw new NotFoundException("User not found");
+  }): Promise<LocationPingResponse> {
+    const { userId, lat, lng } = params;
+    const lang = params.lang === "ar" ? "ar" : "en";
+    const recordedAt = this.resolveLocationDate(params.recordedAt, new Date());
 
-    // 2. Resolve active check-in → journeyId, checkInId, branch, projectId
-    let journeyId: string | null = null;
-    let checkInId: string | null = null;
-    let projectId: string | null = params.projectId || null;
-    let branch: Branch | null = null;
+    if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng))) {
+      throw new BadRequestException("Invalid latitude or longitude");
+    }
 
+    const context = await this.resolveLocationContext({
+      userId,
+      projectId: params.projectId || null,
+    });
+    const user = context.user;
+    const journeyId = context.journeyId;
+    const checkInId = context.checkInId;
+    const projectId = context.projectId;
+    const branch = context.branch;
+
+    let lastLog: LocationLog | null = null;
     try {
-      const activeCheckIn = await this.getCurrentJourney(userId);
-      if (activeCheckIn?.journey) {
-        checkInId = activeCheckIn.id;
-        journeyId = activeCheckIn.journey.id;
-        const journey = await this.journeyRepo.findOne({
-          where: { id: journeyId },
-          relations: ["branch", "branch.chain"],
-        });
-        if (journey) {
-          if (!projectId) {
-            projectId = journey.projectId;
-          }
-          branch = journey.branch;
-        }
-      }
+      lastLog = await this.locationLogRepo.findOne({
+        where: { userId },
+        order: { recordedAt: "DESC" },
+      });
     } catch {
-      // No active check-in — location saved without a journey link
+      // Missing history should not block the current ping.
     }
 
     // Check if we need to auto-write as offline because of > 20 mins gap since last recorded ping
-    let resolvedOfflineSince = offlineSince;
-    if (checkInId && !resolvedOfflineSince) {
-      try {
-        const lastLog = await this.locationLogRepo.findOne({
-          where: { userId },
-          order: { recordedAt: "DESC" },
-        });
-        if (lastLog) {
-          const gapMinutes = dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute");
-          if (gapMinutes > 20) {
-            // More than 20 minutes gap: set offlineSince to the last recorded timestamp
-            resolvedOfflineSince = lastLog.recordedAt;
-          }
-        }
-      } catch (err) {
-        // Ignore error in fetching last log
+    let resolvedOfflineSince: Date | null = null;
+
+    if (checkInId && !resolvedOfflineSince && lastLog) {
+      const gapMinutes = dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute");
+      if (gapMinutes > 20) {
+        // More than 20 minutes gap: set offlineSince to the last recorded timestamp
+        resolvedOfflineSince = lastLog.recordedAt;
       }
     }
 
     // 3. Geofence check
     let isOutside = false;
+    let locationStatus: LocationStatus = "inside";
+    let distanceMeters: number | null = null;
+
     if (branch) {
       const chainName = (branch as any).chain?.name ?? "";
       if (!chainName.toLowerCase().includes("roaming")) {
         try {
-          isOutside = !this.isWithinGeofencePublic(branch, `${lat},${lng}`);
+          const assessment = this.evaluateLocationStatus(branch, lat, lng);
+          isOutside = assessment.isOutside;
+          locationStatus = assessment.locationStatus;
+          distanceMeters = assessment.distanceMeters;
         } catch {
           isOutside = false;
         }
       }
     }
 
-    // 4. Upsert latest position (one row per user)
-    await this.locationRepo.upsert({
-      userId, lat, lng, projectId, checkInId,
-      name: user.name,
-      avatar_url: user.avatar_url,
-      isOutside,
-      offlineSince: resolvedOfflineSince,
-    }, ["userId"]);
-
-    // 5. Append to audit log (one row per ping)
+    // 4. Append to audit log (one row per ping)
     await this.locationLogRepo.save(this.locationLogRepo.create({
       userId,
       journeyId,
@@ -426,7 +435,44 @@ export class JourneyService {
       recordedAt,
     }));
 
-    return this.locationRepo.findOne({ where: { userId } });
+    const response = this.buildLocationResponse({
+      user,
+      userId,
+      projectId,
+      journeyId,
+      checkInId,
+      lat,
+      lng,
+      recordedAt,
+      locationStatus,
+      distanceMeters,
+      isOutside,
+      lang,
+    });
+
+    // 5. Update latest position only if this ping is newer than the stored latest row.
+    const shouldUpdateLatest =
+      !lastLog || recordedAt.getTime() >= new Date(lastLog.recordedAt).getTime();
+
+    if (shouldUpdateLatest) {
+      await this.locationRepo.upsert({
+        userId,
+        lat,
+        lng,
+        projectId,
+        checkInId,
+        name: user.name,
+        avatar_url: user.avatar_url,
+        isOutside,
+        offlineSince: resolvedOfflineSince,
+      }, ["userId"]);
+      await this.locationCacheService.setLatestLocation({
+        ...response,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return response;
   }
 
   /**
@@ -436,12 +482,30 @@ export class JourneyService {
   async getActivePromoterLocations(
     projectId: string,
     minutes = 30,
-  ): Promise<PromoterLocation[]> {
+  ): Promise<Array<PromoterLocation | LatestLocationCacheItem>> {
     const threshold = new Date(Date.now() - minutes * 60_000);
-    return this.locationRepo.find({
+    const cached = await this.locationCacheService.getProjectLocations(projectId);
+    const freshCached = cached.filter((item) => {
+      const value = item.updatedAt || item.recordedAt;
+      return value ? new Date(value) >= threshold : false;
+    });
+
+    if (freshCached.length > 0) {
+      return freshCached;
+    }
+
+    const locations = await this.locationRepo.find({
       where: { projectId, updatedAt: MoreThan(threshold) },
       order: { updatedAt: "DESC" },
     });
+
+    await Promise.all(
+      locations.map((location) =>
+        this.locationCacheService.setLatestLocation(this.cacheItemFromLocation(location)),
+      ),
+    );
+
+    return locations;
   }
 
   async getLocationLog(params: {
@@ -505,6 +569,192 @@ export class JourneyService {
   /** Exposed for the gateway – same geofence logic but public */
   isWithinGeofencePublic(branch: Branch, geo: any): boolean {
     return this.isWithinGeofence(branch, geo);
+  }
+
+  private async resolveLocationContext(params: {
+    userId: string;
+    projectId: string | null;
+  }): Promise<{
+    user: User;
+    projectId: string | null;
+    journeyId: string | null;
+    checkInId: string | null;
+    branch: Branch | null;
+  }> {
+    const cached = await this.locationCacheService.getLocationContext(params.userId);
+    if (cached) {
+      return {
+        user: {
+          id: cached.userId,
+          name: cached.name,
+          avatar_url: cached.avatar_url,
+        } as User,
+        projectId: params.projectId || cached.projectId,
+        journeyId: cached.journeyId,
+        checkInId: cached.checkInId,
+        branch: this.branchFromLocationContext(cached),
+      };
+    }
+
+    const user = await this.userRepo.findOne({ where: { id: params.userId } });
+    if (!user) throw new NotFoundException("User not found");
+
+    let journeyId: string | null = null;
+    let checkInId: string | null = null;
+    let projectId: string | null =
+      params.projectId || (user as any).project_id || user.project?.id || null;
+    let branch: Branch | null = null;
+
+    try {
+      const activeCheckIn = await this.getCurrentJourney(params.userId);
+      if (activeCheckIn?.journey) {
+        checkInId = activeCheckIn.id;
+        journeyId = activeCheckIn.journey.id;
+      }
+    } catch {
+      // No active check-in — location saved without a check-in link.
+    }
+
+    if (journeyId) {
+      try {
+        const journey = await this.journeyRepo.findOne({
+          where: { id: journeyId },
+          relations: ["branch", "branch.chain"],
+        });
+        if (journey) {
+          projectId = projectId || journey.projectId;
+          branch = journey.branch;
+        }
+      } catch {
+        // Invalid journey links should not block location tracking.
+      }
+    }
+
+    await this.locationCacheService.setLocationContext({
+      userId: params.userId,
+      name: user.name,
+      avatar_url: user.avatar_url,
+      projectId,
+      journeyId,
+      checkInId,
+      branchGeo: branch?.geo ? String(branch.geo) : null,
+      branchRadiusMeters: branch?.geofence_radius_meters ?? null,
+      branchChainName: (branch as any)?.chain?.name ?? null,
+    });
+
+    return {
+      user,
+      projectId,
+      journeyId,
+      checkInId,
+      branch,
+    };
+  }
+
+  private branchFromLocationContext(
+    cached: LocationContextCacheItem,
+  ): Branch | null {
+    if (!cached.branchGeo || cached.branchRadiusMeters === null) {
+      return null;
+    }
+
+    return {
+      geo: cached.branchGeo,
+      geofence_radius_meters: cached.branchRadiusMeters,
+      chain: cached.branchChainName
+        ? { name: cached.branchChainName }
+        : null,
+    } as unknown as Branch;
+  }
+
+  private resolveLocationDate(
+    value: Date | string | null | undefined,
+    fallback: Date | null,
+  ): Date | null {
+    if (!value) return fallback;
+
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException("Invalid location timestamp");
+    }
+
+    return date;
+  }
+
+  private buildLocationResponse(params: {
+    user: User;
+    userId: string;
+    projectId: string | null;
+    journeyId: string | null;
+    checkInId: string | null;
+    lat: number;
+    lng: number;
+    recordedAt: Date;
+    locationStatus: LocationStatus;
+    distanceMeters: number | null;
+    isOutside: boolean;
+    lang: "en" | "ar";
+  }): LocationPingResponse {
+    return {
+      success: true,
+      userId: params.userId,
+      projectId: params.projectId,
+      journeyId: params.journeyId,
+      checkInId: params.checkInId,
+      lat: Number(params.lat),
+      lng: Number(params.lng),
+      recordedAt: params.recordedAt.toISOString(),
+      distanceMeters: params.distanceMeters,
+      locationStatus: params.locationStatus,
+      isOutside: params.isOutside,
+      message: this.getLocationStatusMessage(
+        params.locationStatus,
+        params.lang,
+      ),
+      name: params.user.name,
+      avatar_url: params.user.avatar_url,
+    };
+  }
+
+  private getLocationStatusMessage(
+    status: LocationStatus,
+    lang: "en" | "ar",
+  ): string {
+    const messages = {
+      en: {
+        inside: "User is inside the branch geofence",
+        outside: "User is outside the branch geofence",
+        too_far: "User is too far from the branch",
+      },
+      ar: {
+        inside: "المستخدم داخل نطاق الفرع",
+        outside: "المستخدم خارج نطاق الفرع",
+        too_far: "المستخدم بعيد جدًا عن الفرع",
+      },
+    };
+
+    return messages[lang][status];
+  }
+
+  private cacheItemFromLocation(location: PromoterLocation): LatestLocationCacheItem {
+    const recordedAt = location.updatedAt || new Date();
+
+    return {
+      userId: location.userId,
+      projectId: location.projectId,
+      journeyId: null,
+      checkInId: location.checkInId,
+      lat: Number(location.lat),
+      lng: Number(location.lng),
+      recordedAt: recordedAt.toISOString(),
+      distanceMeters: null,
+      locationStatus: location.isOutside ? "outside" : "inside",
+      isOutside: location.isOutside,
+      message: "",
+      name: location.name,
+      avatar_url: location.avatar_url,
+      updatedAt: location.updatedAt?.toISOString() || null,
+    };
   }
 
   // ===== إدارة الخطط =====
@@ -700,7 +950,9 @@ export class JourneyService {
   }
   async getCurrentJourney(userId: string) {
     const journey = await this.checkInRepo.findOne({
-      where: { user: { id: userId }, checkOutTime: null, checkInTime: Not(null) },
+      where: { user: { id: userId }, checkOutTime: IsNull(), checkInTime: Not(IsNull()) },
+      order: { created_at: "DESC" },
+
       relations: ["journey"],
     });
 
@@ -1214,6 +1466,7 @@ export class JourneyService {
         savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
       },
     );
+    await this.locationCacheService.deleteLocationContext(journey.user.id);
 
     // 🔔 Notify supervisor if exists
     const supervisor = journey.branch?.supervisor;
@@ -1370,6 +1623,7 @@ export class JourneyService {
         savedCheckIn = await transactionalEntityManager.save(CheckIn, checkIn);
       },
     );
+    await this.locationCacheService.deleteLocationContext(journey.user.id);
 
     // 🔔 Notify supervisor/promoter?
     const supervisor = journey.branch?.supervisor;
@@ -1662,19 +1916,46 @@ export class JourneyService {
 
   // ===== الدوال المساعدة =====
   private isWithinGeofence(branch: Branch, geo: any): boolean {
-    console.log(`branch${branch.geo}`);
-    const branchCoords = this.parseLatLng(branch.geo);
-    console.log(`geo :${geo}`);
-
     const userCoords = this.parseLatLng(geo);
-
-    const distance = getDistance(
-      { latitude: branchCoords.lat, longitude: branchCoords.lng },
-      { latitude: userCoords.lat, longitude: userCoords.lng },
-    );
-
-    return distance <= branch.geofence_radius_meters;
+    return !this.evaluateLocationStatus(branch, userCoords.lat, userCoords.lng)
+      .isOutside;
   }
+
+  private evaluateLocationStatus(branch: Branch, lat: number, lng: number): {
+    locationStatus: LocationStatus;
+    isOutside: boolean;
+    distanceMeters: number;
+  } {
+    const branchCoords = this.parseLatLng(branch.geo);
+    const distanceMeters = getDistance(
+      { latitude: branchCoords.lat, longitude: branchCoords.lng },
+      { latitude: lat, longitude: lng },
+    );
+    const radius = Number(branch.geofence_radius_meters || 0);
+
+    if (distanceMeters <= radius) {
+      return {
+        locationStatus: "inside",
+        isOutside: false,
+        distanceMeters,
+      };
+    }
+
+    if (distanceMeters > radius * 2) {
+      return {
+        locationStatus: "too_far",
+        isOutside: true,
+        distanceMeters,
+      };
+    }
+
+    return {
+      locationStatus: "outside",
+      isOutside: true,
+      distanceMeters,
+    };
+  }
+
   private parseLatLng(value: any): { lat: number; lng: number } {
     if (!value || value === "") throw new BadRequestException("No geo value");
 
@@ -1947,7 +2228,7 @@ export class JourneyService {
           checkIn.isAutoClosed = true;
           await this.checkInRepo.save(checkIn);
           // Only update if there's no checkout time already
-          logger.warn(
+          console.warn(
             `Journey ${journey.id} had PRESENT status but no check-in record. Reverting to ABSENT.`,
           );
         } else {
@@ -2243,7 +2524,7 @@ export class JourneyService {
             mobile: mobile ? mobile.toString().trim() : undefined,
             national_id: nationalId ? nationalId.toString().trim() : undefined,
             password: username.toString().trim(), // Password same as username
-            
+
           };
 
           user = await this.authService.importSinglePromoter(

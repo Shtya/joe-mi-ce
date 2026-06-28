@@ -1,4 +1,14 @@
-import { IsUUID, IsArray, ArrayNotEmpty, IsString, IsOptional, IsDateString, IsObject, IsEmail } from 'class-validator';
+import {
+  IsUUID,
+  IsArray,
+  ArrayNotEmpty,
+  IsString,
+  IsOptional,
+  IsDateString,
+  IsEmail,
+  IsNumber,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateJourneyPlanDto {
   @IsUUID()
@@ -135,16 +145,13 @@ export class AdminCheckInOutDto {
 }
 
 export class UpdatePromoterLocationDto {
-  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   lat: number;
 
-  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
   lng: number;
-
-  /** Link this ping to a journey for audit trail */
-  @IsOptional()
-  @IsString()
-  journeyId?: string;
 
   /**
    * Original GPS timestamp — required for offline-queued pings
@@ -153,10 +160,6 @@ export class UpdatePromoterLocationDto {
   @IsOptional()
   @IsDateString()
   recordedAt?: string;
-
-  /** Set true when this ping was queued while the app had no connection */
-  @IsOptional()
-  isOffline?: boolean;
 }
 
 export class UserStatsResponseDto {

@@ -18,6 +18,7 @@ import { MailService } from "src/mail/mail.service";
 import { AuthGuard } from "src/auth/auth.guard";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
+import { LocationCacheService } from "./location-cache.service";
 
 describe("Location Tracking System Tests", () => {
   let gateway: LocationGateway;
@@ -25,8 +26,11 @@ describe("Location Tracking System Tests", () => {
 
   const mockLocationRepo = {
     upsert: jest.fn(),
+    create: jest.fn((val) => val),
+    save: jest.fn((val) => Promise.resolve(val)),
     findOne: jest.fn(),
     find: jest.fn(),
+    delete: jest.fn(),
   };
 
   const mockLocationLogRepo = {
@@ -70,15 +74,31 @@ describe("Location Tracking System Tests", () => {
     sendMail: jest.fn(),
   };
 
+  const mockJwtService = {
+    verifyAsync: jest.fn(),
+  };
+
+  const mockLocationCacheService = {
+    setLatestLocation: jest.fn(),
+    getLatestLocation: jest.fn(),
+    getProjectLocations: jest.fn(),
+    deleteLatestLocation: jest.fn(),
+    getLocationContext: jest.fn(),
+    setLocationContext: jest.fn(),
+    deleteLocationContext: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       controllers: [LocationGateway],
       providers: [
+        LocationGateway,
         JourneyService,
         { provide: UsersService, useValue: mockUsersService },
         { provide: NotificationService, useValue: mockNotificationService },
         { provide: AuthService, useValue: mockAuthService },
         { provide: MailService, useValue: mockMailService },
+        { provide: LocationCacheService, useValue: mockLocationCacheService },
         { provide: getRepositoryToken(PromoterLocation), useValue: mockLocationRepo },
         { provide: getRepositoryToken(LocationLog), useValue: mockLocationLogRepo },
         { provide: getRepositoryToken(User), useValue: mockUserRepo },
@@ -90,7 +110,7 @@ describe("Location Tracking System Tests", () => {
         { provide: getRepositoryToken(Shift), useValue: mockGeneralRepo },
         { provide: getRepositoryToken(VacationDate), useValue: mockGeneralRepo },
         { provide: getRepositoryToken(Sale), useValue: mockGeneralRepo },
-        { provide: JwtService, useValue: {} },
+        { provide: JwtService, useValue: mockJwtService },
         { provide: Reflector, useValue: {} },
         { provide: "I18nService", useValue: {} },
       ],
@@ -101,10 +121,23 @@ describe("Location Tracking System Tests", () => {
 
     gateway = module.get<LocationGateway>(LocationGateway);
     service = module.get<JourneyService>(JourneyService);
+
+    mockLocationRepo.create.mockImplementation((val) => val);
+    mockLocationRepo.save.mockImplementation((val) => Promise.resolve(val));
+    mockLocationLogRepo.create.mockImplementation((val) => val);
+    mockLocationLogRepo.save.mockImplementation((val) => Promise.resolve(val));
+    mockLocationRepo.upsert.mockResolvedValue({} as any);
+    mockLocationRepo.findOne.mockResolvedValue(null);
+    mockLocationCacheService.getProjectLocations.mockResolvedValue([]);
+    mockLocationCacheService.getLocationContext.mockResolvedValue(null);
+    mockLocationCacheService.setLocationContext.mockResolvedValue(undefined);
+    mockLocationCacheService.setLatestLocation.mockResolvedValue(undefined);
+    mockLocationCacheService.deleteLatestLocation.mockResolvedValue(undefined);
+    mockLocationCacheService.deleteLocationContext.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
   });
 
   describe("upsertPromoterLocation (Service Level)", () => {
@@ -120,14 +153,10 @@ describe("Location Tracking System Tests", () => {
         userId: "u1",
         lat: 24.1234,
         lng: 46.5678,
-        offlineSince: null,
       });
 
       expect(mockLocationRepo.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: "u1",
-          offlineSince: null, // should remain null
-        }),
+        expect.objectContaining({ userId: "u1", offlineSince: null }),
         ["userId"],
       );
     });
@@ -144,7 +173,6 @@ describe("Location Tracking System Tests", () => {
         userId: "u1",
         lat: 24.1234,
         lng: 46.5678,
-        offlineSince: null,
       });
 
       // offlineSince should be automatically set to the last recorded log's time
@@ -161,6 +189,90 @@ describe("Location Tracking System Tests", () => {
           offlineSince: lastRecordedTime,
         }),
       );
+    });
+
+    it("should classify locations as inside, outside, and too_far", async () => {
+      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
+      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
+      mockLocationLogRepo.findOne.mockResolvedValue(null);
+      mockJourneyRepo.findOne.mockResolvedValue({
+        projectId: "p1",
+        branch: {
+          geo: "24.7136,46.6753",
+          geofence_radius_meters: 100,
+          chain: { name: "Retail" },
+        },
+      });
+
+      const inside = await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.7136,
+        lng: 46.6753,
+      });
+      const outside = await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.7148,
+        lng: 46.6753,
+      });
+      const tooFar = await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.7165,
+        lng: 46.6753,
+      });
+
+      expect(inside.locationStatus).toBe("inside");
+      expect(outside.locationStatus).toBe("outside");
+      expect(tooFar.locationStatus).toBe("too_far");
+    });
+
+    it("should append older offline pings without replacing latest location cache", async () => {
+      const oldRecordedAt = "2026-06-26T09:00:00.000Z";
+      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
+      mockCheckInRepo.findOne.mockRejectedValue(new Error("No active journey"));
+      mockLocationLogRepo.findOne.mockResolvedValue({
+        userId: "u1",
+        recordedAt: new Date("2026-06-26T10:00:00.000Z"),
+      });
+
+      const result = await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.1234,
+        lng: 46.5678,
+        recordedAt: oldRecordedAt,
+        projectId: "p1",
+      });
+
+      expect(result.recordedAt).toBe(oldRecordedAt);
+      expect(mockLocationLogRepo.save).toHaveBeenCalled();
+      expect(mockLocationRepo.upsert).not.toHaveBeenCalled();
+      expect(mockLocationCacheService.setLatestLocation).not.toHaveBeenCalled();
+    });
+
+    it("should use cached location context to avoid user and journey lookups", async () => {
+      mockLocationCacheService.getLocationContext.mockResolvedValue({
+        userId: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+        projectId: "p1",
+        journeyId: "j1",
+        checkInId: "c1",
+        branchGeo: "24.7136,46.6753",
+        branchRadiusMeters: 100,
+        branchChainName: "Retail",
+      });
+      mockLocationLogRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.7136,
+        lng: 46.6753,
+      });
+
+      expect(result.projectId).toBe("p1");
+      expect(result.locationStatus).toBe("inside");
+      expect(mockUserRepo.findOne).not.toHaveBeenCalled();
+      expect(mockCheckInRepo.findOne).not.toHaveBeenCalled();
+      expect(mockJourneyRepo.findOne).not.toHaveBeenCalled();
     });
   });
 
@@ -206,7 +318,7 @@ describe("Location Tracking System Tests", () => {
       const req = { user: { id: "u1" } };
       const payload = { lat: 24.1, lng: 46.2 };
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
-      jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({} as any);
+      jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({ success: true } as any);
 
       const res = await gateway.createLocation(req, payload);
 
@@ -218,6 +330,84 @@ describe("Location Tracking System Tests", () => {
         }),
       );
       expect(res.success).toBe(true);
+    });
+
+    it("should POST an offline location ping with client recordedAt", async () => {
+      const req = { user: { id: "u1" } };
+      const payload = {
+        lat: 24.1,
+        lng: 46.2,
+        recordedAt: "2026-06-26T09:40:00.000Z",
+      };
+      mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
+      jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({
+        success: true,
+        userId: "u1",
+        projectId: "p1",
+        journeyId: null,
+        checkInId: null,
+        lat: 24.1,
+        lng: 46.2,
+        recordedAt: payload.recordedAt,
+        distanceMeters: null,
+        locationStatus: "inside",
+        isOutside: false,
+        message: "User is inside the branch geofence",
+      });
+
+      const res = await gateway.createLocation(req, payload);
+
+      expect(service.upsertPromoterLocation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recordedAt: payload.recordedAt,
+          projectId: "p1",
+        }),
+      );
+      expect(res.success).toBe(true);
+    });
+
+    it("should handle authenticated socket location updates", async () => {
+      const client: any = {
+        data: { user: { id: "u1" } },
+        handshake: { auth: { lang: "ar" }, headers: {} },
+      };
+      const payload = { lat: 24.1, lng: 46.2 };
+      mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
+      jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({ success: true } as any);
+
+      const res = await gateway.handleLocationUpdate(client, payload);
+
+      expect(service.upsertPromoterLocation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: "u1",
+          projectId: "p1",
+          lat: 24.1,
+          lng: 46.2,
+          lang: "ar",
+        }),
+      );
+      expect(res.event).toBe("location:updated");
+      expect(res.data.success).toBe(true);
+    });
+
+    it("should GET latest project locations through active location cache path", async () => {
+      const req = { user: { id: "u1" } };
+      const cachedItem = {
+        userId: "u1",
+        projectId: "p1",
+        lat: 24.1,
+        lng: 46.2,
+        recordedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
+      jest.spyOn(service, "getActivePromoterLocations").mockResolvedValue([cachedItem as any]);
+
+      const res = await gateway.getLocations(req, undefined, undefined, undefined, undefined, "1", "50", "30");
+
+      expect(service.getActivePromoterLocations).toHaveBeenCalledWith("p1", 30);
+      expect(res.items).toEqual([cachedItem]);
+      expect(res.total).toBe(1);
     });
 
     it("should GET paginated logs filtered by resolved requesting user's project ID", async () => {

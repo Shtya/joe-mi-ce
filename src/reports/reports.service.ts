@@ -1125,7 +1125,7 @@ export class ReportsService {
         branch: s.branch?.name || "-",
         brand: s.product?.brand?.name || "-",
         categories: s.product?.category?.name || "-",
-        product_model: s.product?.model || s.product?.name || "-",
+        product_model:s.product?.name || "-",
         price: s.price ?? "-",
         total_amount: s.total_amount ?? "-",
         quantity: s.quantity ?? "-",

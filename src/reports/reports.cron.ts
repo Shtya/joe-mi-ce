@@ -44,7 +44,7 @@ export class ReportsCron {
       const subject = "JOE MI CI Monthly Report";
       const toRecipient = "mamro@joe13th.com";
       const ccRecipients =
-        '"Abdulrahman Abdullah" <a.doma@AECKSA.COM>, "Mohammed Abdu Alhaj" <MAlhaj@aecksa.com>, "Riyad Abdullah Ali Alzahrani" <r.alzahrani@AECKSA.COM>';
+        '"Abdulrahman Abdullah" <a.doma@AECKSA.COM>, "Mohammed Abdu Alhaj" <MAlhaj@aecksa.com>, "Riyad Abdullah Ali Alzahrani" <r.alzahrani@AECKSA.COM>, "badawy" <a.badawy@aecksa.com>, "almaliki" <m.almaliki@aecksa.com>, "mohamed" <a.mohammed@aecksa.com>';
       const textBody = `Dear Team,\n\nPlease find attached the JOE MI CI Monthly Performance Report up to yesterday.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
@@ -170,7 +170,7 @@ export class ReportsCron {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Gatemea SixSeven Daily Performance Report</strong> for yesterday.</p>
-      
+
       <div class="highlights">
         <p><strong>This report includes:</strong></p>
         <ul>
@@ -178,7 +178,7 @@ export class ReportsCron {
           <li>Daily attendance records for all scheduled personnel</li>
         </ul>
       </div>
-      
+
       <p>The report is attached to this email as an Excel spreadsheet. Please review the data at your earliest convenience.</p>
       <p>Should you have any questions or require further details, please do not hesitate to reach out to the administrative team.</p>
     </div>

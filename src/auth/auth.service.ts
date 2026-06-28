@@ -793,7 +793,7 @@ export class AuthService {
       }
 
       let fileExtension = ".png";
-      const contentType = response.headers["content-type"];
+      const contentType = String(response.headers["content-type"] || "");
       if (contentType) {
         if (contentType.includes("jpeg") || contentType.includes("jpg")) {
           fileExtension = ".jpg";
