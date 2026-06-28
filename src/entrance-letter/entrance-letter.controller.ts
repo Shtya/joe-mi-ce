@@ -17,7 +17,7 @@ import { AuthGuard } from "../auth/auth.guard";
 import { Permissions } from "../../decorators/permissions.decorators";
 import { ERole } from "../../enums/Role.enum";
 
-@Controller("api/v1/entrance-letters")
+@Controller("entrance-letters")
 @UseGuards(AuthGuard)
 export class EntranceLetterController {
   constructor(private readonly entranceLetterService: EntranceLetterService) {}
