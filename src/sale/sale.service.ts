@@ -87,7 +87,6 @@ export class SaleService {
       .innerJoinAndSelect("journey.checkin", "checkin")
       .leftJoinAndSelect("journey.branch", "branch")
       .leftJoinAndSelect("branch.project", "project")
-      .leftJoinAndSelect("branch.city", "city")
       .where("journey.user.id = :userId", { userId })
       .andWhere("checkin.checkInTime IS NOT NULL")
       .orderBy("checkin.checkInTime", "DESC")
