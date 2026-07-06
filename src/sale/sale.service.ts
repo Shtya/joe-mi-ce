@@ -81,6 +81,21 @@ export class SaleService {
     };
   }
 
+  private async findLatestCheckedInJourneyByUser(userId: string) {
+    return this.saleRepo.manager
+      .createQueryBuilder(Journey, "journey")
+      .innerJoinAndSelect("journey.checkin", "checkin")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("branch.project", "project")
+      .leftJoinAndSelect("branch.city", "city")
+      .where("journey.user.id = :userId", { userId })
+      .andWhere("checkin.checkInTime IS NOT NULL")
+      .orderBy("checkin.checkInTime", "DESC")
+      .addOrderBy("journey.date", "DESC")
+      .addOrderBy("journey.created_at", "DESC")
+      .getOne();
+  }
+
   private async assertDashboardEntitiesInProject(params: {
     projectId: string;
     branchId?: string;
@@ -1179,15 +1194,9 @@ export class SaleService {
         userInfo = { id: user.id, name: user.name };
       }
 
-      // Prioritize branch from the last checked-in journey
-      const lastCheckinJourney = await this.saleRepo.manager
-        .createQueryBuilder(Journey, "journey")
-        .innerJoin("journey.checkin", "checkin")
-        .leftJoinAndSelect("journey.branch", "branch")
-        .leftJoinAndSelect("branch.project", "project")
-        .where("journey.user.id = :userId", { userId })
-        .orderBy("checkin.checkInTime", "DESC")
-        .getOne();
+      // Prioritize branch from the last actual check-in on a journey.
+      const lastCheckinJourney =
+        await this.findLatestCheckedInJourneyByUser(userId);
 
       if (lastCheckinJourney?.branch) {
         branchToUse = lastCheckinJourney.branch;
@@ -1455,15 +1464,9 @@ export class SaleService {
     // --- Last Journey Totals ---
     let last_journey_totals = { total_quantity: 0, total_sales: 0 };
     if (userId) {
-      const lastJourney = await this.saleRepo.manager
-        .createQueryBuilder(Journey, "journey")
-        .innerJoinAndSelect("journey.checkin", "checkin")
-        .innerJoinAndSelect("journey.branch", "branch")
-        .where("journey.user.id = :userId", { userId })
-        .orderBy("journey.date", "DESC")
-        .getOne();
+      const lastJourney = await this.findLatestCheckedInJourneyByUser(userId);
 
-      if (lastJourney) {
+      if (lastJourney?.branch) {
         const lastJourneyTotalsQb = this.saleRepo
           .createQueryBuilder("sale")
           .select("SUM(sale.quantity)", "totalQuantity")
