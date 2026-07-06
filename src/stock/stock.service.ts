@@ -17,7 +17,6 @@ import {
 } from "dto/stock.dto";
 import { Branch } from "entities/branch.entity";
 import { Product } from "entities/products/product.entity";
-import { Brand } from "entities/products/brand.entity";
 import { Project } from "entities/project.entity";
 import { Stock } from "entities/products/stock.entity";
 import { Brackets, In, LessThanOrEqual, Not, Repository } from "typeorm";
@@ -657,19 +656,22 @@ export class StockService {
       );
     }
 
-    // Find the brand by name within the source project to validate it exists
-    const brand = await this.productRepo.manager
-      .createQueryBuilder(Brand, "brand")
+    const matchingStocks = await this.stockRepo
+      .createQueryBuilder("stock")
+      .innerJoin("stock.product", "product")
+      .innerJoin("product.brand", "brand")
       .where("brand.name = :name", { name: brand_name })
-      .andWhere(
-        "(brand.project_id = :projectId OR brand.project_id IS NULL)",
-        { projectId: source_project_id },
-      )
-      .getOne();
+      .andWhere("product.project_id = :projectId", {
+        projectId: source_project_id,
+      })
+      .select("DISTINCT product.id", "id")
+      .getRawMany<{ id: string }>();
 
-    if (!brand) {
+    const productIds = matchingStocks.map((stock) => stock.id);
+
+    if (productIds.length === 0) {
       throw new NotFoundException(
-        `Brand with name "${brand_name}" not found in source project`,
+        `No stock found for brand "${brand_name}" in source project`,
       );
     }
 
@@ -677,10 +679,7 @@ export class StockService {
       .createQueryBuilder("product")
       .update(Product)
       .set({ project_id: target_project_id })
-      .where("product.project_id = :sourceProjectId", {
-        sourceProjectId: source_project_id,
-      })
-      .andWhere("product.brand_id = :brandId", { brandId: brand.id })
+      .where({ id: In(productIds) })
       .execute();
 
     return {
@@ -707,9 +706,7 @@ export class StockService {
       .createQueryBuilder("stock")
       .innerJoin("stock.product", "product")
       .where("product.project_id = :projectId", { projectId: project_id })
-      .andWhere(
-        "(product.name IS NULL OR TRIM(product.name) = '')",
-      )
+      .andWhere("(stock.name IS NULL OR TRIM(stock.name) = '')")
       .select("stock.id", "id")
       .getRawMany();
 
@@ -726,7 +723,7 @@ export class StockService {
     }
 
     return {
-      message: "Stocks without product name removed successfully",
+      message: "Stocks without stock name removed successfully",
       project_id,
       deleted: deletedCount,
     };

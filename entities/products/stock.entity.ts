@@ -7,6 +7,9 @@ import { Branch } from 'entities/branch.entity';
 @Entity('stocks')
 @Unique(['product', 'branch'])
 export class Stock extends CoreEntity {
+  @Column({ nullable: true })
+  name: string;
+
   @Column('int')
   quantity: number;
 
