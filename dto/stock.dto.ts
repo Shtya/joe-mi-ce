@@ -25,3 +25,23 @@ export class CreateStockForAllBranch{
 }
 
 export class UpdateStockDto extends PartialType(CreateStockDto) {}
+
+export class ChangeProjectByBrandDto {
+  @IsUUID()
+  @IsNotEmpty()
+  source_project_id: string;
+
+  @IsString()
+  @IsNotEmpty()
+  brand_name: string;
+
+  @IsUUID()
+  @IsNotEmpty()
+  target_project_id: string;
+}
+
+export class RemoveStockWithoutNameDto {
+  @IsUUID()
+  @IsNotEmpty()
+  project_id: string;
+}

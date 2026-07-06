@@ -9,12 +9,16 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { CRUD, CustomPaginatedResponse } from "common/crud.service";
 import {
+  ChangeProjectByBrandDto,
   CreateStockDto,
   CreateStockForAllBranch,
+  RemoveStockWithoutNameDto,
   UpdateStockDto,
 } from "dto/stock.dto";
 import { Branch } from "entities/branch.entity";
 import { Product } from "entities/products/product.entity";
+import { Brand } from "entities/products/brand.entity";
+import { Project } from "entities/project.entity";
 import { Stock } from "entities/products/stock.entity";
 import { Brackets, In, LessThanOrEqual, Not, Repository } from "typeorm";
 import { Sale } from "entities/products/sale.entity";
@@ -45,6 +49,7 @@ export class StockService {
     @InjectRepository(Branch) public branchRepo: Repository<Branch>,
     @InjectRepository(Sale) public saleRepo: Repository<Sale>,
     @InjectRepository(User) public userRepo: Repository<User>,
+    @InjectRepository(Project) public projectRepo: Repository<Project>,
     public readonly userService: UsersService,
   ) {}
 
@@ -624,6 +629,107 @@ export class StockService {
     await this.stockRepo.delete(id);
 
     return { message: "Stock deleted successfully" };
+  }
+
+  async changeProjectByBrand(dto: ChangeProjectByBrandDto) {
+    const { source_project_id, brand_name, target_project_id } = dto;
+
+    if (source_project_id === target_project_id) {
+      throw new BadRequestException(
+        "Source and target project IDs must be different",
+      );
+    }
+
+    const [sourceProject, targetProject] = await Promise.all([
+      this.projectRepo.findOne({ where: { id: source_project_id } }),
+      this.projectRepo.findOne({ where: { id: target_project_id } }),
+    ]);
+
+    if (!sourceProject) {
+      throw new NotFoundException(
+        `Source project with ID ${source_project_id} not found`,
+      );
+    }
+
+    if (!targetProject) {
+      throw new NotFoundException(
+        `Target project with ID ${target_project_id} not found`,
+      );
+    }
+
+    // Find the brand by name within the source project to validate it exists
+    const brand = await this.productRepo.manager
+      .createQueryBuilder(Brand, "brand")
+      .where("brand.name = :name", { name: brand_name })
+      .andWhere(
+        "(brand.project_id = :projectId OR brand.project_id IS NULL)",
+        { projectId: source_project_id },
+      )
+      .getOne();
+
+    if (!brand) {
+      throw new NotFoundException(
+        `Brand with name "${brand_name}" not found in source project`,
+      );
+    }
+
+    const updateResult = await this.productRepo
+      .createQueryBuilder("product")
+      .update(Product)
+      .set({ project_id: target_project_id })
+      .where("product.project_id = :sourceProjectId", {
+        sourceProjectId: source_project_id,
+      })
+      .andWhere("product.brand_id = :brandId", { brandId: brand.id })
+      .execute();
+
+    return {
+      message: "Project IDs updated successfully",
+      brand_name,
+      source_project_id,
+      target_project_id,
+      affected: updateResult.affected || 0,
+    };
+  }
+
+  async removeStocksWithoutName(dto: RemoveStockWithoutNameDto) {
+    const { project_id } = dto;
+
+    const project = await this.projectRepo.findOne({
+      where: { id: project_id },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${project_id} not found`);
+    }
+
+    const stocksToDelete = await this.stockRepo
+      .createQueryBuilder("stock")
+      .innerJoin("stock.product", "product")
+      .where("product.project_id = :projectId", { projectId: project_id })
+      .andWhere(
+        "(product.name IS NULL OR TRIM(product.name) = '')",
+      )
+      .select("stock.id", "id")
+      .getRawMany();
+
+    const stockIds = stocksToDelete.map((row) => row.id);
+    let deletedCount = 0;
+
+    if (stockIds.length > 0) {
+      const deleteResult = await this.stockRepo
+        .createQueryBuilder("stock")
+        .delete()
+        .whereInIds(stockIds)
+        .execute();
+      deletedCount = deleteResult.affected || 0;
+    }
+
+    return {
+      message: "Stocks without product name removed successfully",
+      project_id,
+      deleted: deletedCount,
+    };
   }
 
   // stock.service.ts

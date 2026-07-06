@@ -16,8 +16,10 @@ import {
 } from "@nestjs/common";
 import { StockService } from "./stock.service";
 import {
+  ChangeProjectByBrandDto,
   CreateStockDto,
   CreateStockForAllBranch,
+  RemoveStockWithoutNameDto,
   UpdateStockDto,
 } from "dto/stock.dto";
 import { AuthGuard } from "src/auth/auth.guard";
@@ -277,6 +279,18 @@ export class StockController {
   @Permissions(EPermission.STOCK_UPDATE)
   async deleteStock(@Param("id") id: string) {
     return this.stockService.deleteStock(id);
+  }
+
+  @Post("change-project-by-brand")
+  @Permissions(EPermission.STOCK_UPDATE)
+  async changeProjectByBrand(@Body() dto: ChangeProjectByBrandDto) {
+    return this.stockService.changeProjectByBrand(dto);
+  }
+
+  @Post("remove-without-name")
+  @Permissions(EPermission.STOCK_UPDATE)
+  async removeStocksWithoutName(@Body() dto: RemoveStockWithoutNameDto) {
+    return this.stockService.removeStocksWithoutName(dto);
   }
 
   @Get("product/:productId")
