@@ -706,7 +706,9 @@ export class StockService {
       .createQueryBuilder("stock")
       .innerJoin("stock.product", "product")
       .where("product.project_id = :projectId", { projectId: project_id })
-      .andWhere("(stock.name IS NULL OR TRIM(stock.name) = '')")
+      .andWhere(
+        "(product.name IS NULL OR TRIM(product.name) = '')",
+      )
       .select("stock.id", "id")
       .getRawMany();
 
@@ -723,7 +725,7 @@ export class StockService {
     }
 
     return {
-      message: "Stocks without stock name removed successfully",
+      message: "Stocks without product name removed successfully",
       project_id,
       deleted: deletedCount,
     };

@@ -365,6 +365,86 @@ export class ReportsController {
     }
   }
 
+  @Get("dreame-email/:email")
+  async sendDreameReportEmail(
+    @Param("email") email: string,
+    @Res() res: Response,
+  ) {
+    try {
+      const filePath = await this.reportsService.generateDreameMonthlyReport();
+      if (!filePath) {
+        return res.status(404).json({
+          success: false,
+          message: "Report generation failed",
+        });
+      }
+      const filename = path.basename(filePath);
+      const subject = "Dreame Monthly Performance Report";
+      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report (Sales by Model and Sales Detail) up to yesterday.\n\nBest regards,\nSystem Operations`;
+      const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+    .header { background-color: #1F4E78; color: #ffffff; padding: 30px 20px; text-align: center; }
+    .header h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 1px; }
+    .subheader { font-size: 14px; opacity: 0.8; margin-top: 5px; }
+    .content { padding: 30px; color: #333333; line-height: 1.6; }
+    .content p { margin: 0 0 15px; }
+    .footer { background-color: #f1f1f1; color: #888888; text-align: center; padding: 20px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>DREAME MONTHLY REPORT</h1>
+      <div class="subheader">System Operations</div>
+    </div>
+    <div class="content">
+      <p>Dear Team,</p>
+      <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the current month up to yesterday.</p>
+      <p>The report contains the <strong>Sales by Model</strong> and <strong>Sales Detail</strong> sheets, filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+      <p>The report is attached to this email as an Excel spreadsheet.</p>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} System Operations. All rights reserved.<br>
+      This is an automated message.
+    </div>
+  </div>
+</body>
+</html>`;
+
+      const emailSent = await this.mailService.sendReportEmail(
+        filePath,
+        filename,
+        email,
+        subject,
+        textBody,
+        emailHtml,
+      );
+
+      if (emailSent) {
+        return res.status(200).json({
+          success: true,
+          message: `Dreame monthly report email sent successfully to ${email}`,
+        });
+      } else {
+        return res.status(500).json({
+          success: false,
+          message: "Failed to send Dreame monthly report email. Check server logs.",
+        });
+      }
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Error sending Dreame monthly report email",
+        error: error.message,
+      });
+    }
+  }
+
   @Get("gatemea-email/:date/:email")
   async sendTestGatemeaEmailByDate(
     @Param("date") date: string,
