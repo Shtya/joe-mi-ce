@@ -301,7 +301,7 @@ export class ReportsController {
       }
       const filename = path.basename(filePath);
       const subject = `Dreame Monthly Performance Report - ${date}`;
-      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report for ${date}.\n\nBest regards,\nSystem Operations`;
+      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report (full Taqnia format, sales data filtered for Dreame) for ${date}.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
 <html>
@@ -326,7 +326,7 @@ export class ReportsController {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the period ending ${date}.</p>
-      <p>The report contains the <strong>Sales by Model</strong> and <strong>Sales Detail</strong> sheets, filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+      <p>The report follows the full <strong>Taqnia monthly report</strong> format (Attendance, MG Attendance, SAR Entries, Check-in - Check-out, Overtime, Sales by Model, Sales Detail) with sales data filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
     </div>
     <div class="footer">
       &copy; ${new Date().getFullYear()} System Operations. All rights reserved.<br>
@@ -380,7 +380,7 @@ export class ReportsController {
       }
       const filename = path.basename(filePath);
       const subject = "Dreame Monthly Performance Report";
-      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report (Sales by Model and Sales Detail) up to yesterday.\n\nBest regards,\nSystem Operations`;
+      const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report (full Taqnia format, sales data filtered for Dreame) up to yesterday.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
 <html>
@@ -405,7 +405,7 @@ export class ReportsController {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the current month up to yesterday.</p>
-      <p>The report contains the <strong>Sales by Model</strong> and <strong>Sales Detail</strong> sheets, filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+      <p>The report follows the full <strong>Taqnia monthly report</strong> format (Attendance, MG Attendance, SAR Entries, Check-in - Check-out, Overtime, Sales by Model, Sales Detail) with sales data filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
       <p>The report is attached to this email as an Excel spreadsheet.</p>
     </div>
     <div class="footer">
