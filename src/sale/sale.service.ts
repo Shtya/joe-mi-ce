@@ -209,8 +209,9 @@ export class SaleService {
       branch,
       userId: dto.userId,
       productId: dto.productId,
-
       branchId: dto.branchId,
+      sale_date: (dto as any).date ? new Date((dto as any).date) : undefined,
+      created_at: (dto as any).date ? new Date((dto as any).date) : undefined,
     });
 
     const savedSale = await this.saleRepo.save(sale);

@@ -1,5 +1,5 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { IsNotEmpty, IsNumber, Min, IsEnum, IsUUID, IsOptional, IsBoolean } from 'class-validator';
+import { IsNotEmpty, IsNumber, Min, IsEnum, IsUUID, IsOptional, IsBoolean, IsDateString } from 'class-validator';
 
 export class CreateSaleDto {
   @IsNumber()
@@ -29,7 +29,11 @@ export class CreateSaleDto {
 
 export class UpdateSaleDto extends PartialType(CreateSaleDto) {}
 
-export class CreateSaleForDashboardDto extends CreateSaleDto {}
+export class CreateSaleForDashboardDto extends CreateSaleDto {
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+}
 
 export class UpdateSaleForDashboardDto extends PartialType(
   CreateSaleForDashboardDto,
