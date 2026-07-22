@@ -32,6 +32,11 @@ export class SaleService {
     const unitPrice = Number(sale.price ?? sale.product?.price ?? 0);
     const quantity = Number(sale.quantity ?? 0);
     const discount = Number(sale.product?.discount ?? 0);
+    const saleDateStr = sale.sale_date
+      ? sale.sale_date instanceof Date
+        ? sale.sale_date.toISOString().split("T")[0]
+        : String(sale.sale_date).split("T")[0]
+      : null;
 
     return {
       id: sale.id,
@@ -40,6 +45,7 @@ export class SaleService {
       total_amount: Number(sale.total_amount ?? 0),
       status: sale.status,
       sale_date: sale.sale_date,
+      date: saleDateStr,
       isFromOrigin: sale.isFromOrigin,
       created_at: sale.created_at,
       updated_at: sale.updated_at,
@@ -197,6 +203,15 @@ export class SaleService {
     const discount = product.discount ?? 0;
     const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
 
+    let targetDate: Date | undefined;
+    if ((dto as any).date) {
+      const d = (dto as any).date;
+      targetDate =
+        typeof d === "string" && !d.includes("T")
+          ? new Date(`${d}T12:00:00.000+03:00`)
+          : new Date(d);
+    }
+
     // Create sale
     const sale = this.saleRepo.create({
       projectId: branch.project.id,
@@ -210,11 +225,21 @@ export class SaleService {
       userId: dto.userId,
       productId: dto.productId,
       branchId: dto.branchId,
-      sale_date: (dto as any).date ? new Date((dto as any).date) : undefined,
-      created_at: (dto as any).date ? new Date((dto as any).date) : undefined,
+      isFromOrigin: dto.isFromOrigin ?? false,
+      sale_date: targetDate,
+      created_at: targetDate,
     });
 
     const savedSale = await this.saleRepo.save(sale);
+
+    if (targetDate) {
+      await this.saleRepo.update(savedSale.id, {
+        sale_date: targetDate,
+        created_at: targetDate,
+      });
+      savedSale.sale_date = targetDate;
+      savedSale.created_at = targetDate;
+    }
 
     // Update sales target progress
     await this.updateSalesTargetProgress(branch.id, totalAmount);
@@ -223,6 +248,9 @@ export class SaleService {
   }
 
   async createForDashboard(dto: CreateSaleDto) {
+    if (dto.isFromOrigin === undefined) {
+      dto.isFromOrigin = true;
+    }
     const createdSale = await this.create(dto);
     const sale = await this.findSaleForDashboard(createdSale.id);
     return this.formatDashboardSale(sale);
@@ -235,6 +263,10 @@ export class SaleService {
       userId: dto.userId,
       productId: dto.productId,
     });
+
+    if (dto.isFromOrigin === undefined) {
+      dto.isFromOrigin = true;
+    }
 
     const createdSale = await this.create(dto);
     const sale = await this.findSaleForDashboard(createdSale.id);
@@ -319,8 +351,26 @@ export class SaleService {
     if (dto.quantity !== undefined) sale.quantity = dto.quantity;
     if (dto.status !== undefined) sale.status = dto.status;
 
+    let targetDate: Date | undefined;
+    if ((dto as any).date) {
+      const d = (dto as any).date;
+      targetDate =
+        typeof d === "string" && !d.includes("T")
+          ? new Date(`${d}T12:00:00.000+03:00`)
+          : new Date(d);
+      sale.sale_date = targetDate;
+      sale.created_at = targetDate;
+    }
+
     sale.total_amount = newTotalAmount;
     await this.saleRepo.save(sale);
+
+    if (targetDate) {
+      await this.saleRepo.update(id, {
+        sale_date: targetDate,
+        created_at: targetDate,
+      });
+    }
 
     // Update sales target progress if amount changed
     if (amountAdjustment !== 0) {

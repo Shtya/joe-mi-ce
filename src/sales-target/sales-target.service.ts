@@ -315,7 +315,7 @@ export class SalesTargetService {
       .select("COALESCE(SUM(sale.total_amount), 0)", "currentAmount")
       .addSelect("COALESCE(SUM(sale.quantity), 0)", "currentQuantity")
       .addSelect("COUNT(DISTINCT product.brand_id)", "currentBrands")
-      .where("sale.branch_id = :branchId", { branchId: target.branch.id })
+      .where("sale.branchId = :branchId", { branchId: target.branch.id })
       .andWhere("DATE(sale.sale_date) BETWEEN :startDate AND :endDate", {
         startDate: target.startDate,
         endDate: target.endDate,
