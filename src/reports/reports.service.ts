@@ -569,14 +569,40 @@ export class ReportsService {
       const userSales = salesByUser[user.id] || [];
       const userVacationDates = vacationsByUser[user.id] || new Set<string>();
 
-      let effectiveBranch = user.branch;
-      if (!effectiveBranch && userJourneys.length > 0) {
-        const sorted = [...userJourneys].sort((a, b) =>
-          b.date.localeCompare(a.date),
+      let effectiveBranch: any = null;
+      if (userJourneys.length > 0) {
+        const sortedJourneys = [...userJourneys].sort((a, b) => {
+          const dateCompare = b.date.localeCompare(a.date);
+          if (dateCompare !== 0) return dateCompare;
+          const timeA = a.checkin?.checkInTime
+            ? dayjs(a.checkin.checkInTime).valueOf()
+            : 0;
+          const timeB = b.checkin?.checkInTime
+            ? dayjs(b.checkin.checkInTime).valueOf()
+            : 0;
+          return timeB - timeA;
+        });
+
+        const lastCheckinWithBranch = sortedJourneys.find(
+          (j) => j.checkin && j.branch,
         );
-        const lastWithBranch = sorted.find((j) => j.branch);
-        if (lastWithBranch) {
-          effectiveBranch = lastWithBranch.branch;
+        const lastWithBranch = sortedJourneys.find((j) => j.branch);
+
+        effectiveBranch =
+          lastCheckinWithBranch?.branch || lastWithBranch?.branch || null;
+      }
+
+      if (!effectiveBranch) {
+        effectiveBranch = user.branch;
+      }
+
+      if (!effectiveBranch && userSales.length > 0) {
+        const sortedSales = [...userSales].sort((a, b) =>
+          dayjs(b.sale_date).diff(dayjs(a.sale_date)),
+        );
+        const lastSaleWithBranch = sortedSales.find((s) => s.branch);
+        if (lastSaleWithBranch) {
+          effectiveBranch = lastSaleWithBranch.branch;
         }
       }
 
