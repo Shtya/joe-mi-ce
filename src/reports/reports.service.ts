@@ -751,11 +751,9 @@ export class ReportsService {
 
         if (i <= daysInMonthForSales) {
           const daySales = userSales.filter((s) => {
+            if (isRoaming(s.branch?.chain?.name)) return false;
             const sd = dayjs(s.sale_date).tz("Asia/Riyadh");
-            const rd =
-              sd.hour() < 8
-                ? sd.subtract(1, "day").format("YYYY-MM-DD")
-                : sd.format("YYYY-MM-DD");
+            const rd = sd.format("YYYY-MM-DD");
             return rd === currentDateStr;
           });
           const dailySalesTotal = daySales.reduce(
@@ -1035,10 +1033,8 @@ export class ReportsService {
       if (isRoaming(s.branch?.chain?.name)) return;
 
       const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
-      const reportingDay =
-        saleDate.hour() < 8 ? saleDate.subtract(1, "day") : saleDate;
-      const dayOfMonth = reportingDay.date();
-      const reportingDayStr = reportingDay.format("YYYY-MM-DD");
+      const dayOfMonth = saleDate.date();
+      const reportingDayStr = saleDate.format("YYYY-MM-DD");
 
       // Only include sales that belong to the current report month
       if (!reportingDayStr.startsWith(currentMonthPrefix)) return;
@@ -1124,7 +1120,7 @@ export class ReportsService {
       if (!isPromoter(s.user)) return;
       if (isRoaming(s.branch?.chain?.name)) return;
 
-      const saleDate = dayjs(s.sale_date);
+      const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
 
       salesDetailSheet.addRow({
         user_name: s.user?.name || "-",
@@ -1175,11 +1171,7 @@ export class ReportsService {
       if (!promotersMap.has(s.user.id)) return;
 
       const saleDate = dayjs(s.sale_date).tz("Asia/Riyadh");
-      // Reporting Day: 8 AM Today to 5 AM Tomorrow (using 8 AM as full cutoff)
-      const reportingDay =
-        saleDate.hour() < 8
-          ? saleDate.subtract(1, "day").format("YYYY-MM-DD")
-          : saleDate.format("YYYY-MM-DD");
+      const reportingDay = saleDate.format("YYYY-MM-DD");
 
       // Only include sales that belong to the current report month
       if (!reportingDay.startsWith(currentMonthPrefix)) return;
