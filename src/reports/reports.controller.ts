@@ -258,6 +258,23 @@ export class ReportsController {
     }
   }
 
+  @Get("send-dreame-report-now")
+  async sendDreameReportNow(@Res() res: Response) {
+    try {
+      await this.reportsCron.handleDreameMonthlyReportCron();
+      return res.status(200).json({
+        success: true,
+        message: "Dreame monthly report generated and sent immediately to designated TO and CC recipients",
+      });
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        message: "Failed to send Dreame monthly report immediately",
+        error: error.message,
+      });
+    }
+  }
+
   @Get("dreame-download")
   async downloadDreameReport(
     @Query("date") date: string,

@@ -250,7 +250,9 @@ export class ReportsCron {
 
       const filename = path.basename(filePath);
       const subject = "Dreame Monthly Performance Report";
-      const toRecipient = "R.alzahrani@aecksa.com";
+      const toRecipient = "R.alzahrani@aecksa.com, MAlhaj@aecksa.com";
+      const ccRecipients =
+        "m.albloshi@AECKSA.COM, a.doma@aecksa.com, r.alzahrani@AECKSA.COM, ahmadsaade@dreame.tech, gaurav@dreame.tech";
       const textBody = `Dear Team,\n\nPlease find attached the Dreame Monthly Performance Report (full Taqnia format, sales data filtered for Dreame) up to yesterday.\n\nBest regards,\nSystem Operations`;
       const emailHtml = `
 <!DOCTYPE html>
@@ -294,6 +296,7 @@ export class ReportsCron {
         subject,
         textBody,
         emailHtml,
+        ccRecipients,
       );
 
       if (emailSent) {
