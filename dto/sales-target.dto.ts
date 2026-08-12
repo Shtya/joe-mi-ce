@@ -43,8 +43,9 @@
     targetBrands?: number;
 
     @IsOptional()
-    @IsUUID()
-    brandId?: string;
+    @IsArray()
+    @IsUUID('4', { each: true })
+    brandIds?: string[];
 
     @IsOptional()
     @IsEnum(SalesTargetMetricType)
@@ -63,18 +64,19 @@
     @IsOptional()
     @IsBoolean()
     autoRenew?: boolean;
-  @ValidateIf(dto => !dto.branchId)
-  @IsArray()
-  @ArrayNotEmpty()
-  @IsUUID('4', { each: true })
-  branchIds?: string[];
 
-  // ✅ branchId required ONLY if branchIds is missing
-  @ValidateIf(dto => !dto.branchId)
-  @IsArray()
-  @ArrayNotEmpty()
-  @IsUUID('4', { each: true })
-  branchId?: string[];
+    @ValidateIf(dto => !dto.branchId)
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsUUID('4', { each: true })
+    branchIds?: string[];
+
+    // ✅ branchId required ONLY if branchIds is missing
+    @ValidateIf(dto => !dto.branchId)
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsUUID('4', { each: true })
+    branchId?: string[];
   }
 
   export class UpdateSalesTargetDto {
@@ -99,8 +101,9 @@
     targetBrands?: number;
 
     @IsOptional()
-    @IsUUID()
-    brandId?: string;
+    @IsArray()
+    @IsUUID('4', { each: true })
+    brandIds?: string[];
 
     @IsOptional()
     @IsEnum(SalesTargetMetricType)

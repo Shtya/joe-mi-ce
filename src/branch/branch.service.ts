@@ -204,7 +204,7 @@ export class BranchService {
         targetQuantity: 0,
         targetBrands: 0,
         metricType: SalesTargetMetricType.AMOUNT,
-        brand: null,
+        brands: [],
         autoRenew: savedBranch.autoCreateSalesTargets,
         project: savedBranch.project,
       });
@@ -1029,7 +1029,7 @@ export class BranchService {
           this.getEndDateForPeriod(branch.salesTargetType),
         autoRenew: true,
         branch: branch,
-        brand: null,
+        brands: [],
         createdBy: requester,
         project: branch.project,
       });
@@ -1073,7 +1073,7 @@ export class BranchService {
         endDate: endDate,
         autoRenew: true,
         branch: branch,
-        brand: null,
+        brands: [],
         createdBy: requester,
       });
 

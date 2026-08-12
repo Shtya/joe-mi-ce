@@ -24,6 +24,9 @@ import {
 import { Branch } from "../../entities/branch.entity";
 import { Sale } from "entities/products/sale.entity";
 import { Brand } from "entities/products/brand.entity";
+import { Journey } from "entities/all_plans.entity";
+import { User } from "entities/user.entity";
+import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
 import {
   CreateSalesTargetDto,
   UpdateSalesTargetDto,
@@ -43,6 +46,8 @@ export class SalesTargetService {
     private readonly saleRepository: Repository<Sale>,
     @InjectRepository(Brand)
     private readonly brandRepository: Repository<Brand>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
   ) {}
   private getMonthPeriod(date: Date = new Date()) {
     const startDate = new Date(date.getFullYear(), date.getMonth(), 1);
@@ -96,18 +101,21 @@ export class SalesTargetService {
     const salesTargets: SalesTarget[] = [];
 
     for (const branch of branches) {
-      let brand: Brand | null = null;
-      if (createDto.brandId) {
-        brand = await this.brandRepository.findOne({
+      let brands: Brand[] = [];
+      const brandIds = createDto.brandIds?.length ? createDto.brandIds : [];
+      if (brandIds.length) {
+        brands = await this.brandRepository.find({
           where: {
-            id: createDto.brandId,
+            id: In(brandIds),
             project: { id: branch.project.id },
           },
         });
 
-        if (!brand) {
+        if (brands.length !== brandIds.length) {
+          const foundIds = brands.map((b) => b.id);
+          const missingIds = brandIds.filter((id) => !foundIds.includes(id));
           throw new NotFoundException(
-            `Brand ${createDto.brandId} not found in branch project`,
+            `Brands not found in branch project: ${missingIds.join(", ")}`,
           );
         }
       }
@@ -163,7 +171,7 @@ export class SalesTargetService {
         type: targetType,
         branch,
         project: branch.project,
-        brand,
+        brands,
         createdBy: createdBy ? { id: createdBy } : null,
       });
 
@@ -190,7 +198,7 @@ export class SalesTargetService {
 
     return await this.salesTargetRepository.find({
       where,
-      relations: ["branch", "branch.supervisor", "createdBy", "brand"],
+      relations: ["branch", "branch.supervisor", "createdBy", "brands"],
       order: { startDate: "DESC" },
     });
   }
@@ -198,7 +206,7 @@ export class SalesTargetService {
   async findOne(id: string): Promise<SalesTarget> {
     const salesTarget = await this.salesTargetRepository.findOne({
       where: { id },
-      relations: ["branch", "branch.supervisor", "createdBy", "brand"],
+      relations: ["branch", "branch.supervisor", "createdBy", "brands"],
     });
 
     if (!salesTarget) {
@@ -220,7 +228,7 @@ export class SalesTargetService {
 
     return await this.salesTargetRepository.find({
       where,
-      relations: ["createdBy", "brand"],
+      relations: ["createdBy", "brands"],
       order: { startDate: "DESC" },
     });
   }
@@ -235,7 +243,7 @@ export class SalesTargetService {
         endDate: MoreThanOrEqual(today as any),
         status: SalesTargetStatus.ACTIVE,
       },
-      relations: ["branch", "createdBy", "brand"],
+      relations: ["branch", "createdBy", "brands"],
     });
   }
   async update(
@@ -244,7 +252,33 @@ export class SalesTargetService {
   ): Promise<SalesTarget> {
     const salesTarget = await this.findOne(id);
 
-    Object.assign(salesTarget, updateDto);
+    if (updateDto.brandIds !== undefined) {
+      if (updateDto.brandIds.length) {
+        const brands = await this.brandRepository.find({
+          where: {
+            id: In(updateDto.brandIds),
+            project: { id: salesTarget.branch.project.id },
+          },
+        });
+
+        if (brands.length !== updateDto.brandIds.length) {
+          const foundIds = brands.map((b) => b.id);
+          const missingIds = updateDto.brandIds.filter(
+            (id) => !foundIds.includes(id),
+          );
+          throw new NotFoundException(
+            `Brands not found in branch project: ${missingIds.join(", ")}`,
+          );
+        }
+
+        salesTarget.brands = brands;
+      } else {
+        salesTarget.brands = [];
+      }
+    }
+
+    const { brandIds, ...rest } = updateDto;
+    Object.assign(salesTarget, rest);
     salesTarget.updateStatus();
 
     return await this.salesTargetRepository.save(salesTarget);
@@ -295,7 +329,7 @@ export class SalesTargetService {
       autoRenew: branch.autoCreateSalesTargets,
       status: SalesTargetStatus.ACTIVE,
       currentAmount: 0,
-      brand: null,
+      brands: [],
     });
 
     return await this.salesTargetRepository.save(newTarget);
@@ -309,6 +343,8 @@ export class SalesTargetService {
     quantityProgress: number;
     brandsProgress: number;
   }> {
+    const brandIds = target.brands?.map((brand) => brand.id) || [];
+
     const salesAgg = this.saleRepository
       .createQueryBuilder("sale")
       .leftJoin("sale.product", "product")
@@ -321,10 +357,8 @@ export class SalesTargetService {
         endDate: target.endDate,
       });
 
-    if (target.brand?.id) {
-      salesAgg.andWhere("product.brand_id = :brandId", {
-        brandId: target.brand.id,
-      });
+    if (brandIds.length) {
+      salesAgg.andWhere("product.brand_id IN (:...brandIds)", { brandIds });
     }
 
     const salesRaw = await salesAgg.getRawOne();
@@ -346,6 +380,185 @@ export class SalesTargetService {
       brandsProgress: target.targetBrands
         ? (currentBrands / Number(target.targetBrands)) * 100
         : 0,
+    };
+  }
+
+  async getMyTarget(userId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ["branch", "branch.project", "assignedBrands"],
+    });
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    // Resolve the branch from the user's last check-in, fall back to assigned branch
+    const lastCheckedInJourney = await this.saleRepository.manager
+      .createQueryBuilder(Journey, "journey")
+      .innerJoinAndSelect("journey.checkin", "checkin")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .where("journey.user.id = :userId", { userId })
+      .andWhere("checkin.checkInTime IS NOT NULL")
+      .orderBy("checkin.checkInTime", "DESC")
+      .addOrderBy("journey.date", "DESC")
+      .addOrderBy("journey.created_at", "DESC")
+      .getOne();
+
+    const branch = lastCheckedInJourney?.branch ?? user.branch;
+
+    if (!branch) {
+      throw new NotFoundException(
+        "User has no check-ins and is not assigned to a branch",
+      );
+    }
+
+    const target = await this.getCurrentTarget(branch.id);
+
+    if (!target) {
+      return {
+        target: null,
+        summary: null,
+        brandsBreakdown: [],
+      };
+    }
+
+    // Determine which brands the user is allowed to see
+    const isCustomMode =
+      user.brandAssignmentMode === BrandAssignmentMode.CUSTOM;
+    const assignedBrandIds = isCustomMode
+      ? (user.assignedBrands || []).map((b) => b.id)
+      : [];
+
+    const targetBrandIds = (target.brands || []).map((b) => b.id);
+
+    // In custom mode, only show assigned brands that are part of the target.
+    // In ALL mode, show all target brands (or all sales if target has no brands).
+    const relevantBrandIds = isCustomMode
+      ? targetBrandIds.filter((id) => assignedBrandIds.includes(id))
+      : targetBrandIds;
+
+    // If the target has no brands and the user is not restricted, do not filter by brand.
+    const shouldFilterByBrands =
+      isCustomMode || relevantBrandIds.length > 0 || targetBrandIds.length > 0;
+    const hasRelevantBrands = relevantBrandIds.length > 0;
+
+    let totalAchievedAmount = 0;
+    let totalAchievedQuantity = 0;
+    let brandsBreakdown: any[] = [];
+
+    if (!shouldFilterByBrands || hasRelevantBrands) {
+      // Total achievement for the relevant brands
+      const totalAgg = this.saleRepository
+        .createQueryBuilder("sale")
+        .leftJoin("sale.product", "product")
+        .select("COALESCE(SUM(sale.total_amount), 0)", "amount")
+        .addSelect("COALESCE(SUM(sale.quantity), 0)", "quantity")
+        .where("sale.branchId = :branchId", { branchId: target.branch.id })
+        .andWhere("DATE(sale.sale_date) BETWEEN :startDate AND :endDate", {
+          startDate: target.startDate,
+          endDate: target.endDate,
+        });
+
+      if (shouldFilterByBrands) {
+        totalAgg.andWhere("product.brand_id IN (:...relevantBrandIds)", {
+          relevantBrandIds,
+        });
+      }
+
+      const totalRaw = await totalAgg.getRawOne();
+      totalAchievedAmount = Number(totalRaw?.amount) || 0;
+      totalAchievedQuantity = Number(totalRaw?.quantity) || 0;
+
+      // Per-brand achievement breakdown
+      if (hasRelevantBrands) {
+        const perBrandAgg = this.saleRepository
+          .createQueryBuilder("sale")
+          .leftJoin("sale.product", "product")
+          .leftJoin("product.brand", "brand")
+          .select("brand.id", "brandId")
+          .addSelect("brand.name", "brandName")
+          .addSelect("COALESCE(SUM(sale.total_amount), 0)", "achievedAmount")
+          .addSelect("COALESCE(SUM(sale.quantity), 0)", "achievedQuantity")
+          .where("sale.branchId = :branchId", { branchId: target.branch.id })
+          .andWhere("DATE(sale.sale_date) BETWEEN :startDate AND :endDate", {
+            startDate: target.startDate,
+            endDate: target.endDate,
+          })
+          .andWhere("product.brand_id IN (:...relevantBrandIds)", {
+            relevantBrandIds,
+          })
+          .groupBy("brand.id")
+          .addGroupBy("brand.name")
+          .orderBy("SUM(sale.total_amount)", "DESC");
+
+        const perBrandRaw = await perBrandAgg.getRawMany();
+        brandsBreakdown = perBrandRaw.map((row) => ({
+          brand: {
+            id: row.brandId,
+            name: row.brandName,
+          },
+          achievedAmount: Number(row.achievedAmount) || 0,
+          achievedQuantity: Number(row.achievedQuantity) || 0,
+        }));
+      }
+    }
+
+    // Include target brands that have no sales yet with zero achievement
+    const brandIdsWithSales = new Set(brandsBreakdown.map((b) => b.brand.id));
+    for (const brand of target.brands || []) {
+      if (
+        relevantBrandIds.includes(brand.id) &&
+        !brandIdsWithSales.has(brand.id)
+      ) {
+        brandsBreakdown.push({
+          brand: {
+            id: brand.id,
+            name: brand.name,
+          },
+          achievedAmount: 0,
+          achievedQuantity: 0,
+        });
+      }
+    }
+
+    const targetAmount = Number(target.targetAmount) || 0;
+    const targetQuantity = Number(target.targetQuantity) || 0;
+
+    return {
+      target: {
+        id: target.id,
+        name: target.name,
+        description: target.description,
+        type: target.type,
+        metricType: target.metricType,
+        status: target.status,
+        startDate: target.startDate,
+        endDate: target.endDate,
+        targetAmount,
+        targetQuantity,
+        targetBrands: Number(target.targetBrands) || 0,
+        branch: target.branch
+          ? { id: target.branch.id, name: target.branch.name }
+          : null,
+        brands: (target.brands || []).map((b) => ({ id: b.id, name: b.name })),
+      },
+      summary: {
+        totalTargetAmount: targetAmount,
+        totalAchievedAmount,
+        totalTargetQuantity: targetQuantity,
+        totalAchievedQuantity,
+        amountProgressPercentage: targetAmount
+          ? (totalAchievedAmount / targetAmount) * 100
+          : 0,
+        quantityProgressPercentage: targetQuantity
+          ? (totalAchievedQuantity / targetQuantity) * 100
+          : 0,
+        achievedBrandsCount: brandsBreakdown.filter(
+          (b) => b.achievedAmount > 0,
+        ).length,
+      },
+      brandsBreakdown,
     };
   }
 

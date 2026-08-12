@@ -3,6 +3,8 @@ import {
     Entity, 
     Column, 
     ManyToOne, 
+    ManyToMany, 
+    JoinTable, 
     CreateDateColumn, 
     UpdateDateColumn,
     Index 
@@ -88,8 +90,13 @@ import {
     @ManyToOne(() => Project, { nullable: true })
     project: Project;
 
-    @ManyToOne(() => Brand, { nullable: true, eager: true })
-    brand: Brand | null;
+    @ManyToMany(() => Brand, { eager: true })
+    @JoinTable({
+      name: 'sales_target_brands',
+      joinColumn: { name: 'sales_target_id', referencedColumnName: 'id' },
+      inverseJoinColumn: { name: 'brand_id', referencedColumnName: 'id' },
+    })
+    brands: Brand[];
 
     @ManyToOne(() => User, { nullable: true })
     createdBy: User;

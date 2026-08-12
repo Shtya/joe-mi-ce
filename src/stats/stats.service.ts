@@ -209,8 +209,8 @@ export class ProjectStatsService {
         return {
           branchId: t.branch.id,
           branchName: t.branch.name,
-          brandId: t.brand?.id || null,
-          brandName: t.brand?.name || null,
+          brandId: t.brands?.map((b) => b.id).join(", ") || null,
+          brandName: t.brands?.map((b) => b.name).join(", ") || null,
           type: t.type,
           metricType: t.metricType,
           targetAmount: Number(t.targetAmount) || 0,

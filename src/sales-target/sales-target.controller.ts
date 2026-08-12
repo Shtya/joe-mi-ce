@@ -73,6 +73,7 @@ export class SalesTargetController {
         "branch",
         "branch.supervisor",
         "createdBy",
+        "brands",
         "branch.team",
         "branch.team.role",
       ],
@@ -181,6 +182,12 @@ export class SalesTargetController {
   ): Promise<SalesTarget | null> {
     return await this.salesTargetService.getCurrentTarget(branchId);
   }
+
+  @Get("my-target")
+  async getMyTarget(@Req() req: any) {
+    return await this.salesTargetService.getMyTarget(req.user.id);
+  }
+
   @Get("upcoming-expirations")
   async getUpcomingExpirations(
     @Query("days", new DefaultValuePipe(7), ParseIntPipe) days: number,

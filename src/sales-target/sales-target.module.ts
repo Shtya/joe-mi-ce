@@ -10,7 +10,7 @@ import { User } from "entities/user.entity";
 import { UsersService } from "src/users/users.service";
 import { Project } from "entities/project.entity";
 import { JourneyModule } from "../journey/journey.module";
-import { CheckIn } from "entities/all_plans.entity";
+import { CheckIn, Journey } from "entities/all_plans.entity";
 import { Sale } from "entities/products/sale.entity";
 import { Brand } from "entities/products/brand.entity";
 
@@ -22,6 +22,7 @@ import { Brand } from "entities/products/brand.entity";
       User,
       Project,
       CheckIn,
+      Journey,
       Sale,
       Brand,
     ]),
