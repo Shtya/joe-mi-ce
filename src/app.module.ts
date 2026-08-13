@@ -44,6 +44,7 @@ import { AppVersionModule } from "./app-version/app-version.module";
 import { FirebaseModule } from "./firebase/firebase.module";
 import { TrainingModule } from "./training/training.module";
 import { EntranceLetterModule } from "./entrance-letter/entrance-letter.module";
+import { RecoveryModule } from "./recovery/recovery.module";
 
 @Module({
   imports: [
@@ -118,6 +119,7 @@ import { EntranceLetterModule } from "./entrance-letter/entrance-letter.module";
     FirebaseModule,
     TrainingModule,
     EntranceLetterModule,
+    RecoveryModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
