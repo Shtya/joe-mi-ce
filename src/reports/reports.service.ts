@@ -344,6 +344,9 @@ export class ReportsService {
       .leftJoinAndSelect("product.category", "category")
       .leftJoinAndSelect("sale.branch", "branch")
       .leftJoinAndSelect("branch.chain", "chain")
+      .leftJoinAndSelect("branch.city", "city")
+      .leftJoinAndSelect("branch.supervisors", "supervisors")
+      .leftJoinAndSelect("branch.supervisor", "supervisor")
       .where("sale.projectId = :projectId", { projectId })
       .andWhere("sale.sale_date BETWEEN :start AND :end", {
         start: startOfMonth.toDate(),
@@ -379,6 +382,12 @@ export class ReportsService {
           "branch.id",
           "branch.name",
           "chain.name",
+          "city.id",
+          "city.name",
+          "supervisors.id",
+          "supervisors.name",
+          "supervisor.id",
+          "supervisor.name",
         ])
         .getMany()
     ).filter((sale) => !requestedUsernames.size || reportUserIds.has(sale.user?.id));
@@ -1133,6 +1142,7 @@ export class ReportsService {
       { header: "Quantity", key: "quantity", width: 10 },
       { header: "Date of Sale", key: "date_of_sale", width: 15 },
       { header: "Time of Sale", key: "time_of_sale", width: 10 },
+      { header: "Supervisor", key: "supervisor", width: 30 },
     ];
 
     // Sort sales by date and time (ascending)
@@ -1164,6 +1174,10 @@ export class ReportsService {
         quantity: s.quantity ?? "-",
         date_of_sale: saleDate.format("YYYY-MM-DD"),
         time_of_sale: saleDate.format("hh:mm:ss A"),
+        supervisor:
+          (s.branch?.supervisors?.length
+            ? s.branch.supervisors.map((sup) => sup.name).join(" - ")
+            : s.branch?.supervisor?.name) || "-",
       });
     });
 
