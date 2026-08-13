@@ -43,6 +43,10 @@
     targetBrands?: number;
 
     @IsOptional()
+    @IsUUID()
+    brandId?: string;
+
+    @IsOptional()
     @IsArray()
     @IsUUID('4', { each: true })
     brandIds?: string[];
@@ -99,6 +103,10 @@
     @IsOptional()
     @IsNumber()
     targetBrands?: number;
+
+    @IsOptional()
+    @IsUUID()
+    brandId?: string;
 
     @IsOptional()
     @IsArray()

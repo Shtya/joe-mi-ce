@@ -102,7 +102,12 @@ export class SalesTargetService {
 
     for (const branch of branches) {
       let brands: Brand[] = [];
-      const brandIds = createDto.brandIds?.length ? createDto.brandIds : [];
+      const brandIds = [
+        ...new Set([
+          ...(createDto.brandIds || []),
+          ...(createDto.brandId ? [createDto.brandId] : []),
+        ]),
+      ];
       if (brandIds.length) {
         brands = await this.brandRepository.find({
           where: {
@@ -252,18 +257,25 @@ export class SalesTargetService {
   ): Promise<SalesTarget> {
     const salesTarget = await this.findOne(id);
 
-    if (updateDto.brandIds !== undefined) {
-      if (updateDto.brandIds.length) {
+    if (updateDto.brandIds !== undefined || updateDto.brandId !== undefined) {
+      const requestedBrandIds = [
+        ...new Set([
+          ...(updateDto.brandIds || []),
+          ...(updateDto.brandId ? [updateDto.brandId] : []),
+        ]),
+      ];
+
+      if (requestedBrandIds.length) {
         const brands = await this.brandRepository.find({
           where: {
-            id: In(updateDto.brandIds),
+            id: In(requestedBrandIds),
             project: { id: salesTarget.branch.project.id },
           },
         });
 
-        if (brands.length !== updateDto.brandIds.length) {
+        if (brands.length !== requestedBrandIds.length) {
           const foundIds = brands.map((b) => b.id);
-          const missingIds = updateDto.brandIds.filter(
+          const missingIds = requestedBrandIds.filter(
             (id) => !foundIds.includes(id),
           );
           throw new NotFoundException(
@@ -277,7 +289,7 @@ export class SalesTargetService {
       }
     }
 
-    const { brandIds, ...rest } = updateDto;
+    const { brandIds, brandId, ...rest } = updateDto;
     Object.assign(salesTarget, rest);
     salesTarget.updateStatus();
 
