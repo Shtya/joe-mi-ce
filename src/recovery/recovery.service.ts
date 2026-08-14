@@ -576,7 +576,8 @@ export class RecoveryService {
 
     if (!stockSheet && !sixSeven) {
       throw new BadRequestException(
-        "Workbook has neither a 'Stock' nor a 'SixSeven Report' sheet",
+        `No 'Stock' or 'SixSeven Report' sheet found. Available sheets: ${wb.SheetNames.join(", ")}. ` +
+          "Use this endpoint with gatemea_report_*.xlsx only.",
       );
     }
   }
