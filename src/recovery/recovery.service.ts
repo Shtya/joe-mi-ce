@@ -2,9 +2,10 @@ import {
   BadRequestException,
   Injectable,
   Logger,
+  NotFoundException,
 } from "@nestjs/common";
-import { InjectDataSource } from "@nestjs/typeorm";
-import { DataSource, EntityManager } from "typeorm";
+import { InjectDataSource, InjectRepository } from "@nestjs/typeorm";
+import { DataSource, EntityManager, Repository } from "typeorm";
 import * as XLSX from "xlsx";
 import * as crypto from "crypto";
 import * as argon2 from "argon2";
@@ -39,6 +40,7 @@ import {
   RecoveryResult,
   RecoveryRowResult,
 } from "./recovery.types";
+import { RecoveryJob } from "./recovery-job.entity";
 
 const WEEKDAYS = [
   "sunday",
@@ -56,9 +58,80 @@ const RECOVERY_USERNAME = "recovery.system";
 export class RecoveryService {
   private readonly logger = new Logger(RecoveryService.name);
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    @InjectRepository(RecoveryJob)
+    private readonly recoveryJobRepo: Repository<RecoveryJob>,
+  ) {}
 
   // ---------------------------------------------------------------- public
+
+  /**
+   * Start an import job and return immediately. The import runs in the
+   * background; poll GET /recovery/jobs/:id for status and results.
+   */
+  async startImportJob(params: {
+    type: RecoveryReportType;
+    projectName: string;
+    dryRun: boolean;
+    fileBuffer: Buffer;
+    saleDate?: string;
+  }): Promise<RecoveryJob> {
+    const job = this.recoveryJobRepo.create({
+      type: params.type,
+      projectName: params.projectName,
+      dryRun: params.dryRun,
+      saleDate: params.saleDate ?? null,
+      status: "pending",
+      summary: null,
+      rows: null,
+      project: null,
+      errorMessage: null,
+    });
+    const saved = await this.recoveryJobRepo.save(job);
+
+    // Run outside the request/response cycle so the gateway doesn't time out.
+    this.runJob(saved.id, params).catch((err) => {
+      this.logger.error(`Recovery job ${saved.id} failed`, err.stack);
+    });
+
+    return saved;
+  }
+
+  private async runJob(
+    jobId: string,
+    params: {
+      type: RecoveryReportType;
+      projectName: string;
+      dryRun: boolean;
+      fileBuffer: Buffer;
+      saleDate?: string;
+    },
+  ): Promise<void> {
+    await this.recoveryJobRepo.update(jobId, { status: "running" });
+
+    try {
+      const result = await this.importReport(params);
+      await this.recoveryJobRepo.update(jobId, {
+        status: "completed",
+        summary: result.summary,
+        rows: result.rows as any,
+        project: result.project,
+        errorMessage: null,
+      });
+    } catch (err) {
+      await this.recoveryJobRepo.update(jobId, {
+        status: "failed",
+        errorMessage: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  async getJob(id: string): Promise<RecoveryJob> {
+    const job = await this.recoveryJobRepo.findOne({ where: { id } });
+    if (!job) throw new NotFoundException(`Recovery job '${id}' not found`);
+    return job;
+  }
 
   async importReport(params: {
     type: RecoveryReportType;

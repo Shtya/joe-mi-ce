@@ -132,17 +132,28 @@ Action semantics: branches existing in the April backup are **verified** (UPDATE
 - Journey plans → **reconstruct minimal plans** per (user, branch, shift) with observed weekdays in `days[]`, `is_active = false` so the cron never generates journeys from them.
 - The 3 provided Excel files are the complete evidence; May–June attendance is a documented unrecoverable gap.
 
-### Endpoint
+### Endpoint (async)
 
+Imports run in the background to avoid gateway timeouts on large reports.
+
+**Start a job:**
 ```
 POST /api/v1/recovery/import?type=attendance|branches|stock|monthly&project=gatemea&dryRun=true&saleDate=2026-08-12
 ```
 
 - Multipart field `file`: the Excel report.
-- **`dryRun` defaults to `true`**: all work runs in one transaction that is rolled back — the response shows exactly what *would* be created/updated without writing anything.
+- Response: `{ "jobId": "...", "status": "pending", "message": "..." }`.
+- **`dryRun` defaults to `true`**: all work runs in one transaction that is rolled back — the result shows exactly what *would* be created/updated without writing anything.
 - `dryRun=false` applies the upserts and commits. On any error the transaction rolls back.
 - Optional protection: if `RECOVERY_TOKEN` is set in the environment, calls must send it as `x-recovery-token`.
 - `project` selects the target project (`gatemea` for the three original reports, `taqnia` for the monthly report) — data is always assigned to that project.
+
+**Poll for results:**
+```
+GET /api/v1/recovery/jobs/:jobId
+```
+
+Job status is one of `pending | running | completed | failed`. When `completed`, the response contains `summary` and `rows`. When `failed`, `errorMessage` is set.
 
 ### `type=monthly` — taqnia monthly report (`monthly_report_2026_08_12_*.xlsx`)
 
@@ -161,8 +172,9 @@ Safety rule: grid day columns run to Aug 31, but only dates up to the evidence h
 
 ### Code
 
-- `src/recovery/recovery.controller.ts` — endpoint, validation, token check.
+- `src/recovery/recovery.controller.ts` — `POST /recovery/import` and `GET /recovery/jobs/:id`, validation, token check.
 - `src/recovery/recovery.service.ts` — parsing + transactional upsert logic, reusing the project's actual TypeORM entities (`User`, `Branch`, `Chain`, `City`, `Shift`, `JourneyPlan`, `Journey`, `CheckIn`, `Product`, `Stock`, `Sale`).
+- `src/recovery/recovery-job.entity.ts` — `recovery_jobs` table that stores job status, summary, and row-level results.
 - `src/recovery/recovery.types.ts` — per-row result model: action ∈ EXISTING/CREATED/UPDATED/SKIPPED/DUPLICATE/UNRESOLVED, confidence ∈ CONFIRMED/PROBABLE/UNRESOLVED, natural key, resolved DB ids.
 
 ### Upsert / idempotency rules
@@ -194,22 +206,31 @@ The `unplanned_export_1785146807680.xlsx` file is **not single-project**: it con
 
 ### Response = recovery mapping report
 
-Every report row produces a JSON entry: source sheet + row, entity, action, confidence, reason, human-readable natural key, and the resolved database ids (userId → branchId → shiftId → journeyPlanId → journeyId → checkInId). The summary block gives the counts required by the spec (existing/created/updated/skipped/duplicates/unresolved).
+When a job is `completed`, `GET /recovery/jobs/:id` returns the full report. Every report row produces a JSON entry: source sheet + row, entity, action, confidence, reason, human-readable natural key, and the resolved database ids (userId → branchId → shiftId → journeyPlanId → journeyId → checkInId). The `summary` block gives the counts required by the spec (existing/created/updated/skipped/duplicates/unresolved).
 
 ## 8. Runbook
 
-1. Deploy/restart the app on the server (the DB there already holds the restored April backup).
-2. Dry-run each report, review the returned row-level report. **The unplanned export is Bissell Saudi's report** — run it with `project=Bissell%20Saudi` as the default; rows whose user/branch belong to gatemea or taqnia are auto-routed to those projects by the cross-project resolution:
+1. Deploy/restart the app on the server (the DB there already holds the restored April backup). The `recovery_jobs` table will be created automatically on startup (TypeORM `autoLoadEntities`).
+2. Start a dry-run job for each report. The response contains a `jobId`; poll `GET /recovery/jobs/:jobId` until `status` is `completed` or `failed`.
+   **The unplanned export is Bissell Saudi's report** — run it with `project=Bissell%20Saudi` as the default; rows whose user/branch belong to gatemea or taqnia are auto-routed to those projects by the cross-project resolution:
    ```bash
-   curl -F "file=@unplanned_export_1785146807680.xlsx" \
-     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=attendance&project=Bissell%20Saudi&dryRun=true"
-   curl -F "file=@branches_export_1786520160222.xlsx" \
-     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=branches&project=gatemea&dryRun=true"
-   curl -F "file=@gatemea_report_6_7_2026_08_13_081000_036.xlsx" \
-     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=stock&project=gatemea&dryRun=true&saleDate=2026-08-12"
+   # Attendance
+   JOB=$(curl -s -F "file=@unplanned_export_1785146807680.xlsx" \
+     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=attendance&project=Bissell%20Saudi&dryRun=true" | jq -r '.jobId')
+   curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq
+
+   # Branches
+   JOB=$(curl -s -F "file=@branches_export_1786520160222.xlsx" \
+     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=branches&project=gatemea&dryRun=true" | jq -r '.jobId')
+   curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq
+
+   # Stock
+   JOB=$(curl -s -F "file=@gatemea_report_6_7_2026_08_13_081000_036.xlsx" \
+     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=stock&project=gatemea&dryRun=true&saleDate=2026-08-12" | jq -r '.jobId')
+   curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq
    ```
 3. Review UNRESOLVED / PROBABLE rows; fix mapping issues if any; re-run (safe — idempotent).
-4. Re-run the same three calls with `dryRun=false`.
+4. Re-run the same three calls with `dryRun=false`, polling each job until completion.
 5. Validate in the DB: row counts vs. reports (921 attendance rows), no duplicate journeys per natural key, spot-check Duration/Late Time recomputation, verify timezone boundaries (checkInTime stored UTC, +3h = report time).
 6. Take a fresh backup after validation.
 
@@ -218,9 +239,20 @@ Every report row produces a JSON entry: source sheet + row, entity, action, conf
 Same endpoint, `type=monthly`, `project=taqnia` (the project must already exist in the database — recovery assigns data to it, it never creates projects):
 
 ```bash
-curl -F "file=@monthly_report_2026_08_12_112503_881 (1).xlsx" \
+JOB=$(curl -s -F "file=@monthly_report_2026_08_12_112503_881 (1).xlsx" \
   -H "x-recovery-token: ..." \
-  "https://ce-api.joe-mi.com/api/v1/recovery/import?type=monthly&project=taqnia&dryRun=true"
+  "https://ce-api.joe-mi.com/api/v1/recovery/import?type=monthly&project=taqnia&dryRun=true" | jq -r '.jobId')
+
+# Poll until completed
+while true; do
+  STATUS=$(curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq -r '.status')
+  echo "Job $JOB status: $STATUS"
+  [[ "$STATUS" == "completed" || "$STATUS" == "failed" ]] && break
+  sleep 5
+done
+
+# View final result
+curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq
 ```
 
 Review the dry-run output (expect ~4650 Overtime journeys, ~3781 sale rows, SAR Entries validation rows mostly EXISTING, grid journeys flagged PROBABLE), then re-run with `dryRun=false`. All recovered rows are attributable to `recovery.system`; recovered users log in with password = username.
