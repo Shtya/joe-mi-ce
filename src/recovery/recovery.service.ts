@@ -286,7 +286,13 @@ export class RecoveryService {
   // ------------------------------------------------------------ branches
 
   private async importBranches(wb: XLSX.WorkBook, ctx: RecoveryContext) {
-    const sheet = wb.Sheets["Branches"] ?? wb.Sheets[wb.SheetNames[0]];
+    const sheet = wb.Sheets["Branches"];
+    if (!sheet) {
+      throw new BadRequestException(
+        `No 'Branches' sheet found in workbook. Available sheets: ${wb.SheetNames.join(", ")}. ` +
+          "Use this endpoint with branches_export_*.xlsx only.",
+      );
+    }
     const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
       defval: null,
       raw: true,
@@ -1741,7 +1747,7 @@ class RecoveryContext {
         checkIn.checkInTime = checkInTime;
         changed = true;
       }
-      if (checkOutTime && +checkIn.checkOutTime !== +checkOutTime) {
+      if (+checkIn.checkOutTime !== +checkOutTime) {
         checkIn.checkOutTime = checkOutTime;
         changed = true;
       }
