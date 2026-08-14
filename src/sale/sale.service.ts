@@ -987,6 +987,7 @@ export class SaleService {
       endDate,
       brandId,
       categoryId,
+      "sale_date",
     );
 
     // 2. Group the records
@@ -1130,6 +1131,7 @@ export class SaleService {
     endDate?: Date,
     brandId?: string,
     categoryId?: string,
+    dateField: "created_at" | "sale_date" = "created_at",
   ) {
     const pageNumber = Number(page) || 1;
     const limitNumber = Number(limit) || 10;
@@ -1191,15 +1193,16 @@ export class SaleService {
     }
 
     // Apply precise datetime filtering
+    const dateColumn = `sale.${dateField}`;
     if (startDate && endDate) {
-      qb.andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+      qb.andWhere(`${dateColumn} BETWEEN :startDate AND :endDate`, {
         startDate,
         endDate,
       });
     } else if (startDate) {
-      qb.andWhere("sale.created_at >= :startDate", { startDate });
+      qb.andWhere(`${dateColumn} >= :startDate`, { startDate });
     } else if (endDate) {
-      qb.andWhere("sale.created_at <= :endDate", { endDate });
+      qb.andWhere(`${dateColumn} <= :endDate`, { endDate });
     }
 
     // Apply additional filters
@@ -1222,7 +1225,7 @@ export class SaleService {
     }
 
     // Apply sorting
-    const sortField = sortBy || "sale.created_at";
+    const sortField = sortBy || dateColumn;
     const order =
       sortOrder && sortOrder.toUpperCase() === "ASC" ? "ASC" : "DESC";
     qb.orderBy(sortField, order);

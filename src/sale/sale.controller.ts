@@ -334,17 +334,23 @@ export class SaleController {
 
   @Get("invoice-summary")
   getInvoiceSummary(@Req() req: any, @Query() query: any) {
-    const { startDate, endDate } = this.parseSalesDates(query);
+    // Today's Saudi date range based on sale_date (not created_at)
+    const saudiDateStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Riyadh",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+
+    const startDate = new Date(`${saudiDateStr}T00:00:00.000+03:00`);
+    const endDate = new Date(`${saudiDateStr}T23:59:59.999+03:00`);
 
     const filters = { ...query.filters };
-    delete filters.fromDate;
-    delete filters.toDate;
-    delete filters.date;
-
-    const groupBy =
-      query.groupBy === "product" || query.groupBy === "category"
-        ? query.groupBy
-        : "category";
+    if (filters) {
+      delete filters.fromDate;
+      delete filters.toDate;
+      delete filters.date;
+    }
 
     return this.saleService.getInvoiceSummaryByUser(
       req.user.id,
