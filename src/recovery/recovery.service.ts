@@ -706,16 +706,16 @@ export class RecoveryService {
 
       const user = await ctx.getOrCreateUser(username, norm(r["user name"]), i, "Sales", ERole.PROMOTER, {
         mobile: norm(r["user mobile"]),
+        isActive: true,
       });
-      const branch = (
-        await ctx.getOrCreateBranch(
-          norm(r["Branch"]),
-          norm(r["Chain"]),
-          norm(r["city name"]),
-          i,
-          "Sales",
-        )
-      ).branch;
+      const resolved = await ctx.getOrCreateBranch(
+        norm(r["Branch"]),
+        norm(r["Chain"]),
+        norm(r["city name"]),
+        i,
+        "Sales",
+      );
+      const branch = resolved.branch;
       if (!branch) {
         ctx.push({
           row: i,
@@ -729,6 +729,8 @@ export class RecoveryService {
         });
         continue;
       }
+      await ctx.syncUserHomeBranch(user.id, branch.id, date);
+
       const product = await ctx.getOrCreateProductForSale({
         model,
         name: model,
