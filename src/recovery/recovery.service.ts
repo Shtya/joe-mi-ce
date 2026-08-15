@@ -176,6 +176,8 @@ export class RecoveryService {
         await this.importBranches(wb, ctx);
       } else if (type === "stock") {
         await this.importStock(wb, ctx, params.saleDate);
+      } else if (type === "sales") {
+        await this.importSales(wb, ctx);
       } else if (type === "monthly") {
         await this.importMonthly(wb, ctx);
       } else {
@@ -652,6 +654,103 @@ export class RecoveryService {
         `No 'Stock' or 'SixSeven Report' sheet found. Available sheets: ${wb.SheetNames.join(", ")}. ` +
           "Use this endpoint with gatemea_report_*.xlsx only.",
       );
+    }
+  }
+
+  // ------------------------------------------------------------------ sales
+
+  /**
+   * Standalone sales export (gatemea). Sheet "Sales" contains real sale rows
+   * with user, branch, product, price, quantity, total, sale date and time.
+   * Same row semantics as the "Sales Detail" sheet in the monthly report.
+   */
+  private async importSales(wb: XLSX.WorkBook, ctx: RecoveryContext) {
+    const sheet = wb.Sheets["Sales"];
+    if (!sheet) {
+      throw new BadRequestException(
+        `No 'Sales' sheet found in workbook. Available sheets: ${wb.SheetNames.join(", ")}. ` +
+          "Use this endpoint with sales_export_*.xlsx only.",
+      );
+    }
+
+    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, {
+      defval: null,
+      raw: true,
+    });
+
+    let i = 0;
+    for (const r of rows) {
+      i++;
+      const username = norm(r["user username"]);
+      const date = toISODate(r["Date of sale"]);
+      const model = norm(r["product model"]);
+      const key = `user=${username ?? "?"} | product=${model ?? "?"} | date=${date ?? "?"} | qty=${r["quantity"] ?? "?"}`;
+
+      const quantity = toNum(r["quantity"]);
+      const price = toNum(r["price"]);
+      const totalAmount = toNum(r["total amount"]) ?? (price != null && quantity != null ? price * quantity : null);
+      const saleDate = date ? wallClockToTimestamp(date, toHMS(r["Time of sale"]) ?? "00:00:00") : null;
+
+      if (!username || !date || !model || quantity == null || price == null || totalAmount == null || !saleDate) {
+        ctx.push({
+          row: i,
+          sheet: "Sales",
+          entity: "sale",
+          action: "UNRESOLVED",
+          confidence: "UNRESOLVED",
+          reason: "missing username/date/product/quantity/price/total or unparseable sale time",
+          key,
+        });
+        continue;
+      }
+
+      const user = await ctx.getOrCreateUser(username, norm(r["user name"]), i, "Sales", ERole.PROMOTER, {
+        mobile: norm(r["user mobile"]),
+      });
+      const branch = (
+        await ctx.getOrCreateBranch(
+          norm(r["Branch"]),
+          norm(r["Chain"]),
+          norm(r["city name"]),
+          i,
+          "Sales",
+        )
+      ).branch;
+      if (!branch) {
+        ctx.push({
+          row: i,
+          sheet: "Sales",
+          entity: "sale",
+          action: "UNRESOLVED",
+          confidence: "UNRESOLVED",
+          reason: "branch could not be resolved",
+          key,
+          ids: { userId: user.id },
+        });
+        continue;
+      }
+      const product = await ctx.getOrCreateProductForSale({
+        model,
+        name: model,
+        brandName: norm(r["brand"]),
+        categoryName: norm(r["categories"]),
+        row: i,
+        sheet: "Sales",
+      });
+      if (!product) continue;
+
+      await ctx.insertSaleOnce({
+        userId: user.id,
+        branchId: branch.id,
+        productId: product.id,
+        price,
+        quantity: Math.trunc(quantity),
+        totalAmount,
+        saleDate,
+        row: i,
+        sheet: "Sales",
+        key,
+      });
     }
   }
 

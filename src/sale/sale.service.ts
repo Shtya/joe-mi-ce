@@ -1151,6 +1151,7 @@ export class SaleService {
         "sale.quantity",
         "sale.total_amount",
         "sale.created_at",
+        "sale.sale_date",
         "sale.status",
         "product.id",
         "product.name",
@@ -1274,11 +1275,13 @@ export class SaleService {
       ];
       const dates = [
         ...new Set(
-          records.map((r) =>
-            r.created_at instanceof Date
-              ? r.created_at.toISOString().split("T")[0]
-              : new Date(r.created_at).toISOString().split("T")[0],
-          ),
+          records.map((r) => {
+            const dateValue =
+              dateField === "sale_date" ? r.sale_date : r.created_at;
+            return dateValue instanceof Date
+              ? dateValue.toISOString().split("T")[0]
+              : new Date(dateValue).toISOString().split("T")[0];
+          }),
         ),
       ];
 
@@ -1351,7 +1354,7 @@ export class SaleService {
           .select("SUM(sale.total_amount)", "userTotal")
           .where("sale.user.id = :userId", { userId })
           .andWhere("sale.branch.id = :branchId", { branchId: branchToUse.id })
-          .andWhere("sale.created_at BETWEEN :start AND :end", {
+          .andWhere(`${dateColumn} BETWEEN :start AND :end`, {
             start: periodStart.toISOString(),
             end: periodEnd.toISOString(),
           })
@@ -1411,10 +1414,12 @@ export class SaleService {
       const discount = sale.product?.discount || 0;
 
       // Attach CheckIn Info
+      const dateValue =
+        dateField === "sale_date" ? sale.sale_date : sale.created_at;
       const dateStr =
-        sale.created_at instanceof Date
-          ? sale.created_at.toISOString().split("T")[0]
-          : new Date(sale.created_at).toISOString().split("T")[0];
+        dateValue instanceof Date
+          ? dateValue.toISOString().split("T")[0]
+          : new Date(dateValue).toISOString().split("T")[0];
       const checkInKey = `${sale.user?.id}_${dateStr}`;
       const checkIn = checkInMap.get(checkInKey);
 
@@ -1483,14 +1488,14 @@ export class SaleService {
 
     // Apply precise datetime filtering to totals
     if (startDate && endDate) {
-      totalsQb.andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+      totalsQb.andWhere(`${dateColumn} BETWEEN :startDate AND :endDate`, {
         startDate,
         endDate,
       });
     } else if (startDate) {
-      totalsQb.andWhere("sale.created_at >= :startDate", { startDate });
+      totalsQb.andWhere(`${dateColumn} >= :startDate`, { startDate });
     } else if (endDate) {
-      totalsQb.andWhere("sale.created_at <= :endDate", { endDate });
+      totalsQb.andWhere(`${dateColumn} <= :endDate`, { endDate });
     }
 
     if (filters) {
@@ -1528,7 +1533,7 @@ export class SaleService {
           .andWhere("sale.branch.id = :branchId", {
             branchId: lastJourney.branch?.id,
           })
-          .andWhere("sale.created_at BETWEEN :start AND :end", {
+          .andWhere(`${dateColumn} BETWEEN :start AND :end`, {
             start: new Date(new Date(lastJourney.date).setHours(0, 0, 0, 0)),
             end: new Date(
               new Date(lastJourney.date).setHours(23 + 5, 59, 59, 999),
@@ -1582,14 +1587,14 @@ export class SaleService {
 
     // Apply precise datetime filtering to categories
     if (startDate && endDate) {
-      categoryQb.andWhere("sale.created_at BETWEEN :startDate AND :endDate", {
+      categoryQb.andWhere(`${dateColumn} BETWEEN :startDate AND :endDate`, {
         startDate,
         endDate,
       });
     } else if (startDate) {
-      categoryQb.andWhere("sale.created_at >= :startDate", { startDate });
+      categoryQb.andWhere(`${dateColumn} >= :startDate`, { startDate });
     } else if (endDate) {
-      categoryQb.andWhere("sale.created_at <= :endDate", { endDate });
+      categoryQb.andWhere(`${dateColumn} <= :endDate`, { endDate });
     }
 
     if (filters) {
@@ -1651,7 +1656,7 @@ export class SaleService {
       .createQueryBuilder("sale")
       .select("SUM(sale.total_amount)", "total")
       .where("sale.status != :status", { status: "cancelled" })
-      .andWhere("sale.created_at BETWEEN :start AND :end", {
+      .andWhere(`${dateColumn} BETWEEN :start AND :end`, {
         start: monthStart,
         end: monthEnd,
       });
@@ -1660,7 +1665,7 @@ export class SaleService {
       .createQueryBuilder("sale")
       .select("SUM(sale.total_amount)", "total")
       .where("sale.status != :status", { status: "cancelled" })
-      .andWhere("sale.created_at BETWEEN :start AND :end", {
+      .andWhere(`${dateColumn} BETWEEN :start AND :end`, {
         start: quarterStart,
         end: quarterEnd,
       });

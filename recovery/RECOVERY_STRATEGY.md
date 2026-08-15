@@ -51,6 +51,7 @@ sale → users, products, branches
 | `gatemea_report_6_7_2026_08_13_081000_036.xlsx` | `Stock` | 28 products × 62 branches | Current `stocks.quantity` snapshot | **YES** → upsert `stocks` (current-state table) |
 | same | `Out of Stock` | matrix | Derived from stocks (qty ≤ 0) | Validation only (redundant with Stock) |
 | same | `SixSeven Report` | pivot | `SUM(sale.quantity)` per product × chain (total 56 units); attendance count per chain (32) | **NO — aggregate-only.** Individual `sale` rows (date, user, branch, price) are not recoverable from sums |
+| `sales_export_1785656048354.xlsx` | `Sales` | ~120 | Real per-sale rows for gatemea: user, branch, product, price, quantity, total, sale date/time | **YES — row-level** → `sale` rows |
 
 ### Coverage gap (important)
 
@@ -138,7 +139,7 @@ Imports run in the background to avoid gateway timeouts on large reports.
 
 **Start a job:**
 ```
-POST /api/v1/recovery/import?type=attendance|branches|stock|monthly&project=gatemea&dryRun=true&saleDate=2026-08-12
+POST /api/v1/recovery/import?type=attendance|branches|stock|sales|monthly&project=gatemea&dryRun=true&saleDate=2026-08-12
 ```
 
 - Multipart field `file`: the Excel report.
@@ -227,6 +228,11 @@ When a job is `completed`, `GET /recovery/jobs/:id` returns the full report. Eve
    # Stock
    JOB=$(curl -s -F "file=@gatemea_report_6_7_2026_08_13_081000_036.xlsx" \
      "https://ce-api.joe-mi.com/api/v1/recovery/import?type=stock&project=gatemea&dryRun=true&saleDate=2026-08-12" | jq -r '.jobId')
+   curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq
+
+   # Sales (gatemea standalone sales export)
+   JOB=$(curl -s -F "file=@sales_export_1785656048354.xlsx" \
+     "https://ce-api.joe-mi.com/api/v1/recovery/import?type=sales&project=gatemea&dryRun=true" | jq -r '.jobId')
    curl -s "https://ce-api.joe-mi.com/api/v1/recovery/jobs/$JOB" | jq
    ```
 3. Review UNRESOLVED / PROBABLE rows; fix mapping issues if any; re-run (safe — idempotent).

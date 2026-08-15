@@ -14,7 +14,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { RecoveryService } from "./recovery.service";
 import { RecoveryReportType } from "./recovery.types";
 
-const VALID_TYPES: RecoveryReportType[] = ["attendance", "branches", "stock", "monthly"];
+const VALID_TYPES: RecoveryReportType[] = ["attendance", "branches", "stock", "sales", "monthly"];
 
 /**
  * Database recovery endpoint.

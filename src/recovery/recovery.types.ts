@@ -1,4 +1,4 @@
-export type RecoveryReportType = "attendance" | "branches" | "stock" | "monthly";
+export type RecoveryReportType = "attendance" | "branches" | "stock" | "sales" | "monthly";
 
 export type RecoveryAction =
   | "EXISTING"
