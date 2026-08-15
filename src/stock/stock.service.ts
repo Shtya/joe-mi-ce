@@ -910,7 +910,7 @@ export class StockService {
           id: stock.product?.id || null,
           name: stock.product?.name || null,
           sku: stock.product?.sku || null,
-          price: productPrice,
+          price: String(productPrice),
           discount: discount,
           unit_amount: productPrice,
           total_amount: productPrice * stock.quantity,
