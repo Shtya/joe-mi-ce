@@ -2353,27 +2353,43 @@ export class JourneyService {
   }) {
     const { projectId, sourceProjectId, userId, dryRun = true } = params;
 
-    const qb = this.checkInRepo
+    const baseQb = this.checkInRepo
       .createQueryBuilder("checkIn")
       .leftJoinAndSelect("checkIn.user", "user")
       .leftJoinAndSelect("checkIn.journey", "journey")
-      .where(
-        new Brackets((subQb) => {
-          subQb
-            .where("journey.id IS NULL")
-            .orWhere(
-              "user.project_id IS NOT NULL AND journey.projectId != CAST(user.project_id AS uuid)",
-            );
-        }),
-      );
+      .withDeleted();
 
     if (userId) {
-      qb.andWhere("user.id = :userId", { userId });
+      baseQb.andWhere("user.id = :userId", { userId });
     }
 
     if (sourceProjectId) {
-      qb.andWhere("user.project_id = :sourceProjectId", { sourceProjectId });
+      baseQb.andWhere("user.project_id = :sourceProjectId", { sourceProjectId });
     }
+
+    const diagnostics = {
+      totalCheckIns: await baseQb.getCount(),
+      nullJourneyCheckIns: await baseQb
+        .clone()
+        .andWhere("journey.id IS NULL")
+        .getCount(),
+      wrongProjectCheckIns: await baseQb
+        .clone()
+        .andWhere(
+          "user.project_id IS NOT NULL AND journey.projectId != CAST(user.project_id AS uuid)",
+        )
+        .getCount(),
+    };
+
+    const qb = baseQb.andWhere(
+      new Brackets((subQb) => {
+        subQb
+          .where("journey.id IS NULL")
+          .orWhere(
+            "user.project_id IS NOT NULL AND journey.projectId != CAST(user.project_id AS uuid)",
+          );
+      }),
+    );
 
     const orphanCheckIns = await qb.getMany();
 
@@ -2528,6 +2544,7 @@ export class JourneyService {
 
     return {
       dryRun,
+      diagnostics,
       totalOrphans: orphanCheckIns.length,
       created: result.created,
       skipped: result.skipped,
