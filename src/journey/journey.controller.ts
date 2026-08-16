@@ -1517,6 +1517,18 @@ export class JourneyController {
     });
   }
 
+  @Post("backfill-plans")
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async backfillJourneyPlans(
+    @Body() body: { projectId?: string; userId?: string; dryRun?: boolean },
+  ) {
+    return this.journeyService.backfillJourneyPlans({
+      projectId: body.projectId,
+      userId: body.userId,
+      dryRun: body.dryRun !== false,
+    });
+  }
+
   @Get("location/live")
   @Permissions(EPermission.JOURNEY_READ)
   async getLiveLocations(

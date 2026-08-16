@@ -2541,20 +2541,42 @@ export class JourneyService {
           checkIn.journey = journey;
           await this.checkInRepo.save(checkIn);
           result.created++;
+
+          // Create or link a JourneyPlan for the new journey
+          const dayName = dayjs(journey.date).format("dddd").toLowerCase();
+          let plan = await this.journeyPlanRepo.findOne({
+            where: {
+              user: { id: user.id },
+              branch: { id: branch.id },
+              shift: shift ? { id: shift.id } : undefined,
+              projectId: targetProjectId,
+              days: [dayName] as any,
+            },
+            withDeleted: true,
+          });
+
+          if (!plan) {
+            plan = this.journeyPlanRepo.create({
+              user,
+              branch,
+              shift: shift || null,
+              projectId: targetProjectId,
+              days: [dayName],
+              is_active: true,
+              createdBy: user,
+            });
+            plan = await this.journeyPlanRepo.save(plan);
+          } else {
+            plan.is_active = true;
+            plan.deleted_at = null;
+            plan = await this.journeyPlanRepo.save(plan);
+          }
+
+          journey.journeyPlan = plan;
+          await this.journeyRepo.save(journey);
         } else {
           result.created++; // count as would-be created in dry-run
         }
-
-        result.details.push({
-          checkInId: checkIn.id,
-          userId: user.id,
-          date: checkInDate,
-          branchId: branch.id,
-          branchName: branch.name,
-          shiftId: shift?.id || null,
-          status,
-          action: dryRun ? "WOULD_CREATE" : "CREATED",
-        });
       } catch (err) {
         result.skipped++;
         result.errors.push(
@@ -2651,6 +2673,144 @@ export class JourneyService {
       projectId: projectId || null,
       sourceProjectId: sourceProjectId || null,
       items,
+    };
+  }
+
+  async backfillJourneyPlans(params: {
+    projectId?: string;
+    userId?: string;
+    dryRun?: boolean;
+  }) {
+    const { projectId, userId, dryRun = true } = params;
+
+    const qb = this.journeyRepo
+      .createQueryBuilder("journey")
+      .leftJoinAndSelect("journey.user", "user")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("journey.shift", "shift")
+      .leftJoinAndSelect("journey.createdBy", "createdBy")
+      .leftJoinAndSelect("journey.journeyPlan", "journeyPlan")
+      .withDeleted()
+      .where("journeyPlan.id IS NULL")
+      .andWhere("journey.type = :type", { type: JourneyType.PLANNED });
+
+    if (projectId) {
+      qb.andWhere("journey.projectId = :projectId", { projectId });
+    }
+
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+
+    const journeys = await qb.getMany();
+
+    const result = {
+      created: 0,
+      linked: 0,
+      skipped: 0,
+      errors: [] as string[],
+      details: [] as any[],
+    };
+
+    // Group by user + branch + shift + project + day to avoid duplicate plans
+    const planMap = new Map<string, JourneyPlan>();
+
+    for (const journey of journeys) {
+      try {
+        const user = journey.user;
+        const branch = journey.branch;
+        const shift = journey.shift;
+
+        if (!user || !branch) {
+          result.skipped++;
+          result.errors.push(
+            `Journey ${journey.id}: missing user or branch`,
+          );
+          continue;
+        }
+
+        const dayName = journey.date
+          ? dayjs(journey.date).format("dddd").toLowerCase()
+          : null;
+        if (!dayName) {
+          result.skipped++;
+          result.errors.push(`Journey ${journey.id}: no date`);
+          continue;
+        }
+
+        const planKey = `${user.id}|${branch.id}|${shift?.id || "null"}|${journey.projectId || "null"}|${dayName}`;
+
+        let plan = planMap.get(planKey);
+        if (!plan) {
+          const existingPlan = await this.journeyPlanRepo.findOne({
+            where: {
+              user: { id: user.id },
+              branch: { id: branch.id },
+              shift: shift ? { id: shift.id } : undefined,
+              projectId: journey.projectId,
+              days: [dayName] as any,
+            },
+            withDeleted: true,
+          });
+
+          if (existingPlan) {
+            plan = existingPlan;
+            plan.is_active = true;
+            plan.deleted_at = null;
+          } else {
+            plan = this.journeyPlanRepo.create({
+              user,
+              branch,
+              shift: shift || null,
+              projectId: journey.projectId,
+              days: [dayName],
+              is_active: true,
+              createdBy: journey.createdBy || user,
+            });
+          }
+
+          if (!dryRun) {
+            plan = await this.journeyPlanRepo.save(plan);
+            result.created++;
+          } else {
+            result.created++;
+          }
+
+          planMap.set(planKey, plan);
+        }
+
+        if (!dryRun) {
+          journey.journeyPlan = plan;
+          await this.journeyRepo.save(journey);
+          result.linked++;
+        } else {
+          result.linked++;
+        }
+
+        result.details.push({
+          journeyId: journey.id,
+          planId: plan.id || "WOULD_CREATE",
+          userId: user.id,
+          branchId: branch.id,
+          day: dayName,
+          action: dryRun ? "WOULD_CREATE" : "CREATED",
+        });
+      } catch (err) {
+        result.skipped++;
+        result.errors.push(
+          `Journey ${journey.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return {
+      dryRun,
+      totalJourneys: journeys.length,
+      created: result.created,
+      linked: result.linked,
+      skipped: result.skipped,
+      errors: result.errors,
+      details: result.details,
     };
   }
 
