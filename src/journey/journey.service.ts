@@ -2683,7 +2683,9 @@ export class JourneyService {
   }) {
     const { projectId, userId, dryRun = true } = params;
 
-    const baseQb = this.journeyRepo
+    // Fetch all relevant journeys with relations, then filter in TypeScript
+    // because TypeORM's IS NULL check on the plan relation is unreliable.
+    const qb = this.journeyRepo
       .createQueryBuilder("journey")
       .leftJoinAndSelect("journey.user", "user")
       .leftJoinAndSelect("journey.branch", "branch")
@@ -2693,35 +2695,27 @@ export class JourneyService {
       .withDeleted();
 
     if (projectId) {
-      baseQb.andWhere("journey.projectId = :projectId", { projectId });
+      qb.andWhere("journey.projectId = :projectId", { projectId });
     }
 
     if (userId) {
-      baseQb.andWhere("user.id = :userId", { userId });
+      qb.andWhere("user.id = :userId", { userId });
     }
 
+    const allJourneys = await qb.getMany();
+
+    const journeys = allJourneys.filter(
+      (j) =>
+        j.type === JourneyType.PLANNED &&
+        (!j.journeyPlan || !(j.journeyPlan as any).id),
+    );
+
     const diagnostics = {
-      totalJourneys: await baseQb.getCount(),
-      withPlan: await baseQb
-        .clone()
-        .andWhere("journeyPlan.id IS NOT NULL")
-        .getCount(),
-      withoutPlan: await baseQb
-        .clone()
-        .andWhere("journeyPlan.id IS NULL")
-        .getCount(),
-      plannedWithoutPlan: await baseQb
-        .clone()
-        .andWhere("journeyPlan.id IS NULL")
-        .andWhere("journey.type = :type", { type: JourneyType.PLANNED })
-        .getCount(),
+      totalJourneys: allJourneys.length,
+      withPlan: allJourneys.filter((j) => j.journeyPlan && (j.journeyPlan as any).id).length,
+      withoutPlan: allJourneys.filter((j) => !j.journeyPlan || !(j.journeyPlan as any).id).length,
+      plannedWithoutPlan: journeys.length,
     };
-
-    const qb = baseQb
-      .andWhere("journeyPlan.id IS NULL")
-      .andWhere("journey.type = :type", { type: JourneyType.PLANNED });
-
-    const journeys = await qb.getMany();
 
     const result = {
       created: 0,
