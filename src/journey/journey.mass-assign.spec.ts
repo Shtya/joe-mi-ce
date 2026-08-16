@@ -10,6 +10,10 @@ import { Sale } from "entities/products/sale.entity";
 import { PromoterLocation } from "entities/promoter-location.entity";
 import { LocationLog } from "entities/location-log.entity";
 import { NotificationService } from "src/notification/notification.service";
+import { AuthService } from "src/auth/auth.service";
+import { MailService } from "src/mail/mail.service";
+import { LocationCacheService } from "./location-cache.service";
+import { Project } from "entities/project.entity";
 import { ERole } from "enums/Role.enum";
 import { NotFoundException } from "@nestjs/common";
 
@@ -34,6 +38,9 @@ describe("JourneyService - mass assign shift", () => {
   };
 
   const mockNotificationService = {};
+  const mockAuthService = {};
+  const mockMailService = {};
+  const mockLocationCacheService = {};
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -42,6 +49,7 @@ describe("JourneyService - mass assign shift", () => {
         { provide: getRepositoryToken(JourneyPlan), useValue: mockRepo },
         { provide: getRepositoryToken(Journey), useValue: mockRepo },
         { provide: getRepositoryToken(CheckIn), useValue: mockRepo },
+        { provide: getRepositoryToken(Project), useValue: mockRepo },
         { provide: getRepositoryToken(User), useValue: mockRepo },
         { provide: getRepositoryToken(Branch), useValue: mockRepo },
         { provide: getRepositoryToken(Shift), useValue: mockRepo },
@@ -50,6 +58,9 @@ describe("JourneyService - mass assign shift", () => {
         { provide: getRepositoryToken(PromoterLocation), useValue: mockRepo },
         { provide: getRepositoryToken(LocationLog), useValue: mockRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: MailService, useValue: mockMailService },
+        { provide: LocationCacheService, useValue: mockLocationCacheService },
       ],
     }).compile();
 

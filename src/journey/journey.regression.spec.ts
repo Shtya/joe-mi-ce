@@ -16,6 +16,10 @@ import { Sale } from "../../entities/products/sale.entity";
 import { PromoterLocation } from "../../entities/promoter-location.entity";
 import { LocationLog } from "../../entities/location-log.entity";
 import { NotificationService } from "../notification/notification.service";
+import { AuthService } from "../auth/auth.service";
+import { MailService } from "../mail/mail.service";
+import { LocationCacheService } from "./location-cache.service";
+import { Project } from "../../entities/project.entity";
 import { NotFoundException, ForbiddenException } from "@nestjs/common";
 
 describe("JourneyService Regression", () => {
@@ -37,6 +41,10 @@ describe("JourneyService Regression", () => {
     notifyPromoterOnCheckin: jest.fn(),
   };
 
+  const mockAuthService = {};
+  const mockMailService = {};
+  const mockLocationCacheService = {};
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -44,6 +52,7 @@ describe("JourneyService Regression", () => {
         { provide: getRepositoryToken(JourneyPlan), useValue: mockRepo },
         { provide: getRepositoryToken(Journey), useValue: mockRepo },
         { provide: getRepositoryToken(CheckIn), useValue: mockRepo },
+        { provide: getRepositoryToken(Project), useValue: mockRepo },
         { provide: getRepositoryToken(User), useValue: mockRepo },
         { provide: getRepositoryToken(Branch), useValue: mockRepo },
         { provide: getRepositoryToken(Shift), useValue: mockRepo },
@@ -52,6 +61,9 @@ describe("JourneyService Regression", () => {
         { provide: getRepositoryToken(PromoterLocation), useValue: mockRepo },
         { provide: getRepositoryToken(LocationLog), useValue: mockRepo },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: AuthService, useValue: mockAuthService },
+        { provide: MailService, useValue: mockMailService },
+        { provide: LocationCacheService, useValue: mockLocationCacheService },
       ],
     }).compile();
 

@@ -31,6 +31,7 @@ import {
   AdminCheckInOutDto,
   AssignShiftAllDaysDto,
   ExportJourneyAttendanceOvertimeDto,
+  MergeJourneyPlansDto,
 } from "dto/journey.dto";
 import { EPermission } from "enums/Permissions.enum";
 import { Permissions } from "decorators/permissions.decorators";
@@ -117,6 +118,13 @@ export class JourneyController {
   async updatePlan(@Param("id") id: string, @Body() dto: UpdateJourneyPlanDto) {
     return this.journeyService.updatePlan(id, dto);
   }
+
+  @Post("plans/merge")
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async mergePlans(@Body() dto: MergeJourneyPlansDto) {
+    return this.journeyService.mergeDuplicatePlans(dto);
+  }
+
   @Post("checkin-out")
   @UseInterceptors(FileInterceptor("file", multerOptionsCheckinTmp))
   async checkInOut(
@@ -704,6 +712,41 @@ export class JourneyController {
       extraWhere,
     );
 
+    // Deduplicate plans that share the same user + branch + shift + project.
+    // This prevents duplicate rows when the same promoter has multiple active
+    // plans for the same assignment (the root cause of the supervisor report issue).
+    const dedupedPlans = new Map<string, any>();
+    for (const plan of plans.records || []) {
+      const key = `${plan.user?.id ?? "null"}|${plan.branch?.id ?? "null"}|${
+        plan.shift?.id ?? "null"
+      }|${plan.projectId ?? ""}`;
+      const existing = dedupedPlans.get(key);
+      if (!existing) {
+        dedupedPlans.set(key, plan);
+        continue;
+      }
+
+      existing.days = Array.from(
+        new Set(
+          [...(existing.days || []), ...(plan.days || [])].map((d) =>
+            d.toLowerCase(),
+          ),
+        ),
+      );
+
+      const existingJourneyIds = new Set(
+        (existing.journeys || []).map((j: any) => j.id),
+      );
+      for (const journey of plan.journeys || []) {
+        if (!existingJourneyIds.has(journey.id)) {
+          existing.journeys = existing.journeys || [];
+          existing.journeys.push(journey);
+          existingJourneyIds.add(journey.id);
+        }
+      }
+    }
+    plans.records = Array.from(dedupedPlans.values());
+
     // Generate matching dates in the range
     const startDate = parsedFrom?.isValid() ? parsedFrom : dayjs();
     const endDate = parsedTo?.isValid() ? parsedTo : startDate;
@@ -750,6 +793,32 @@ export class JourneyController {
         "checkin",
       ],
     });
+
+    // Deduplicate unplanned journeys by their natural key so the same check-in
+    // is never rendered twice.
+    const unplannedJourneyMap = new Map<string, any>();
+    for (const journey of unplannedJourneys) {
+      const key = `${journey.user?.id ?? "null"}|${
+        journey.branch?.id ?? "null"
+      }|${journey.shift?.id ?? "null"}|${journey.date}|${journey.projectId}`;
+      const existing = unplannedJourneyMap.get(key);
+      if (!existing) {
+        unplannedJourneyMap.set(key, journey);
+        continue;
+      }
+      // Keep the journey that has the richest check-in data.
+      const existingTime =
+        existing.checkin?.checkOutTime || existing.checkin?.checkInTime;
+      const journeyTime =
+        journey.checkin?.checkOutTime || journey.checkin?.checkInTime;
+      if (
+        journeyTime &&
+        (!existingTime || new Date(journeyTime) > new Date(existingTime))
+      ) {
+        unplannedJourneyMap.set(key, journey);
+      }
+    }
+    const dedupedUnplannedJourneys = Array.from(unplannedJourneyMap.values());
 
     // Fetch all promoters assigned to supervisor's branches
     let assignedPromoters: any[] = [];
@@ -954,7 +1023,7 @@ export class JourneyController {
     });
 
     // Merge unplanned journeys
-    unplannedJourneys.forEach((journey) => {
+    dedupedUnplannedJourneys.forEach((journey) => {
       const checkin = journey.checkin;
       const checkInTime = checkin?.checkInTime
         ? new Date(checkin.checkInTime)

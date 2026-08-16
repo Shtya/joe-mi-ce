@@ -7,6 +7,7 @@ import {
   IsDateString,
   IsEmail,
   IsNumber,
+  IsBoolean,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -193,4 +194,26 @@ export class ExportJourneyAttendanceOvertimeDto {
 
   @IsEmail()
   email: string;
+}
+
+export class MergeJourneyPlansDto {
+  @IsOptional()
+  @IsUUID()
+  projectId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  shiftId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
 }

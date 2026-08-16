@@ -18,6 +18,7 @@ import {
   MoreThan,
   IsNull,
   Brackets,
+  EntityManager,
 } from "typeorm";
 import * as dayjs from "dayjs";
 import * as XLSX from "xlsx";
@@ -31,6 +32,7 @@ import {
   AdminCheckInOutDto,
   AssignShiftAllDaysDto,
   ExportJourneyAttendanceOvertimeDto,
+  MergeJourneyPlansDto,
 } from "dto/journey.dto";
 
 import {
@@ -949,6 +951,214 @@ export class JourneyService {
       id,
     };
   }
+
+  /**
+   * Merge duplicate journey plans that share the same user, branch, shift and project.
+   * The oldest plan becomes the survivor; its days array is the union of all duplicates,
+   * related journeys are repointed to the survivor, and duplicate journeys are collapsed
+   * by their natural key (user + branch + shift + date + type + project).
+   */
+  async mergeDuplicatePlans(dto: MergeJourneyPlansDto) {
+    const { projectId, userId, branchId, shiftId, dryRun = false } = dto;
+
+    const qb = this.journeyPlanRepo
+      .createQueryBuilder("plan")
+      .leftJoinAndSelect("plan.user", "user")
+      .leftJoinAndSelect("plan.branch", "branch")
+      .leftJoinAndSelect("plan.shift", "shift")
+      .where("plan.is_active = :isActive", { isActive: true });
+
+    if (projectId) {
+      qb.andWhere("plan.projectId = :projectId", { projectId });
+    }
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+    if (branchId) {
+      qb.andWhere("branch.id = :branchId", { branchId });
+    }
+    if (shiftId) {
+      qb.andWhere("shift.id = :shiftId", { shiftId });
+    }
+
+    const plans = await qb.getMany();
+
+    const groups = new Map<string, JourneyPlan[]>();
+    for (const plan of plans) {
+      const key = `${plan.user?.id ?? "null"}|${plan.branch?.id ?? "null"}|${
+        plan.shift?.id ?? "null"
+      }|${plan.projectId ?? ""}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(plan);
+    }
+
+    const result: {
+      dryRun: boolean;
+      mergedGroups: number;
+      deactivatedPlans: number;
+      repointedJourneys: number;
+      mergedJourneys: number;
+      details: any[];
+    } = {
+      dryRun,
+      mergedGroups: 0,
+      deactivatedPlans: 0,
+      repointedJourneys: 0,
+      mergedJourneys: 0,
+      details: [],
+    };
+
+    if (dryRun) {
+      for (const [key, group] of groups) {
+        if (group.length > 1) {
+          result.mergedGroups++;
+          result.deactivatedPlans += group.length - 1;
+          const mergedDays = Array.from(
+            new Set(
+              group
+                .flatMap((p) => (p.days || []).map((d) => d.toLowerCase()))
+                .filter(Boolean),
+            ),
+          );
+          result.details.push({
+            key,
+            planCount: group.length,
+            survivorId: group[0].id,
+            duplicateIds: group.slice(1).map((p) => p.id),
+            mergedDays,
+          });
+        }
+      }
+      return result;
+    }
+
+    await this.journeyPlanRepo.manager.transaction(async (em) => {
+      for (const [key, group] of groups) {
+        if (group.length <= 1) continue;
+
+        group.sort(
+          (a, b) =>
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+        const survivor = group[0];
+        const duplicates = group.slice(1);
+
+        const mergedDays = Array.from(
+          new Set(
+            group
+              .flatMap((p) => (p.days || []).map((d) => d.toLowerCase()))
+              .filter(Boolean),
+          ),
+        );
+        survivor.days = mergedDays;
+        await em.save(JourneyPlan, survivor);
+
+        const duplicateIds = duplicates.map((p) => p.id);
+        const journeys = await em.find(Journey, {
+          where: { journeyPlan: { id: In(duplicateIds) } },
+          relations: ["checkin", "user", "branch", "shift"],
+        });
+
+        let groupRepointed = 0;
+        let groupMerged = 0;
+
+        for (const journey of journeys) {
+          const existing = await em.findOne(Journey, {
+            where: {
+              user: { id: journey.user?.id },
+              branch: { id: journey.branch?.id },
+              shift: { id: journey.shift?.id },
+              date: journey.date,
+              type: journey.type,
+              projectId: journey.projectId,
+              journeyPlan: { id: survivor.id },
+              is_active: true,
+            },
+            relations: ["checkin"],
+          });
+
+          if (existing) {
+            await this.mergeJourneyCheckIns(em, existing, journey);
+            groupMerged++;
+          } else {
+            journey.journeyPlan = survivor;
+            await em.save(Journey, journey);
+            groupRepointed++;
+          }
+        }
+
+        for (const duplicate of duplicates) {
+          duplicate.is_active = false;
+          await em.save(JourneyPlan, duplicate);
+        }
+
+        result.mergedGroups++;
+        result.deactivatedPlans += duplicates.length;
+        result.repointedJourneys += groupRepointed;
+        result.mergedJourneys += groupMerged;
+        result.details.push({
+          key,
+          survivorId: survivor.id,
+          deactivatedPlanIds: duplicateIds,
+          mergedDays,
+          repointedJourneys: groupRepointed,
+          mergedJourneys: groupMerged,
+        });
+      }
+    });
+
+    return result;
+  }
+
+  private async mergeJourneyCheckIns(
+    em: EntityManager,
+    keeper: Journey,
+    duplicate: Journey,
+  ) {
+    const keeperCheckIn = keeper.checkin;
+    const duplicateCheckIn = duplicate.checkin;
+
+    if (!keeperCheckIn && !duplicateCheckIn) {
+      await em.remove(duplicate);
+      return;
+    }
+
+    if (!keeperCheckIn && duplicateCheckIn) {
+      duplicateCheckIn.journey = keeper;
+      keeper.checkin = duplicateCheckIn;
+      await em.save(CheckIn, duplicateCheckIn);
+      await em.save(Journey, keeper);
+      await em.remove(duplicate);
+      return;
+    }
+
+    if (keeperCheckIn && !duplicateCheckIn) {
+      await em.remove(duplicate);
+      return;
+    }
+
+    const keeperTime = keeperCheckIn.checkOutTime || keeperCheckIn.checkInTime;
+    const duplicateTime =
+      duplicateCheckIn.checkOutTime || duplicateCheckIn.checkInTime;
+
+    if (
+      duplicateTime &&
+      (!keeperTime || new Date(duplicateTime) > new Date(keeperTime))
+    ) {
+      await em.remove(keeperCheckIn);
+      duplicateCheckIn.journey = keeper;
+      keeper.checkin = duplicateCheckIn;
+      await em.save(CheckIn, duplicateCheckIn);
+      await em.save(Journey, keeper);
+    } else {
+      await em.remove(duplicateCheckIn);
+    }
+
+    await em.remove(duplicate);
+  }
+
   async getCurrentJourney(userId: string) {
     const journey = await this.checkInRepo.findOne({
       where: { user: { id: userId }, checkOutTime: IsNull(), checkInTime: Not(IsNull()) },
