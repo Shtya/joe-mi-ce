@@ -2347,10 +2347,11 @@ export class JourneyService {
    */
   async repairOrphanCheckIns(params: {
     projectId?: string;
+    sourceProjectId?: string;
     userId?: string;
     dryRun?: boolean;
   }) {
-    const { projectId, userId, dryRun = true } = params;
+    const { projectId, sourceProjectId, userId, dryRun = true } = params;
 
     const qb = this.checkInRepo
       .createQueryBuilder("checkIn")
@@ -2360,7 +2361,9 @@ export class JourneyService {
         new Brackets((subQb) => {
           subQb
             .where("journey.id IS NULL")
-            .orWhere("journey.projectId != CAST(user.project_id AS uuid)");
+            .orWhere(
+              "user.project_id IS NOT NULL AND journey.projectId != CAST(user.project_id AS uuid)",
+            );
         }),
       );
 
@@ -2368,8 +2371,8 @@ export class JourneyService {
       qb.andWhere("user.id = :userId", { userId });
     }
 
-    if (projectId) {
-      qb.andWhere("user.project_id = :projectId", { projectId });
+    if (sourceProjectId) {
+      qb.andWhere("user.project_id = :sourceProjectId", { sourceProjectId });
     }
 
     const orphanCheckIns = await qb.getMany();
@@ -2447,6 +2450,21 @@ export class JourneyService {
           : JourneyStatus.PRESENT;
 
         const targetProjectId = branch.project?.id || projectId || user.project_id;
+
+        if (projectId && targetProjectId !== projectId) {
+          result.skipped++;
+          result.details.push({
+            checkInId: checkIn.id,
+            userId: user.id,
+            date: checkInDate,
+            branchId: branch.id,
+            branchName: branch.name,
+            resolvedProjectId: targetProjectId,
+            reason: `Resolved project does not match target project ${projectId}`,
+            action: "SKIPPED_PROJECT_MISMATCH",
+          });
+          continue;
+        }
 
         const existingJourney = await this.journeyRepo.findOne({
           where: {

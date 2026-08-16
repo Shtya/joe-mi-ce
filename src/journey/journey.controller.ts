@@ -1486,10 +1486,16 @@ export class JourneyController {
   @Post("repair-orphan-checkins")
   @Permissions(EPermission.JOURNEY_UPDATE)
   async repairOrphanCheckIns(
-    @Body() body: { projectId?: string; userId?: string; dryRun?: boolean },
+    @Body() body: {
+      projectId?: string;
+      sourceProjectId?: string;
+      userId?: string;
+      dryRun?: boolean;
+    },
   ) {
     return this.journeyService.repairOrphanCheckIns({
       projectId: body.projectId,
+      sourceProjectId: body.sourceProjectId,
       userId: body.userId,
       dryRun: body.dryRun !== false,
     });
