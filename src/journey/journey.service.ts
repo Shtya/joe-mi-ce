@@ -2683,24 +2683,43 @@ export class JourneyService {
   }) {
     const { projectId, userId, dryRun = true } = params;
 
-    const qb = this.journeyRepo
+    const baseQb = this.journeyRepo
       .createQueryBuilder("journey")
       .leftJoinAndSelect("journey.user", "user")
       .leftJoinAndSelect("journey.branch", "branch")
       .leftJoinAndSelect("journey.shift", "shift")
       .leftJoinAndSelect("journey.createdBy", "createdBy")
       .leftJoinAndSelect("journey.journeyPlan", "journeyPlan")
-      .withDeleted()
-      .where("journeyPlan.id IS NULL")
-      .andWhere("journey.type = :type", { type: JourneyType.PLANNED });
+      .withDeleted();
 
     if (projectId) {
-      qb.andWhere("journey.projectId = :projectId", { projectId });
+      baseQb.andWhere("journey.projectId = :projectId", { projectId });
     }
 
     if (userId) {
-      qb.andWhere("user.id = :userId", { userId });
+      baseQb.andWhere("user.id = :userId", { userId });
     }
+
+    const diagnostics = {
+      totalJourneys: await baseQb.getCount(),
+      withPlan: await baseQb
+        .clone()
+        .andWhere("journeyPlan.id IS NOT NULL")
+        .getCount(),
+      withoutPlan: await baseQb
+        .clone()
+        .andWhere("journeyPlan.id IS NULL")
+        .getCount(),
+      plannedWithoutPlan: await baseQb
+        .clone()
+        .andWhere("journeyPlan.id IS NULL")
+        .andWhere("journey.type = :type", { type: JourneyType.PLANNED })
+        .getCount(),
+    };
+
+    const qb = baseQb
+      .andWhere("journeyPlan.id IS NULL")
+      .andWhere("journey.type = :type", { type: JourneyType.PLANNED });
 
     const journeys = await qb.getMany();
 
@@ -2805,6 +2824,7 @@ export class JourneyService {
 
     return {
       dryRun,
+      diagnostics,
       totalJourneys: journeys.length,
       created: result.created,
       linked: result.linked,
