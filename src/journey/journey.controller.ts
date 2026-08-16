@@ -777,10 +777,11 @@ export class JourneyController {
 
         const matchingJourneys =
           plan.journeys?.filter((j: any) => {
+            if (!j.date) return false;
             const jDateStr =
               typeof j.date === "string"
                 ? j.date.split("T")[0]
-                : dayjs(j.date).format("YYYY-MM-DD");
+                : dayjs(j.date).utc().format("YYYY-MM-DD");
             return jDateStr === dateStr;
           }) || [];
 
@@ -866,16 +867,10 @@ export class JourneyController {
           shiftEnd.set("hour", endH).set("minute", endM).set("second", endS);
           if (endH < startH) shiftEnd.add(1, "day");
 
-          // Calculate attendance status
+          // Calculate attendance status from check-in/out first
           let attendanceStatus = "Absent";
           if (journey) {
-            if (journey.status === "present") {
-              attendanceStatus = "Present";
-            } else if (journey.status === "absent") {
-              attendanceStatus = "Absent";
-            } else if (checkInTime && !checkOutTime) {
-              attendanceStatus = "Not Checked Out";
-            } else if (checkInTime && checkOutTime) {
+            if (checkInTime && checkOutTime) {
               if (dayjs(checkInTime).isAfter(shiftStart)) {
                 attendanceStatus = "Late Check-in";
               } else if (dayjs(checkOutTime).isBefore(shiftEnd)) {
@@ -883,19 +878,31 @@ export class JourneyController {
               } else {
                 attendanceStatus = "Present";
               }
+            } else if (checkInTime && !checkOutTime) {
+              attendanceStatus = "Not Checked Out";
+            } else if (journey.status === "vacation") {
+              attendanceStatus = "Vacation";
+            } else if (journey.status === "present") {
+              attendanceStatus = "Present";
+            } else if (journey.status === "closed") {
+              attendanceStatus = "Closed";
+            } else if (journey.status === "absent") {
+              attendanceStatus = "Absent";
             }
           }
 
-          const attendanceStatusEn = journey?.status
-            ? getTranslatedStatus(journey.status, "en")
-            : getTranslatedStatus(attendanceStatus, "en");
+          const attendanceStatusEn = getTranslatedStatus(
+            attendanceStatus,
+            "en",
+          );
           const journeyStatusEn = journey?.status
             ? getTranslatedStatus(journey.status, "en")
             : null;
 
-          const finalAttendanceStatus = journey?.status
-            ? getTranslatedStatus(journey.status, lang)
-            : getTranslatedStatus(attendanceStatus, lang);
+          const finalAttendanceStatus = getTranslatedStatus(
+            attendanceStatus,
+            lang,
+          );
           const finalJourneyStatus = journey?.status
             ? getTranslatedStatus(journey.status, lang)
             : null;
@@ -936,7 +943,7 @@ export class JourneyController {
             journeyDate:
               typeof journey.date === "string"
                 ? journey.date.split("T")[0]
-                : dayjs(journey.date).format("YYYY-MM-DD"),
+                : dayjs(journey.date).utc().format("YYYY-MM-DD"),
             createdAt: plan.createdAt,
             updatedAt: plan.updatedAt,
             isActive: plan.isActive,
@@ -973,14 +980,28 @@ export class JourneyController {
         shiftEnd.add(1, "day");
       }
 
-      let attendanceStatus = "Present";
-      if (
-        journey.status === "absent" ||
-        journey.status === JourneyStatus.UNPLANNED_ABSENT
-      ) {
-        attendanceStatus = "Absent";
-      } else if (checkInTime && !checkOutTime) {
-        attendanceStatus = "Not Checked Out";
+      let attendanceStatus = "Absent";
+      if (journey) {
+        if (checkInTime && checkOutTime) {
+          attendanceStatus = "Present";
+        } else if (checkInTime && !checkOutTime) {
+          attendanceStatus = "Not Checked Out";
+        } else if (
+          journey.status === "absent" ||
+          journey.status === JourneyStatus.UNPLANNED_ABSENT
+        ) {
+          attendanceStatus = "Absent";
+        } else if (
+          journey.status === "present" ||
+          journey.status === JourneyStatus.UNPLANNED_PRESENT
+        ) {
+          attendanceStatus = "Present";
+        } else if (
+          journey.status === "closed" ||
+          journey.status === JourneyStatus.UNPLANNED_CLOSED
+        ) {
+          attendanceStatus = "Closed";
+        }
       }
 
       const attendanceStatusEn = getTranslatedStatus(attendanceStatus, "en");
@@ -1027,7 +1048,7 @@ export class JourneyController {
         journeyDate:
           typeof journey.date === "string"
             ? journey.date.split("T")[0]
-            : dayjs(journey.date).format("YYYY-MM-DD"),
+            : dayjs(journey.date).utc().format("YYYY-MM-DD"),
         createdAt: journey.created_at,
         updatedAt: journey.updated_at,
         isActive: true,
