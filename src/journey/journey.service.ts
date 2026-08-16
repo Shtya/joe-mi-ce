@@ -2355,8 +2355,16 @@ export class JourneyService {
 
     const baseQb = this.checkInRepo
       .createQueryBuilder("checkIn")
-      .leftJoinAndSelect("checkIn.user", "user")
-      .leftJoinAndSelect("checkIn.journey", "journey")
+      .leftJoinAndSelect(
+        "checkIn.user",
+        "user",
+        "user.deleted_at IS NULL OR user.deleted_at IS NOT NULL",
+      )
+      .leftJoinAndSelect(
+        "checkIn.journey",
+        "journey",
+        "journey.deleted_at IS NULL OR journey.deleted_at IS NOT NULL",
+      )
       .withDeleted();
 
     if (userId) {
