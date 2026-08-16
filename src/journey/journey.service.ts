@@ -2731,8 +2731,19 @@ export class JourneyService {
       details: [] as any[],
     };
 
-    // Group by user + branch + shift + project + day to avoid duplicate plans
-    const planMap = new Map<string, JourneyPlan>();
+    // Group journeys by user + branch + shift + project
+    const groupMap = new Map<
+      string,
+      {
+        user: User;
+        branch: Branch;
+        shift: Shift | null;
+        projectId: string | null;
+        createdBy: User | null;
+        days: Set<string>;
+        journeys: Journey[];
+      }
+    >();
 
     for (const journey of journeys) {
       try {
@@ -2757,63 +2768,24 @@ export class JourneyService {
           continue;
         }
 
-        const planKey = `${user.id}|${branch.id}|${shift?.id || "null"}|${journey.projectId || "null"}|${dayName}`;
+        const groupKey = `${user.id}|${branch.id}|${shift?.id || "null"}|${journey.projectId || "null"}`;
 
-        let plan = planMap.get(planKey);
-        if (!plan) {
-          const existingPlan = await this.journeyPlanRepo.findOne({
-            where: {
-              user: { id: user.id },
-              branch: { id: branch.id },
-              shift: shift ? { id: shift.id } : undefined,
-              projectId: journey.projectId,
-              days: [dayName] as any,
-            },
-            withDeleted: true,
-          });
-
-          if (existingPlan) {
-            plan = existingPlan;
-            plan.is_active = true;
-            plan.deleted_at = null;
-          } else {
-            plan = this.journeyPlanRepo.create({
-              user,
-              branch,
-              shift: shift || null,
-              projectId: journey.projectId,
-              days: [dayName],
-              is_active: true,
-              createdBy: journey.createdBy || user,
-            });
-          }
-
-          if (!dryRun) {
-            plan = await this.journeyPlanRepo.save(plan);
-            result.created++;
-          } else {
-            result.created++;
-          }
-
-          planMap.set(planKey, plan);
+        let group = groupMap.get(groupKey);
+        if (!group) {
+          group = {
+            user,
+            branch,
+            shift: shift || null,
+            projectId: journey.projectId || null,
+            createdBy: journey.createdBy || null,
+            days: new Set<string>(),
+            journeys: [],
+          };
+          groupMap.set(groupKey, group);
         }
 
-        if (!dryRun) {
-          journey.journeyPlan = plan;
-          await this.journeyRepo.save(journey);
-          result.linked++;
-        } else {
-          result.linked++;
-        }
-
-        result.details.push({
-          journeyId: journey.id,
-          planId: plan.id || "WOULD_CREATE",
-          userId: user.id,
-          branchId: branch.id,
-          day: dayName,
-          action: dryRun ? "WOULD_CREATE" : "CREATED",
-        });
+        group.days.add(dayName);
+        group.journeys.push(journey);
       } catch (err) {
         result.skipped++;
         result.errors.push(
@@ -2822,10 +2794,98 @@ export class JourneyService {
       }
     }
 
+    const dayOrder = [
+      "sunday",
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+    ];
+
+    for (const group of groupMap.values()) {
+      try {
+        const sortedDays = Array.from(group.days).sort(
+          (a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b),
+        );
+
+        // Find all existing plans for this group and merge them
+        const existingPlans = await this.journeyPlanRepo.find({
+          where: {
+            user: { id: group.user.id },
+            branch: { id: group.branch.id },
+            shift: group.shift ? { id: group.shift.id } : undefined,
+            projectId: group.projectId,
+          },
+          withDeleted: true,
+        });
+
+        let plan: JourneyPlan;
+        if (existingPlans.length > 0) {
+          plan = existingPlans[0];
+          const allDays = new Set<string>(sortedDays);
+          for (const p of existingPlans) {
+            for (const d of p.days || []) {
+              allDays.add(d);
+            }
+          }
+          plan.days = Array.from(allDays).sort(
+            (a, b) => dayOrder.indexOf(a) - dayOrder.indexOf(b),
+          );
+          plan.is_active = true;
+          plan.deleted_at = null;
+        } else {
+          plan = this.journeyPlanRepo.create({
+            user: group.user,
+            branch: group.branch,
+            shift: group.shift,
+            projectId: group.projectId,
+            days: sortedDays,
+            is_active: true,
+            createdBy: group.createdBy || group.user,
+          });
+        }
+
+        if (!dryRun) {
+          plan = await this.journeyPlanRepo.save(plan);
+
+          // Delete extra duplicate plans (keep only the merged one)
+          for (const p of existingPlans.slice(1)) {
+            await this.journeyPlanRepo.softRemove(p);
+          }
+        }
+
+        result.created++;
+
+        for (const journey of group.journeys) {
+          if (!dryRun) {
+            journey.journeyPlan = plan;
+            await this.journeyRepo.save(journey);
+          }
+          result.linked++;
+          result.details.push({
+            journeyId: journey.id,
+            planId: plan.id || "WOULD_CREATE",
+            userId: group.user.id,
+            branchId: group.branch.id,
+            days: sortedDays,
+            action: dryRun ? "WOULD_CREATE" : "CREATED",
+          });
+        }
+      } catch (err) {
+        result.skipped += group.journeys.length;
+        result.errors.push(
+          `Group ${group.user.id}/${group.branch.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     return {
       dryRun,
       diagnostics,
       totalJourneys: journeys.length,
+      groups: groupMap.size,
       created: result.created,
       linked: result.linked,
       skipped: result.skipped,
