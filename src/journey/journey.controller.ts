@@ -1501,6 +1501,22 @@ export class JourneyController {
     });
   }
 
+  @Get("orphan-checkins")
+  @Permissions(EPermission.JOURNEY_READ)
+  async getOrphanCheckIns(
+    @Query("projectId") projectId?: string,
+    @Query("sourceProjectId") sourceProjectId?: string,
+    @Query("userId") userId?: string,
+    @Query("limit") limit?: string,
+  ) {
+    return this.journeyService.getOrphanCheckIns({
+      projectId,
+      sourceProjectId,
+      userId,
+      limit: limit ? Number(limit) : 20,
+    });
+  }
+
   @Get("location/live")
   @Permissions(EPermission.JOURNEY_READ)
   async getLiveLocations(

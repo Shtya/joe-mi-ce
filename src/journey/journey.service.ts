@@ -2365,6 +2365,7 @@ export class JourneyService {
         "journey",
         "journey.deleted_at IS NULL OR journey.deleted_at IS NOT NULL",
       )
+      .addSelect("checkIn.userId")
       .withDeleted();
 
     if (userId) {
@@ -2415,10 +2416,22 @@ export class JourneyService {
 
     for (const checkIn of orphanCheckIns) {
       try {
-        const user = checkIn.user;
+        let user = checkIn.user;
+        const rawUserId = (checkIn as any).userId || (checkIn as any).user_id;
+
+        if (!user && rawUserId) {
+          user = await this.userRepo.findOne({
+            where: { id: rawUserId },
+            withDeleted: true,
+            relations: ["branch"],
+          });
+        }
+
         if (!user) {
           result.skipped++;
-          result.errors.push(`Check-in ${checkIn.id}: no user`);
+          result.errors.push(
+            `Check-in ${checkIn.id}: no user (rawUserId=${rawUserId ?? "null"})`,
+          );
           continue;
         }
 
@@ -2558,6 +2571,86 @@ export class JourneyService {
       skipped: result.skipped,
       errors: result.errors,
       details: result.details,
+    };
+  }
+
+  async getOrphanCheckIns(params: {
+    projectId?: string;
+    sourceProjectId?: string;
+    userId?: string;
+    limit?: number;
+  }) {
+    const { projectId, sourceProjectId, userId, limit = 20 } = params;
+
+    const qb = this.checkInRepo
+      .createQueryBuilder("checkIn")
+      .leftJoinAndSelect(
+        "checkIn.user",
+        "user",
+        "user.deleted_at IS NULL OR user.deleted_at IS NOT NULL",
+      )
+      .leftJoinAndSelect(
+        "checkIn.journey",
+        "journey",
+        "journey.deleted_at IS NULL OR journey.deleted_at IS NOT NULL",
+      )
+      .addSelect("checkIn.userId")
+      .addSelect("checkIn.journeyId")
+      .withDeleted()
+      .where("journey.id IS NULL");
+
+    if (userId) {
+      qb.andWhere("user.id = :userId OR checkIn.userId = :userId", { userId });
+    }
+
+    if (sourceProjectId) {
+      qb.andWhere("user.project_id = :sourceProjectId", { sourceProjectId });
+    }
+
+    const checkIns = await qb.limit(limit).getMany();
+
+    const items = await Promise.all(
+      checkIns.map(async (checkIn) => {
+        const rawUserId =
+          (checkIn as any).userId || (checkIn as any).user_id || null;
+        const rawJourneyId =
+          (checkIn as any).journeyId || (checkIn as any).journey_id || null;
+
+        let user = checkIn.user;
+        if (!user && rawUserId) {
+          user = await this.userRepo.findOne({
+            where: { id: rawUserId },
+            withDeleted: true,
+            relations: ["branch"],
+          });
+        }
+
+        return {
+          checkInId: checkIn.id,
+          checkInTime: checkIn.checkInTime,
+          checkOutTime: checkIn.checkOutTime,
+          deletedAt: checkIn.deleted_at,
+          rawUserId,
+          rawJourneyId,
+          user: user
+            ? {
+                id: user.id,
+                username: user.username,
+                name: user.name,
+                project_id: user.project_id,
+                deleted_at: user.deleted_at,
+                branchId: user.branch?.id || null,
+              }
+            : null,
+        };
+      }),
+    );
+
+    return {
+      count: items.length,
+      projectId: projectId || null,
+      sourceProjectId: sourceProjectId || null,
+      items,
     };
   }
 
