@@ -2687,11 +2687,21 @@ export class JourneyService {
     // because TypeORM's IS NULL check on the plan relation is unreliable.
     const qb = this.journeyRepo
       .createQueryBuilder("journey")
-      .leftJoinAndSelect("journey.user", "user")
-      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect(
+        "journey.user",
+        "user",
+        "user.deleted_at IS NULL OR user.deleted_at IS NOT NULL",
+      )
+      .leftJoinAndSelect(
+        "journey.branch",
+        "branch",
+        "branch.deleted_at IS NULL OR branch.deleted_at IS NOT NULL",
+      )
       .leftJoinAndSelect("journey.shift", "shift")
       .leftJoinAndSelect("journey.createdBy", "createdBy")
       .leftJoinAndSelect("journey.journeyPlan", "journeyPlan")
+      .addSelect("journey.userId")
+      .addSelect("journey.branchId")
       .withDeleted();
 
     if (projectId) {
@@ -2699,7 +2709,7 @@ export class JourneyService {
     }
 
     if (userId) {
-      qb.andWhere("user.id = :userId", { userId });
+      qb.andWhere("user.id = :userId OR journey.userId = :userId", { userId });
     }
 
     const allJourneys = await qb.getMany();
@@ -2741,14 +2751,33 @@ export class JourneyService {
 
     for (const journey of journeys) {
       try {
-        const user = journey.user;
-        const branch = journey.branch;
+        let user = journey.user;
+        let branch = journey.branch;
         const shift = journey.shift;
+
+        const rawUserId = (journey as any).userId || (journey as any).user_id;
+        const rawBranchId =
+          (journey as any).branchId || (journey as any).branch_id;
+
+        if (!user && rawUserId) {
+          user = await this.userRepo.findOne({
+            where: { id: rawUserId },
+            withDeleted: true,
+            relations: ["branch"],
+          });
+        }
+
+        if (!branch && rawBranchId) {
+          branch = await this.branchRepo.findOne({
+            where: { id: rawBranchId },
+            withDeleted: true,
+          });
+        }
 
         if (!user || !branch) {
           result.skipped++;
           result.errors.push(
-            `Journey ${journey.id}: missing user or branch`,
+            `Journey ${journey.id}: missing user or branch (rawUserId=${rawUserId ?? "null"}, rawBranchId=${rawBranchId ?? "null"})`,
           );
           continue;
         }
