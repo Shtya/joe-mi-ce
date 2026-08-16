@@ -1529,6 +1529,25 @@ export class JourneyController {
     });
   }
 
+  @Post("reassign-project")
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async reassignJourneyProject(
+    @Body()
+    body: {
+      sourceProjectId: string;
+      targetProjectId: string;
+      userId?: string;
+      dryRun?: boolean;
+    },
+  ) {
+    return this.journeyService.reassignJourneyProject({
+      sourceProjectId: body.sourceProjectId,
+      targetProjectId: body.targetProjectId,
+      userId: body.userId,
+      dryRun: body.dryRun !== false,
+    });
+  }
+
   @Get("location/live")
   @Permissions(EPermission.JOURNEY_READ)
   async getLiveLocations(

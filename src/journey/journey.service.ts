@@ -2768,7 +2768,8 @@ export class JourneyService {
           continue;
         }
 
-        const groupKey = `${user.id}|${branch.id}|${shift?.id || "null"}|${journey.projectId || "null"}`;
+        const planProjectId = user.project_id || journey.projectId || null;
+        const groupKey = `${user.id}|${branch.id}|${shift?.id || "null"}|${planProjectId || "null"}`;
 
         let group = groupMap.get(groupKey);
         if (!group) {
@@ -2776,7 +2777,7 @@ export class JourneyService {
             user,
             branch,
             shift: shift || null,
-            projectId: journey.projectId || null,
+            projectId: planProjectId,
             createdBy: journey.createdBy || null,
             days: new Set<string>(),
             journeys: [],
@@ -2888,6 +2889,84 @@ export class JourneyService {
       groups: groupMap.size,
       created: result.created,
       linked: result.linked,
+      skipped: result.skipped,
+      errors: result.errors,
+      details: result.details,
+    };
+  }
+
+  async reassignJourneyProject(params: {
+    sourceProjectId: string;
+    targetProjectId: string;
+    userId?: string;
+    dryRun?: boolean;
+  }) {
+    const { sourceProjectId, targetProjectId, userId, dryRun = true } = params;
+
+    const qb = this.journeyRepo
+      .createQueryBuilder("journey")
+      .leftJoinAndSelect("journey.user", "user")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("journey.journeyPlan", "journeyPlan")
+      .leftJoinAndSelect("journey.checkin", "checkin")
+      .withDeleted()
+      .where("journey.projectId = :sourceProjectId", { sourceProjectId });
+
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+
+    const journeys = await qb.getMany();
+
+    const result = {
+      reassigned: 0,
+      skipped: 0,
+      errors: [] as string[],
+      details: [] as any[],
+    };
+
+    for (const journey of journeys) {
+      try {
+        if (!dryRun) {
+          journey.projectId = targetProjectId;
+
+          if (journey.journeyPlan) {
+            journey.journeyPlan.projectId = targetProjectId;
+            journey.journeyPlan = await this.journeyPlanRepo.save(
+              journey.journeyPlan,
+            );
+          }
+
+          await this.journeyRepo.save(journey);
+          result.reassigned++;
+        } else {
+          result.reassigned++;
+        }
+
+        result.details.push({
+          journeyId: journey.id,
+          userId: journey.user?.id,
+          branchId: journey.branch?.id,
+          oldProjectId: sourceProjectId,
+          newProjectId: targetProjectId,
+          hasCheckIn: !!journey.checkin,
+          hasPlan: !!journey.journeyPlan,
+          action: dryRun ? "WOULD_REASSIGN" : "REASSIGNED",
+        });
+      } catch (err) {
+        result.skipped++;
+        result.errors.push(
+          `Journey ${journey.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return {
+      dryRun,
+      sourceProjectId,
+      targetProjectId,
+      totalJourneys: journeys.length,
+      reassigned: result.reassigned,
       skipped: result.skipped,
       errors: result.errors,
       details: result.details,
