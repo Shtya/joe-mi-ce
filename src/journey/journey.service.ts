@@ -2360,7 +2360,7 @@ export class JourneyService {
         new Brackets((subQb) => {
           subQb
             .where("journey.id IS NULL")
-            .orWhere("journey.projectId != user.project_id");
+            .orWhere("journey.projectId != user.project_id::uuid");
         }),
       );
 
