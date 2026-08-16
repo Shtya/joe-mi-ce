@@ -1548,6 +1548,23 @@ export class JourneyController {
     });
   }
 
+  @Post("fix-project-alignment")
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async fixProjectAlignment(
+    @Body()
+    body: {
+      projectId?: string;
+      userId?: string;
+      dryRun?: boolean;
+    },
+  ) {
+    return this.journeyService.fixProjectAlignment({
+      projectId: body.projectId,
+      userId: body.userId,
+      dryRun: body.dryRun !== false,
+    });
+  }
+
   @Get("location/live")
   @Permissions(EPermission.JOURNEY_READ)
   async getLiveLocations(

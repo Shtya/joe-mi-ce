@@ -2973,6 +2973,123 @@ export class JourneyService {
     };
   }
 
+  async fixProjectAlignment(params: {
+    projectId?: string;
+    userId?: string;
+    dryRun?: boolean;
+  }) {
+    const { projectId, userId, dryRun = true } = params;
+
+    const qb = this.journeyRepo
+      .createQueryBuilder("journey")
+      .leftJoinAndSelect("journey.user", "user")
+      .leftJoinAndSelect("journey.branch", "branch")
+      .leftJoinAndSelect("journey.shift", "shift")
+      .leftJoinAndSelect("journey.journeyPlan", "journeyPlan")
+      .leftJoinAndSelect("journey.checkin", "checkin")
+      .withDeleted()
+      .where("user.project_id IS NOT NULL");
+
+    if (projectId) {
+      qb.andWhere(
+        new Brackets((subQb) => {
+          subQb
+            .where("journey.projectId = :projectId", { projectId })
+            .orWhere("journeyPlan.projectId = :projectId", { projectId });
+        }),
+      );
+    }
+
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+
+    const journeys = await qb.getMany();
+
+    const result = {
+      checked: 0,
+      journeyFixed: 0,
+      planFixed: 0,
+      alreadyCorrect: 0,
+      skipped: 0,
+      errors: [] as string[],
+      details: [] as any[],
+    };
+
+    for (const journey of journeys) {
+      try {
+        const user = journey.user;
+        if (!user || !user.project_id) {
+          result.skipped++;
+          continue;
+        }
+
+        result.checked++;
+
+        const correctProjectId = user.project_id;
+        const journeyMismatch = journey.projectId !== correctProjectId;
+        const planMismatch =
+          journey.journeyPlan &&
+          journey.journeyPlan.projectId !== correctProjectId;
+
+        if (!journeyMismatch && !planMismatch) {
+          result.alreadyCorrect++;
+          continue;
+        }
+
+        if (!dryRun) {
+          if (journeyMismatch) {
+            journey.projectId = correctProjectId;
+          }
+
+          if (planMismatch && journey.journeyPlan) {
+            journey.journeyPlan.projectId = correctProjectId;
+            journey.journeyPlan = await this.journeyPlanRepo.save(
+              journey.journeyPlan,
+            );
+            result.planFixed++;
+          }
+
+          await this.journeyRepo.save(journey);
+          if (journeyMismatch) result.journeyFixed++;
+        } else {
+          if (journeyMismatch) result.journeyFixed++;
+          if (planMismatch) result.planFixed++;
+        }
+
+        result.details.push({
+          journeyId: journey.id,
+          userId: user.id,
+          userProjectId: correctProjectId,
+          journeyProjectId: journey.projectId,
+          planProjectId: journey.journeyPlan?.projectId || null,
+          journeyFixed: journeyMismatch,
+          planFixed: planMismatch,
+          action: dryRun ? "WOULD_FIX" : "FIXED",
+        });
+      } catch (err) {
+        result.skipped++;
+        result.errors.push(
+          `Journey ${journey.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return {
+      dryRun,
+      projectId: projectId || null,
+      userId: userId || null,
+      totalJourneys: journeys.length,
+      checked: result.checked,
+      alreadyCorrect: result.alreadyCorrect,
+      journeyFixed: result.journeyFixed,
+      planFixed: result.planFixed,
+      skipped: result.skipped,
+      errors: result.errors,
+      details: result.details,
+    };
+  }
+
   async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
     return this.branchRepo.find({
       where: [
