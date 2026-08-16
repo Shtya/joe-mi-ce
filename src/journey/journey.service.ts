@@ -17,6 +17,7 @@ import {
   ILike,
   MoreThan,
   IsNull,
+  Brackets,
 } from "typeorm";
 import * as dayjs from "dayjs";
 import * as XLSX from "xlsx";
@@ -2355,7 +2356,13 @@ export class JourneyService {
       .createQueryBuilder("checkIn")
       .leftJoinAndSelect("checkIn.user", "user")
       .leftJoinAndSelect("checkIn.journey", "journey")
-      .where("journey.id IS NULL");
+      .where(
+        new Brackets((subQb) => {
+          subQb
+            .where("journey.id IS NULL")
+            .orWhere("journey.projectId != user.project_id");
+        }),
+      );
 
     if (userId) {
       qb.andWhere("user.id = :userId", { userId });
@@ -2439,12 +2446,15 @@ export class JourneyService {
           ? JourneyStatus.UNPLANNED_CLOSED
           : JourneyStatus.UNPLANNED_PRESENT;
 
+        const targetProjectId = branch.project?.id || projectId || user.project_id;
+
         const existingJourney = await this.journeyRepo.findOne({
           where: {
             user: { id: user.id },
             branch: { id: branch.id },
             date: checkInDate,
             type,
+            projectId: targetProjectId,
             shift: shift ? { id: shift.id } : undefined,
           },
           withDeleted: true,
@@ -2465,7 +2475,7 @@ export class JourneyService {
             date: checkInDate,
             type,
             status,
-            projectId: branch.project?.id || projectId || user.project_id,
+            projectId: targetProjectId,
             is_active: true,
             createdBy: user,
           });
