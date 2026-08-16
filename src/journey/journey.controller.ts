@@ -1483,6 +1483,18 @@ export class JourneyController {
     return this.journeyService.recoverCheckInTimes();
   }
 
+  @Post("repair-orphan-checkins")
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async repairOrphanCheckIns(
+    @Body() body: { projectId?: string; userId?: string; dryRun?: boolean },
+  ) {
+    return this.journeyService.repairOrphanCheckIns({
+      projectId: body.projectId,
+      userId: body.userId,
+      dryRun: body.dryRun !== false,
+    });
+  }
+
   @Get("location/live")
   @Permissions(EPermission.JOURNEY_READ)
   async getLiveLocations(

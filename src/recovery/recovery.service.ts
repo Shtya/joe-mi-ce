@@ -621,13 +621,16 @@ export class RecoveryService {
           }
 
           const price = +(product.price ?? 0);
+          const saleDate = new Date(`${effectiveDate}T12:00:00Z`);
           const saved = await saleRepo.save(
             saleRepo.create({
               price,
               quantity: Math.trunc(qty),
               total_amount: price * Math.trunc(qty),
               status: "completed",
-              sale_date: new Date(`${effectiveDate}T12:00:00Z`),
+              sale_date: saleDate,
+              created_at: saleDate,
+              updated_at: saleDate,
               productId: product.id,
               userId: ctx.recoveryUserId,
               branchId: null,
@@ -2174,6 +2177,8 @@ class RecoveryContext {
         total_amount: totalAmount,
         status: "completed",
         sale_date: saleDate,
+        created_at: saleDate,
+        updated_at: saleDate,
         productId,
         userId,
         branchId: branchId ?? null,

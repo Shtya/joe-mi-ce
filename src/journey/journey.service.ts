@@ -2339,6 +2339,175 @@ export class JourneyService {
     };
   }
 
+  /**
+   * Repair check-ins that have no associated journey.
+   * For each orphan check-in, creates a journey using the user's last known
+   * branch/shift (from any project) or the user's home branch as fallback.
+   */
+  async repairOrphanCheckIns(params: {
+    projectId?: string;
+    userId?: string;
+    dryRun?: boolean;
+  }) {
+    const { projectId, userId, dryRun = true } = params;
+
+    const qb = this.checkInRepo
+      .createQueryBuilder("checkIn")
+      .leftJoinAndSelect("checkIn.user", "user")
+      .leftJoinAndSelect("checkIn.journey", "journey")
+      .where("journey.id IS NULL");
+
+    if (userId) {
+      qb.andWhere("user.id = :userId", { userId });
+    }
+
+    if (projectId) {
+      qb.andWhere("user.project_id = :projectId", { projectId });
+    }
+
+    const orphanCheckIns = await qb.getMany();
+
+    const result: {
+      created: number;
+      skipped: number;
+      errors: string[];
+      details: any[];
+    } = {
+      created: 0,
+      skipped: 0,
+      errors: [],
+      details: [],
+    };
+
+    for (const checkIn of orphanCheckIns) {
+      try {
+        const user = checkIn.user;
+        if (!user) {
+          result.skipped++;
+          result.errors.push(`Check-in ${checkIn.id}: no user`);
+          continue;
+        }
+
+        const checkInDate = checkIn.checkInTime
+          ? dayjs(checkIn.checkInTime).format("YYYY-MM-DD")
+          : null;
+        if (!checkInDate) {
+          result.skipped++;
+          result.errors.push(`Check-in ${checkIn.id}: no checkInTime`);
+          continue;
+        }
+
+        // Find the user's most recent journey before this check-in date (any project)
+        const lastJourney = await this.journeyRepo.findOne({
+          where: {
+            user: { id: user.id },
+            date: LessThanOrEqual(checkInDate) as any,
+          },
+          relations: ["branch", "branch.project", "shift"],
+          order: { date: "DESC", created_at: "DESC" },
+        });
+
+        let branch = lastJourney?.branch;
+        let shift = lastJourney?.shift;
+
+        // Fallback to user's home branch
+        if (!branch && user.branch?.id) {
+          branch = await this.branchRepo.findOne({
+            where: { id: user.branch.id },
+            relations: ["project"],
+          });
+        }
+
+        if (!branch) {
+          result.skipped++;
+          result.errors.push(
+            `Check-in ${checkIn.id}: could not resolve branch for user ${user.id}`,
+          );
+          continue;
+        }
+
+        if (!shift) {
+          // Use any shift for the branch's project, or create a minimal default
+          shift = await this.shiftRepo.findOne({
+            where: { project: { id: branch.project?.id || projectId } },
+          });
+        }
+
+        const hasCheckout = !!checkIn.checkOutTime;
+        const type = JourneyType.UNPLANNED;
+        const status = hasCheckout
+          ? JourneyStatus.UNPLANNED_CLOSED
+          : JourneyStatus.UNPLANNED_PRESENT;
+
+        const existingJourney = await this.journeyRepo.findOne({
+          where: {
+            user: { id: user.id },
+            branch: { id: branch.id },
+            date: checkInDate,
+            type,
+            shift: shift ? { id: shift.id } : undefined,
+          },
+          withDeleted: true,
+        });
+
+        let journey: Journey;
+        if (existingJourney) {
+          journey = existingJourney;
+          journey.is_active = true;
+          journey.deleted_at = null;
+          journey.status = status;
+          if (shift) journey.shift = shift;
+        } else {
+          journey = this.journeyRepo.create({
+            user,
+            branch,
+            shift: shift || null,
+            date: checkInDate,
+            type,
+            status,
+            projectId: branch.project?.id || projectId || user.project_id,
+            is_active: true,
+            createdBy: user,
+          });
+        }
+
+        if (!dryRun) {
+          journey = await this.journeyRepo.save(journey);
+          checkIn.journey = journey;
+          await this.checkInRepo.save(checkIn);
+          result.created++;
+        } else {
+          result.created++; // count as would-be created in dry-run
+        }
+
+        result.details.push({
+          checkInId: checkIn.id,
+          userId: user.id,
+          date: checkInDate,
+          branchId: branch.id,
+          branchName: branch.name,
+          shiftId: shift?.id || null,
+          status,
+          action: dryRun ? "WOULD_CREATE" : "CREATED",
+        });
+      } catch (err) {
+        result.skipped++;
+        result.errors.push(
+          `Check-in ${checkIn.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    return {
+      dryRun,
+      totalOrphans: orphanCheckIns.length,
+      created: result.created,
+      skipped: result.skipped,
+      errors: result.errors,
+      details: result.details,
+    };
+  }
+
   async getSupervisorBranches(supervisorId: string): Promise<Branch[]> {
     return this.branchRepo.find({
       where: [
