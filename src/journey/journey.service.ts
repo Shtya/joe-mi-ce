@@ -2441,10 +2441,10 @@ export class JourneyService {
         }
 
         const hasCheckout = !!checkIn.checkOutTime;
-        const type = JourneyType.UNPLANNED;
+        const type = JourneyType.PLANNED;
         const status = hasCheckout
-          ? JourneyStatus.UNPLANNED_CLOSED
-          : JourneyStatus.UNPLANNED_PRESENT;
+          ? JourneyStatus.CLOSED
+          : JourneyStatus.PRESENT;
 
         const targetProjectId = branch.project?.id || projectId || user.project_id;
 
