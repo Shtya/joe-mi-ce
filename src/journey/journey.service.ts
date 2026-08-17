@@ -2129,6 +2129,28 @@ export class JourneyService {
   }
 
   // ===== الدوال المساعدة =====
+  /**
+   * Re-link an existing journey to the currently active plan when the plan it
+   * was created under has been deactivated or replaced. Without this, a
+   * re-planned promoter's journey stays attached to the old inactive plan and
+   * reports show them as absent with no check-in data.
+   */
+  private async relinkJourneyIfPlanDeactivated(
+    journey: Journey,
+    plan: JourneyPlan,
+  ) {
+    const linkedPlanId = journey.journeyPlan?.id;
+    if (!linkedPlanId || linkedPlanId === plan.id) return;
+
+    const linkedPlan = await this.journeyPlanRepo.findOne({
+      where: { id: linkedPlanId },
+    });
+    if (!linkedPlan || !linkedPlan.is_active) {
+      journey.journeyPlan = plan;
+      await this.journeyRepo.save(journey);
+    }
+  }
+
   private isWithinGeofence(branch: Branch, geo: any): boolean {
     const userCoords = this.parseLatLng(geo);
     return !this.evaluateLocationStatus(branch, userCoords.lat, userCoords.lng)
