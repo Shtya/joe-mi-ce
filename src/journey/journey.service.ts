@@ -2090,6 +2090,7 @@ export class JourneyService {
           date: tomorrow,
           branch: { id: plan.branch.id },
         },
+        relations: ["journeyPlan"],
         withDeleted: true,
       });
 
@@ -2102,6 +2103,8 @@ export class JourneyService {
             initialStatus,
           );
           createdCount++;
+        } else {
+          await this.relinkJourneyIfPlanDeactivated(exists, plan);
         }
         continue;
       }
@@ -2258,6 +2261,7 @@ export class JourneyService {
             ]),
           ),
         },
+        relations: ["journeyPlan"],
         withDeleted: true,
       });
 
@@ -2265,6 +2269,8 @@ export class JourneyService {
         if (!exists.is_active || exists.deleted_at) {
           await this.restorePlannedJourney(exists, plan, today, initialStatus);
           createdCount++;
+        } else {
+          await this.relinkJourneyIfPlanDeactivated(exists, plan);
         }
         continue;
       }

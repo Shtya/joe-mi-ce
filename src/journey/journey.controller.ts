@@ -834,6 +834,40 @@ export class JourneyController {
       });
     }
 
+    // Fallback index of planned journeys that are linked to a deactivated or
+    // replaced plan. The daily cron links a journey to the plan that existed at
+    // creation time; when the promoter is later re-planned (old plan
+    // deactivated, new plan activated), the journey keeps pointing at the old
+    // plan and never appears in plan.journeys. Index by user|branch|shift|date
+    // so the report can still find them.
+    const planUserIds = [
+      ...new Set(
+        (plans.records || []).map((p: any) => p.user?.id).filter(Boolean),
+      ),
+    ];
+    const misplacedJourneyIndex = new Map<string, any>();
+    if (planUserIds.length > 0 && datesInRange.length > 0) {
+      const plannedJourneys = await this.journeyService.journeyRepo.find({
+        where: {
+          type: JourneyType.PLANNED,
+          is_active: true,
+          date: In(datesInRange),
+          user: { id: In(planUserIds) },
+        },
+        relations: ["checkin", "shift", "branch", "user"],
+      });
+      for (const j of plannedJourneys) {
+        const jDateStr =
+          typeof j.date === "string"
+            ? j.date.split("T")[0]
+            : dayjs(j.date).utc().format("YYYY-MM-DD");
+        misplacedJourneyIndex.set(
+          `${j.user?.id}|${j.branch?.id}|${j.shift?.id}|${jDateStr}`,
+          j,
+        );
+      }
+    }
+
     const transformedData: any[] = [];
     const seenPromoterDate = new Set<string>(); // Track 'userId:date:branchId'
     const seenUserDateGlobal = new Set<string>(); // Track 'userId:date' to avoid fallback row if they worked elsewhere
@@ -853,6 +887,14 @@ export class JourneyController {
                 : dayjs(j.date).utc().format("YYYY-MM-DD");
             return jDateStr === dateStr;
           }) || [];
+
+        // Fall back to a journey linked to a deactivated/replaced plan
+        if (matchingJourneys.length === 0) {
+          const misplaced = misplacedJourneyIndex.get(
+            `${plan.user?.id}|${plan.branch?.id}|${plan.shift?.id}|${dateStr}`,
+          );
+          if (misplaced) matchingJourneys.push(misplaced);
+        }
 
         // If no journeys exist for this plan/date, mark as seen and push one row (even if inactive to show plan info)
         if (matchingJourneys.length === 0) {
