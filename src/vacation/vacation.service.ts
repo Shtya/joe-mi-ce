@@ -731,6 +731,93 @@ export class VacationService {
     }
   }
 
+  async acceptAllProjectVacations(req: any, dryRun: boolean = false) {
+    try {
+      const admin = await this.userRepo.findOne({
+        where: { id: req.user.id },
+        relations: ["project", "branch", "branch.project"],
+        select: { project: { id: true } },
+      });
+
+      if (!admin) {
+        throw new NotFoundException(`Admin user not found`);
+      }
+
+      const projectId =
+        admin.project?.id ?? admin.project_id ?? admin.branch?.project?.id;
+
+      if (!projectId) {
+        throw new BadRequestException("Admin is not assigned to any project");
+      }
+
+      // Find all pending vacations in this project
+      const vacations = await this.vacationRepo
+        .createQueryBuilder("vacation")
+        .leftJoinAndSelect("vacation.user", "user")
+        .leftJoinAndSelect("user.branch", "userBranch")
+        .leftJoinAndSelect("vacation.branch", "branch")
+        .leftJoinAndSelect("branch.city", "city")
+        .leftJoinAndSelect("branch.project", "project")
+        .leftJoinAndSelect("vacation.vacationDates", "vacationDates")
+        .where("project.id = :projectId", { projectId })
+        .andWhere("vacation.overall_status = :status", { status: "pending" })
+        .getMany();
+
+      if (vacations.length === 0) {
+        return { message: "No pending vacations found to approve", count: 0, dryRun };
+      }
+
+      if (dryRun) {
+        return {
+          message: `Dry run: ${vacations.length} vacations would be approved`,
+          count: vacations.length,
+          dryRun,
+          details: vacations.map((v) => this.mapToVacationResponse(v)),
+        };
+      }
+
+      let approvedCount = 0;
+
+      for (const vacation of vacations) {
+        vacation.overall_status = "approved";
+        vacation.processedBy = admin;
+        await this.vacationRepo.save(vacation);
+        approvedCount++;
+
+        const userId = vacation.user?.id;
+        const dates = vacation.vacationDates.map((vd) => vd.date);
+
+        if (userId && dates.length > 0) {
+          await this.journeyRepo.update(
+            {
+              user: { id: userId },
+              date: In(dates),
+              status: JourneyStatus.ABSENT,
+            },
+            { status: JourneyStatus.VACATION },
+          );
+        }
+      }
+
+      return {
+        message: `Successfully approved ${approvedCount} vacations`,
+        count: approvedCount,
+        dryRun,
+      };
+    } catch (error) {
+      console.error(error);
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+      throw new InternalServerErrorException(
+        "Failed to accept all project vacations",
+      );
+    }
+  }
+
   async resolveBranchFromLastJourney(userId: string): Promise<Branch | null> {
     const lastJourney = await this.journeyRepo
       .createQueryBuilder("journey")

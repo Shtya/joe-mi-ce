@@ -385,4 +385,56 @@ export class BranchController {
       throw err;
     }
   }
+
+  @Post("import-users-and-supervisors/:projectId")
+  @Permissions(EPermission.BRANCH_UPDATE)
+  @UseInterceptors(FileInterceptor("file", multerOptions))
+  async importUsersAndSupervisors(
+    @UploadedFile() file: Express.Multer.File,
+    @Param("projectId") projectId: string,
+    @Query("dryRun") dryRun?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException("File is required");
+    }
+
+    const filePath = file.path;
+    let rows: any[] = [];
+    const isDryRun = dryRun === 'true';
+
+    try {
+      if (file.mimetype === "text/csv") {
+        const csvContent = fs.readFileSync(filePath, "utf8");
+        const result = parse(csvContent, { header: true, skipEmptyLines: true });
+        rows = result.data;
+      } else if (file.mimetype === "application/vnd.ms-excel") {
+        const workbook = XLSX.readFile(filePath);
+        const sheetName = workbook.SheetNames[0];
+        rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: "" });
+      } else {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.readFile(filePath);
+        const sheet = workbook.getWorksheet(1);
+        const headers: string[] = [];
+        sheet.getRow(1).eachCell((cell, i) => {
+          headers[i - 1] = cell.value?.toString().trim() || "";
+        });
+        for (let i = 2; i <= sheet.rowCount; i++) {
+          const row = sheet.getRow(i);
+          const obj: any = {};
+          headers.forEach((h, idx) => {
+            const v = row.getCell(idx + 1).value;
+            if (v !== null && v !== undefined) obj[h] = v.toString().trim();
+          });
+          rows.push(obj);
+        }
+      }
+
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      return await this.branchService.importUsersAndSupervisors(rows, projectId, isDryRun);
+    } catch (err) {
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      throw err;
+    }
+  }
 }
