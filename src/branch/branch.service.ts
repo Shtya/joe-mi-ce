@@ -1433,6 +1433,124 @@ export class BranchService {
     return result;
   }
 
+  async importUsersAndSupervisors(rows: any[], projectId: string, isDryRun: boolean = false) {
+    const result = {
+      success: 0,
+      failed: 0,
+      errors: [],
+      dryRunDetails: []
+    };
+
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
+
+    if (!project) {
+      throw new NotFoundException(`Project with ID ${projectId} not found`);
+    }
+
+    for (const [index, rawRow] of rows.entries()) {
+      try {
+        const row = this.mapHeaders(rawRow);
+        
+        // Extract values from mapped headers or raw row for the specific format
+        const username = (row.username || row.user || rawRow['User'] || '').toString().trim();
+        const nationalId = (row.national_id || row.id || rawRow['ID'] || '').toString().trim();
+        const mobile = (row.mobile || row.phone || rawRow['Phone'] || '').toString().trim();
+        const storeName = (row.name || row.store || rawRow['Store'] || '').toString().trim();
+        let supervisorName = (row.supervisor || row.manager || rawRow['Supervisor'] || '').toString().trim();
+
+        // Custom fallback if duplicate supervisor column (e.g., 'Supervisor_1' or empty supervisor due to parsing)
+        if (!supervisorName) {
+            const keys = Object.keys(rawRow);
+            const knownSupers = ['Riyad', 'Amr', 'Adel', 'Montser'];
+            for (let c = keys.length - 1; c >= 0; c--) {
+                const val = (rawRow[keys[c]] || '').toString().trim();
+                if (knownSupers.includes(val)) {
+                    supervisorName = val;
+                    break;
+                }
+            }
+        }
+
+        const changes = [];
+
+        // 1. Update user if username exists
+        if (username && (nationalId || mobile)) {
+            const user = await this.userRepo.findOne({ where: { username } });
+            if (user) {
+                if (nationalId && user.national_id !== nationalId) {
+                    user.national_id = nationalId;
+                    changes.push(`Updated national_id for ${username} to ${nationalId}`);
+                }
+                if (mobile && user.mobile !== mobile) {
+                    user.mobile = mobile;
+                    changes.push(`Updated mobile for ${username} to ${mobile}`);
+                }
+                
+                if (changes.length > 0 && !isDryRun) {
+                    await this.userRepo.save(user);
+                }
+            } else {
+                changes.push(`Warning: User ${username} not found for updates`);
+            }
+        }
+
+        // 2. Assign supervisor to branch
+        if (storeName && supervisorName) {
+            let sup = await this.userRepo.findOne({ where: { username: supervisorName } });
+            if (!sup) {
+                sup = await this.userRepo.findOne({ where: { name: supervisorName } });
+            }
+            
+            if (sup) {
+                const branches = await this.branchRepo.find({
+                    where: { name: storeName, project: { id: projectId } },
+                    relations: ["supervisor", "supervisors"]
+                });
+
+                if (branches.length === 0) {
+                    throw new Error(`Branch "${storeName}" not found in project`);
+                }
+
+                for (const branch of branches) {
+                    let updated = false;
+                    if (!branch.supervisors) branch.supervisors = [];
+                    if (!branch.supervisors.find(s => s.id === sup.id)) {
+                        branch.supervisors.push(sup);
+                        updated = true;
+                        changes.push(`Added supervisor ${sup.name} to branch ${branch.name}`);
+                    }
+                    if (!branch.supervisor || branch.supervisor.id !== sup.id) {
+                        branch.supervisor = sup;
+                        updated = true;
+                        changes.push(`Set main supervisor for branch ${branch.name} to ${sup.name}`);
+                    }
+                    if (updated && !isDryRun) {
+                        await this.branchRepo.save(branch);
+                    }
+                }
+            } else {
+                throw new Error(`Supervisor "${supervisorName}" not found`);
+            }
+        }
+
+        if (isDryRun && changes.length > 0) {
+            result.dryRunDetails.push({ row: index + 2, user: username, store: storeName, changes });
+        }
+
+        result.success++;
+      } catch (err) {
+        result.failed++;
+        result.errors.push({
+          row: index + 2,
+          error: err.message,
+        });
+      }
+    }
+    return result;
+  }
+
   async assignProject(branchId: string, projectId: string) {
     const branch = await this.branchRepo.findOne({
       where: { id: branchId as any },

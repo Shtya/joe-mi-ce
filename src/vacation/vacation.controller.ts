@@ -203,7 +203,19 @@ export class VacationController {
       transformedQuery.sortBy,
       transformedQuery.sortOrder,
     );
-  }ج
+  }
+
+  // 🔹 Accept all pending vacations for the project
+  @Patch("accept-all-project")
+  @Permissions(EPermission.VACATION_UPDATE)
+  async acceptAllProjectVacations(
+    @Req() req: any,
+    @Query("dryRun") dryRun?: boolean | string,
+  ) {
+    const isDryRun = dryRun === true || dryRun === "true";
+    return await this.vacationService.acceptAllProjectVacations(req, isDryRun);
+  }
+
   // 🔹 Manually reassign a vacation's branch (if data is incorrect, use this to correct it)
   @Patch(":id/reassign-branch")
   @Permissions(EPermission.VACATION_UPDATE)
