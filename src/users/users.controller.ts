@@ -138,7 +138,10 @@ export class UsersController {
   @Post("import-users")
   @Permissions(EPermission.USER_UPDATE)
   @UseInterceptors(FileInterceptor("file", multerOptions))
-  async importUsers(@UploadedFile() file: Express.Multer.File) {
+  async importUsers(
+    @UploadedFile() file: Express.Multer.File,
+    @Query("dryRun") dryRun?: string,
+  ) {
     if (!file) {
       throw new BadRequestException("File is required");
     }
@@ -170,7 +173,7 @@ export class UsersController {
 
         const headers: string[] = [];
         sheet.getRow(1).eachCell((cell, i) => {
-          headers[i - 1] = cell.value?.toString() || "";
+          headers[i - 1] = cell.value?.toString().trim() || "";
         });
 
         for (let i = 2; i <= sheet.rowCount; i++) {
@@ -188,7 +191,8 @@ export class UsersController {
 
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
-      return await this.usersService.importUsersData(rows);
+      const isDryRun = dryRun === "true";
+      return await this.usersService.importUsersData(rows, isDryRun);
     } catch (err) {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       throw err;

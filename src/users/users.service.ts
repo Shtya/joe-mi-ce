@@ -443,14 +443,16 @@ export class UsersService {
 
   async importUsersData(
     rows: any[],
-  ): Promise<{ success: boolean; updatedCount: number; errors: string[] }> {
+    dryRun: boolean = false,
+  ): Promise<{ success: boolean; updatedCount: number; errors: string[]; preview?: any[] }> {
     const errors: string[] = [];
     let updatedCount = 0;
+    const preview: any[] = [];
 
     for (const row of rows) {
       const username = row["User"] || row["username"] || row["username "];
       const nationalId = row["ID"] || row["national_id"] || row["national_id "];
-      const mobileNumber = row["Phone"] || row["mobile"] || row["mobile "];
+      const mobileNumber = row["Phone"] || row["Phone "] || row["mobile"] || row["mobile "];
 
       if (!username) {
         errors.push(`Row missing username: ${JSON.stringify(row)}`);
@@ -481,7 +483,18 @@ export class UsersService {
         continue;
       }
 
-      await this.userRepository.update({ id: user.id }, updateData);
+      if (dryRun) {
+        preview.push({
+          username,
+          current: {
+            national_id: user.national_id,
+            mobile: user.mobile,
+          },
+          proposed: updateData,
+        });
+      } else {
+        await this.userRepository.update({ id: user.id }, updateData);
+      }
       updatedCount++;
     }
 
@@ -489,6 +502,7 @@ export class UsersService {
       success: true,
       updatedCount,
       errors,
+      ...(dryRun && { preview }),
     };
   }
 
