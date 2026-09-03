@@ -61,7 +61,10 @@ import { RecoveryModule } from "./recovery/recovery.module";
       synchronize: process.env.NODE_ENV === "development",
       cache: true,
       extra: {
-        poolSize: 20, // Increase pool size
+        // The production database endpoint is a session pooler with a pool_size of 15 shared by all PM2 workers.
+        // Keep this per-process limit small enough that one worker cannot consume the whole pool.
+        // Override this when the number of workers or the database limit changes: DATABASE_POOL_MAX=<connections per worker>.
+        max: Math.max(1, parseInt(process.env.DATABASE_POOL_MAX || "3", 10)),
         connectionTimeoutMillis: 30000,
         idleTimeoutMillis: 30000,
       },

@@ -780,7 +780,10 @@ if (value instanceof FindOperator) {
         new Brackets(qb => {
           searchFields.forEach(field => {
             if (field.includes('.')) {
-               qb.orWhere(`${field}::text ILIKE :s`, { s: `%${search}%` });
+               const parts = field.split(".");
+               const column = parts.pop()!;
+               const alias = entityName + "_" + parts.join("_");
+               qb.orWhere(alias + ".\"" + column + "\"::text ILIKE :s", { s: "%" + search + "%" });
                return;
             }
             const col = repository.metadata.columns.find(c => c.propertyName === field);
