@@ -59,3 +59,24 @@ src/firebase/venuat-6f346-firebase-adminsdk-fbsvc-b2ce39bdcd.json
 /tmp
 package-lock.json
 config.bat
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# AI agent and generated workspace files
+/.ai/
+/.agents/
+/.codex/
+/.claude/
+/.cursor/
+/.continue/
+/.windsurf/
+/.husky/
+/graphify-out/
+/docs/superpowers/
+/docs/engineering-documentation/
+AGENTS.md
+CLAUDE.md
+GEMINI.md

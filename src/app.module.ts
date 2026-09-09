@@ -45,6 +45,7 @@ import { FirebaseModule } from "./firebase/firebase.module";
 import { TrainingModule } from "./training/training.module";
 import { EntranceLetterModule } from "./entrance-letter/entrance-letter.module";
 import { RecoveryModule } from "./recovery/recovery.module";
+import { PayrollModule } from "./payroll/payroll.module";
 
 @Module({
   imports: [
@@ -55,7 +56,7 @@ import { RecoveryModule } from "./recovery/recovery.module";
       host: process.env.DATABASE_HOST,
       port: parseInt(process.env.DATABASE_PORT, 10),
       username: process.env.DATABASE_USER,
-      password: String(process.env.DATABASE_PASSWORD || ''),
+      password: String(process.env.DATABASE_PASSWORD || ""),
       database: process.env.DATABASE_NAME,
       autoLoadEntities: true,
       synchronize: process.env.NODE_ENV === "development",
@@ -123,6 +124,7 @@ import { RecoveryModule } from "./recovery/recovery.module";
     TrainingModule,
     EntranceLetterModule,
     RecoveryModule,
+    PayrollModule,
   ],
   controllers: [ApiController],
   providers: [LoggingValidationPipe, QueryFailedErrorFilter],
