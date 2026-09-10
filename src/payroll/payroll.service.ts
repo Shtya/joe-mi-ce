@@ -323,6 +323,12 @@ export class PayrollService {
     const effectiveFrom =
       dto.effectiveFrom ?? `${this.riyadhDate().slice(0, 7)}-01`;
     const updatedRows = await this.dataSource.transaction(async (manager) => {
+      await this.ensurePayrollPeriodForEffectiveDate(
+        manager,
+        projectId,
+        effectiveFrom,
+        actor.id,
+      );
       const result = [];
       for (const row of normalized) {
         const user = usersByUsername.get(row.username)!;
@@ -389,15 +395,53 @@ export class PayrollService {
       throw new BadRequestException(
         "Future payroll months cannot be synchronized",
       );
+    const { startDate, endDate } = this.fullPeriodDates(month);
+    return {
+      startDate,
+      endDate: month === currentMonth ? currentDate : endDate,
+    };
+  }
+
+  private fullPeriodDates(month: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+      throw new BadRequestException("month must use YYYY-MM");
     const [year, monthNumber] = month.split("-").map(Number);
     const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
     return {
       startDate: `${month}-01`,
-      endDate:
-        month === currentMonth
-          ? currentDate
-          : `${month}-${String(lastDay).padStart(2, "0")}`,
+      endDate: `${month}-${String(lastDay).padStart(2, "0")}`,
     };
+  }
+
+  /** Creates the period only; daily sync is responsible for calculating its lines. */
+  private async ensurePayrollPeriodForEffectiveDate(
+    manager: any,
+    projectId: string,
+    effectiveFrom: string,
+    actorId: string,
+  ): Promise<PayrollPeriod> {
+    const month = effectiveFrom.slice(0, 7);
+    const { startDate, endDate } = this.fullPeriodDates(month);
+    const existing: PayrollPeriod | null = await manager.findOne(
+      PayrollPeriod,
+      { where: { projectId, month } },
+    );
+    if (existing) return existing;
+
+    return manager.save(
+      PayrollPeriod,
+      manager.create(PayrollPeriod, {
+        projectId,
+        month,
+        startDate,
+        endDate,
+        status: PayrollPeriodStatus.PENDING,
+        generatedAt: new Date(),
+        generatedById: actorId,
+        paidAt: null,
+        paidById: null,
+      }),
+    );
   }
 
   private async activeSalaryForDate(
