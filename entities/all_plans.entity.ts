@@ -1,102 +1,125 @@
 // ===== الكيانات الأساسية =====
-import { Entity, Column, ManyToOne, JoinColumn, OneToOne, Relation, OneToMany } from 'typeorm';
-import { CoreEntity } from 'entities/core.entity';
-import { User } from './user.entity';
-import { Branch } from './branch.entity';
-import { Shift } from './employee/shift.entity';
+import {
+  Entity,
+  Column,
+  ManyToOne,
+  JoinColumn,
+  OneToOne,
+  Relation,
+  OneToMany,
+} from "typeorm";
+import { CoreEntity } from "entities/core.entity";
+import { User } from "./user.entity";
+import { Branch } from "./branch.entity";
+import { Shift } from "./employee/shift.entity";
 
 export enum JourneyType {
-  PLANNED = 'planned',
-  UNPLANNED = 'unplanned',
+  PLANNED = "planned",
+  UNPLANNED = "unplanned",
 }
 
 export enum JourneyStatus {
-  ABSENT = 'absent',
-  PRESENT = 'present',
-  CLOSED = 'closed',
-  VACATION = 'vacation',
-  UNPLANNED_ABSENT = 'unplanned_absent',
-  UNPLANNED_PRESENT = 'unplanned_present',
-  UNPLANNED_CLOSED = 'unplanned_closed',
+  ABSENT = "absent",
+  PRESENT = "present",
+  CLOSED = "closed",
+  VACATION = "vacation",
+  UNPLANNED_ABSENT = "unplanned_absent",
+  UNPLANNED_PRESENT = "unplanned_present",
+  UNPLANNED_CLOSED = "unplanned_closed",
 }
 
-@Entity('journey_plans')
+@Entity("journey_plans")
 export class JourneyPlan extends CoreEntity {
-  @ManyToOne(() => User, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { eager: true, onDelete: "CASCADE" })
   user: Relation<User>;
 
-  @ManyToOne(() => Branch, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Branch, { eager: true, onDelete: "CASCADE" })
   branch: Relation<Branch>;
 
-  @ManyToOne(() => Shift, { eager: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Shift, { eager: true, onDelete: "CASCADE" })
   shift: Relation<Shift>;
 
   @ManyToOne(() => User, { eager: true })
   createdBy: Relation<User>;
 
   // ✅ Just a scalar, no relation
-  @Column({ type: 'uuid', nullable: true })
+  @Column({ type: "uuid", nullable: true })
   projectId: string;
 
-  @Column({ type: 'text', array: true })
+  @Column({ type: "text", array: true })
   days: string[];
 
   @Column({ default: true })
   is_active: boolean;
 
-  @OneToMany(() => Journey, journey => journey.journeyPlan)
+  @OneToMany(() => Journey, (journey) => journey.journeyPlan)
   journeys: Relation<Journey[]>;
 }
 
-@Entity('journeys')
+@Entity("journeys")
 export class Journey extends CoreEntity {
-  @ManyToOne(() => User, { eager: true, nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { eager: true, nullable: true, onDelete: "CASCADE" })
   user: Relation<User>;
 
-  @ManyToOne(() => Branch, { eager: true, nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Branch, { eager: true, nullable: true, onDelete: "CASCADE" })
   branch: Relation<Branch>;
 
-  @ManyToOne(() => Shift, { eager: true, nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => Shift, { eager: true, nullable: true, onDelete: "CASCADE" })
   shift: Relation<Shift>;
 
-  @Column({ type: 'enum', enum: JourneyType, nullable: true })
+  @Column({ type: "enum", enum: JourneyType, nullable: true })
   type: JourneyType;
 
-  @Column({ type: 'date', nullable: true })
+  @Column({ type: "date", nullable: true })
   date: string;
 
-  @Column({ type: 'enum', enum: JourneyStatus, default: JourneyStatus.ABSENT, nullable: true })
+  /** The supervisor-selected location for an unplanned visit. */
+  @Column({ type: "jsonb", nullable: true })
+  visitGeo?: {
+    lat: number;
+    lng: number;
+  };
+
+  @Column({
+    type: "enum",
+    enum: JourneyStatus,
+    default: JourneyStatus.ABSENT,
+    nullable: true,
+  })
   status: JourneyStatus;
 
   @Column({ default: true })
   is_active: boolean;
 
-  @ManyToOne(() => JourneyPlan, { nullable: true, onDelete: 'CASCADE' })
+  @ManyToOne(() => JourneyPlan, { nullable: true, onDelete: "CASCADE" })
   journeyPlan?: Relation<JourneyPlan>;
 
-  @OneToOne(() => CheckIn, checkin => checkin.journey)
+  @OneToOne(() => CheckIn, (checkin) => checkin.journey)
   checkin: Relation<CheckIn>;
 
   @ManyToOne(() => User, { eager: true, nullable: true })
   createdBy: Relation<User>;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: "uuid" })
   projectId: string;
 }
 
-@Entity('check_ins')
+@Entity("check_ins")
 export class CheckIn extends CoreEntity {
-  @OneToOne(() => Journey, journey => journey.checkin, { onDelete: 'SET NULL', nullable: true })
+  @OneToOne(() => Journey, (journey) => journey.checkin, {
+    onDelete: "SET NULL",
+    nullable: true,
+  })
   @JoinColumn()
   journey: Relation<Journey>;
 
   @ManyToOne(() => User, { eager: true })
   user: Relation<User>;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: "timestamptz", nullable: true })
   checkInTime: Date;
 
-  @Column({ type: 'timestamptz', nullable: true })
+  @Column({ type: "timestamptz", nullable: true })
   checkOutTime: Date;
 
   @Column({ nullable: true })
@@ -105,16 +128,16 @@ export class CheckIn extends CoreEntity {
   @Column({ nullable: true })
   checkOutDocument: string;
 
-  @Column({nullable : true})
+  @Column({ nullable: true })
   geo: string;
 
   @Column({ nullable: true })
   image: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   noteIn: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   noteOut: string;
 
   @Column({ default: false })

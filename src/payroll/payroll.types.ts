@@ -3,6 +3,11 @@ export enum PayrollPeriodStatus {
   PAID = "paid",
 }
 
+export enum PayrollAdjustmentType {
+  ADDITION = "addition",
+  DEDUCTION = "deduction",
+}
+
 export enum PayrollViolationEventType {
   LATE_ARRIVAL = "late_arrival",
   EARLY_LEAVE = "early_leave",

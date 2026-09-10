@@ -2,6 +2,7 @@ import {
   Body,
   BadRequestException,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -16,10 +17,16 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
+  CreatePayrollAdjustmentDto,
+  CreatePayrollLineDto,
+  CreatePayrollPeriodDto,
   PayrollMonthQueryDto,
+  PayrollPeriodFilterDto,
   ReplacePayrollViolationRulesDto,
   SalaryImportDto,
   SetPayrollEnabledDto,
+  UpdatePayrollAdjustmentDto,
+  UpdatePayrollLineDto,
 } from "dto/payroll.dto";
 import { Permissions } from "decorators/permissions.decorators";
 import { EPermission } from "enums/Permissions.enum";
@@ -91,12 +98,82 @@ export class PayrollController {
 
   @Get("payroll/my-project/periods")
   @Permissions(EPermission.PAYROLL_READ)
-  getTokenProjectPeriod(@Query() query: PayrollMonthQueryDto, @Req() req: any) {
-    return this.payrollService.getPeriod(
+  listTokenProjectPeriods(
+    @Query() query: PayrollPeriodFilterDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.listPeriods(
       this.tokenProjectId(req),
-      query.month,
+      query,
       req.user,
     );
+  }
+
+  @Post("payroll/my-project/periods")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  createTokenProjectPeriod(
+    @Body() dto: CreatePayrollPeriodDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.createPendingPeriod(
+      this.tokenProjectId(req),
+      dto,
+      req.user,
+    );
+  }
+
+  @Post("payroll/my-project/periods/:periodId/lines")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  createTokenProjectLine(
+    @Param("periodId") periodId: string,
+    @Body() dto: CreatePayrollLineDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.createPayrollLine(
+      this.tokenProjectId(req),
+      periodId,
+      dto,
+      req.user,
+    );
+  }
+
+  @Patch("payroll/my-project/lines/:lineId")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  updateTokenProjectLine(
+    @Param("lineId") lineId: string,
+    @Body() dto: UpdatePayrollLineDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.updatePayrollLine(lineId, dto, req.user);
+  }
+
+  @Post("payroll/my-project/lines/:lineId/adjustments")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  addTokenProjectAdjustment(
+    @Param("lineId") lineId: string,
+    @Body() dto: CreatePayrollAdjustmentDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.addAdjustment(lineId, dto, req.user);
+  }
+
+  @Patch("payroll/my-project/adjustments/:adjustmentId")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  updateTokenProjectAdjustment(
+    @Param("adjustmentId") adjustmentId: string,
+    @Body() dto: UpdatePayrollAdjustmentDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.updateAdjustment(adjustmentId, dto, req.user);
+  }
+
+  @Delete("payroll/my-project/adjustments/:adjustmentId")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  deleteTokenProjectAdjustment(
+    @Param("adjustmentId") adjustmentId: string,
+    @Req() req: any,
+  ) {
+    return this.payrollService.deleteAdjustment(adjustmentId, req.user);
   }
 
   @Patch("projects/:projectId/payroll")

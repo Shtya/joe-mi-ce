@@ -26,6 +26,7 @@ import * as ExcelJS from "exceljs";
 import {
   CreateJourneyPlanDto,
   CreateUnplannedJourneyDto,
+  SupervisorUnplannedCheckInDto,
   CheckInOutDto,
   UpdateJourneyDto,
   UpdateJourneyPlanDto,
@@ -216,8 +217,7 @@ export class JourneyService {
       (sum, row) => sum + row.overtimeMinutes,
       0,
     );
-    const totalOvertimeHours =
-      this.formatMinutesAsHours(totalOvertimeMinutes);
+    const totalOvertimeHours = this.formatMinutesAsHours(totalOvertimeMinutes);
     const filename = `attendance-overtime-${start.format("YYYY-MM-DD")}-to-${end.format("YYYY-MM-DD")}.xlsx`;
 
     const workbook = new ExcelJS.Workbook();
@@ -399,7 +399,10 @@ export class JourneyService {
     let resolvedOfflineSince: Date | null = null;
 
     if (checkInId && !resolvedOfflineSince && lastLog) {
-      const gapMinutes = dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute");
+      const gapMinutes = dayjs(recordedAt).diff(
+        dayjs(lastLog.recordedAt),
+        "minute",
+      );
       if (gapMinutes > 20) {
         // More than 20 minutes gap: set offlineSince to the last recorded timestamp
         resolvedOfflineSince = lastLog.recordedAt;
@@ -426,17 +429,19 @@ export class JourneyService {
     }
 
     // 4. Append to audit log (one row per ping)
-    await this.locationLogRepo.save(this.locationLogRepo.create({
-      userId,
-      journeyId,
-      checkInId,
-      projectId,
-      lat,
-      lng,
-      isOutside,
-      offlineSince: resolvedOfflineSince,
-      recordedAt,
-    }));
+    await this.locationLogRepo.save(
+      this.locationLogRepo.create({
+        userId,
+        journeyId,
+        checkInId,
+        projectId,
+        lat,
+        lng,
+        isOutside,
+        offlineSince: resolvedOfflineSince,
+        recordedAt,
+      }),
+    );
 
     const response = this.buildLocationResponse({
       user,
@@ -455,20 +460,24 @@ export class JourneyService {
 
     // 5. Update latest position only if this ping is newer than the stored latest row.
     const shouldUpdateLatest =
-      !lastLog || recordedAt.getTime() >= new Date(lastLog.recordedAt).getTime();
+      !lastLog ||
+      recordedAt.getTime() >= new Date(lastLog.recordedAt).getTime();
 
     if (shouldUpdateLatest) {
-      await this.locationRepo.upsert({
-        userId,
-        lat,
-        lng,
-        projectId,
-        checkInId,
-        name: user.name,
-        avatar_url: user.avatar_url,
-        isOutside,
-        offlineSince: resolvedOfflineSince,
-      }, ["userId"]);
+      await this.locationRepo.upsert(
+        {
+          userId,
+          lat,
+          lng,
+          projectId,
+          checkInId,
+          name: user.name,
+          avatar_url: user.avatar_url,
+          isOutside,
+          offlineSince: resolvedOfflineSince,
+        },
+        ["userId"],
+      );
       await this.locationCacheService.setLatestLocation({
         ...response,
         updatedAt: new Date().toISOString(),
@@ -487,7 +496,8 @@ export class JourneyService {
     minutes = 30,
   ): Promise<Array<PromoterLocation | LatestLocationCacheItem>> {
     const threshold = new Date(Date.now() - minutes * 60_000);
-    const cached = await this.locationCacheService.getProjectLocations(projectId);
+    const cached =
+      await this.locationCacheService.getProjectLocations(projectId);
     const freshCached = cached.filter((item) => {
       const value = item.updatedAt || item.recordedAt;
       return value ? new Date(value) >= threshold : false;
@@ -504,7 +514,9 @@ export class JourneyService {
 
     await Promise.all(
       locations.map((location) =>
-        this.locationCacheService.setLatestLocation(this.cacheItemFromLocation(location)),
+        this.locationCacheService.setLatestLocation(
+          this.cacheItemFromLocation(location),
+        ),
       ),
     );
 
@@ -523,7 +535,18 @@ export class JourneyService {
     page?: number;
     limit?: number;
   }) {
-    const { userId, journeyId, checkInId, projectId, fromDate, toDate, fromTime, toTime, page = 1, limit = 50 } = params;
+    const {
+      userId,
+      journeyId,
+      checkInId,
+      projectId,
+      fromDate,
+      toDate,
+      fromTime,
+      toTime,
+      page = 1,
+      limit = 50,
+    } = params;
     const skip = (page - 1) * limit;
 
     const qb = this.locationLogRepo.createQueryBuilder("log");
@@ -548,15 +571,16 @@ export class JourneyService {
     }
 
     if (fromTime && toTime) {
-      qb.andWhere("CAST(log.recordedAt AS time) BETWEEN :fromTime::time AND :toTime::time", {
-        fromTime,
-        toTime,
-      });
+      qb.andWhere(
+        "CAST(log.recordedAt AS time) BETWEEN :fromTime::time AND :toTime::time",
+        {
+          fromTime,
+          toTime,
+        },
+      );
     }
 
-    qb.orderBy("log.recordedAt", "DESC")
-      .skip(skip)
-      .take(limit);
+    qb.orderBy("log.recordedAt", "DESC").skip(skip).take(limit);
 
     const [items, total] = await qb.getManyAndCount();
 
@@ -584,7 +608,9 @@ export class JourneyService {
     checkInId: string | null;
     branch: Branch | null;
   }> {
-    const cached = await this.locationCacheService.getLocationContext(params.userId);
+    const cached = await this.locationCacheService.getLocationContext(
+      params.userId,
+    );
     if (cached) {
       return {
         user: {
@@ -664,9 +690,7 @@ export class JourneyService {
     return {
       geo: cached.branchGeo,
       geofence_radius_meters: cached.branchRadiusMeters,
-      chain: cached.branchChainName
-        ? { name: cached.branchChainName }
-        : null,
+      chain: cached.branchChainName ? { name: cached.branchChainName } : null,
     } as unknown as Branch;
   }
 
@@ -739,7 +763,9 @@ export class JourneyService {
     return messages[lang][status];
   }
 
-  private cacheItemFromLocation(location: PromoterLocation): LatestLocationCacheItem {
+  private cacheItemFromLocation(
+    location: PromoterLocation,
+  ): LatestLocationCacheItem {
     const recordedAt = location.updatedAt || new Date();
 
     return {
@@ -1161,7 +1187,11 @@ export class JourneyService {
 
   async getCurrentJourney(userId: string) {
     const journey = await this.checkInRepo.findOne({
-      where: { user: { id: userId }, checkOutTime: IsNull(), checkInTime: Not(IsNull()) },
+      where: {
+        user: { id: userId },
+        checkOutTime: IsNull(),
+        checkInTime: Not(IsNull()),
+      },
       order: { created_at: "DESC" },
 
       relations: ["journey"],
@@ -1243,6 +1273,104 @@ export class JourneyService {
     });
 
     return this.journeyRepo.save(newJourney);
+  }
+
+  async checkInSupervisorUnplannedVisit(
+    dto: SupervisorUnplannedCheckInDto,
+    requester: User,
+  ) {
+    const supervisor = await this.userRepo.findOne({
+      where: { id: requester.id },
+      relations: ["role", "project", "branch", "branch.city"],
+    });
+
+    if (!supervisor) {
+      throw new NotFoundException("User not found");
+    }
+    if (supervisor.role?.name !== ERole.SUPERVISOR) {
+      throw new ForbiddenException(
+        "Only supervisors can create unplanned visits",
+      );
+    }
+
+    const projectId = supervisor.project?.id || supervisor.project_id;
+    if (!projectId) {
+      throw new BadRequestException("Supervisor is not assigned to a project");
+    }
+
+    const supervisorBranches = await this.branchRepo.find({
+      where: [
+        { supervisor: { id: supervisor.id } },
+        { supervisors: { id: supervisor.id } },
+      ],
+      relations: ["city", "project"],
+    });
+    const defaultCity =
+      supervisor.branch?.city ||
+      supervisorBranches.find((branch) => branch.project?.id === projectId)
+        ?.city;
+
+    const checkInTime = new Date(dto.checkInTime);
+    if (Number.isNaN(checkInTime.getTime())) {
+      throw new BadRequestException("Invalid check-in time");
+    }
+
+    return this.journeyRepo.manager.transaction(async (manager) => {
+      const branchRepository = manager.getRepository(Branch);
+      const journeyRepository = manager.getRepository(Journey);
+      const checkInRepository = manager.getRepository(CheckIn);
+
+      let unplannedBranch = await branchRepository.findOne({
+        where: { name: "Unplanned", project: { id: projectId } },
+        relations: ["city", "project"],
+      });
+
+      if (!unplannedBranch) {
+        if (!defaultCity) {
+          throw new BadRequestException(
+            "A supervisor branch with a city is required to create the Unplanned branch",
+          );
+        }
+        unplannedBranch = branchRepository.create({
+          name: "Unplanned",
+          project: { id: projectId } as Project,
+          city: defaultCity,
+          geo: { lat: dto.lat, lng: dto.lng },
+          geofence_radius_meters: 500,
+          autoCreateSalesTargets: false,
+        });
+        unplannedBranch = await manager.save(Branch, unplannedBranch);
+      }
+
+      const journey = journeyRepository.create({
+        user: supervisor,
+        branch: unplannedBranch,
+        projectId,
+        date: dayjs(checkInTime).format("YYYY-MM-DD"),
+        type: JourneyType.UNPLANNED,
+        status: JourneyStatus.UNPLANNED_PRESENT,
+        visitGeo: { lat: dto.lat, lng: dto.lng },
+        createdBy: supervisor,
+        is_active: true,
+      });
+      const savedJourney = await manager.save(Journey, journey);
+
+      const checkIn = checkInRepository.create({
+        journey: savedJourney,
+        user: supervisor,
+        checkInTime,
+        geo: `${dto.lat},${dto.lng}`,
+        image: dto.image,
+        checkInDocument: dto.checkInDocument,
+        noteIn: dto.noteIn,
+        isWithinRadius: true,
+        isAutoClosed: false,
+      });
+      const savedCheckIn = await manager.save(CheckIn, checkIn);
+
+      savedJourney.checkin = savedCheckIn;
+      return { journey: savedJourney, checkIn: savedCheckIn };
+    });
   }
 
   async updateJourney(id: string, dto: UpdateJourneyDto) {
@@ -1568,7 +1696,7 @@ export class JourneyService {
     const isCheckGeo = !chainName?.toLowerCase().includes("roaming");
 
     const isWithinGeofence = isCheckGeo
-      ? this.isWithinGeofence(journey.branch, dto.geo)
+      ? this.isWithinGeofence(journey.branch, dto.geo, journey.visitGeo)
       : true;
 
     // 📍 Log location on every check-in/out (even if within radius)
@@ -2151,18 +2279,31 @@ export class JourneyService {
     }
   }
 
-  private isWithinGeofence(branch: Branch, geo: any): boolean {
+  private isWithinGeofence(
+    branch: Branch,
+    geo: any,
+    targetGeo: { lat: number; lng: number } | undefined = branch.geo,
+  ): boolean {
     const userCoords = this.parseLatLng(geo);
-    return !this.evaluateLocationStatus(branch, userCoords.lat, userCoords.lng)
-      .isOutside;
+    return !this.evaluateLocationStatus(
+      branch,
+      userCoords.lat,
+      userCoords.lng,
+      targetGeo,
+    ).isOutside;
   }
 
-  private evaluateLocationStatus(branch: Branch, lat: number, lng: number): {
+  private evaluateLocationStatus(
+    branch: Branch,
+    lat: number,
+    lng: number,
+    targetGeo: { lat: number; lng: number } = branch.geo,
+  ): {
     locationStatus: LocationStatus;
     isOutside: boolean;
     distanceMeters: number;
   } {
-    const branchCoords = this.parseLatLng(branch.geo);
+    const branchCoords = this.parseLatLng(targetGeo);
     const distanceMeters = getDistance(
       { latitude: branchCoords.lat, longitude: branchCoords.lng },
       { latitude: lat, longitude: lng },
@@ -2611,7 +2752,9 @@ export class JourneyService {
     }
 
     if (sourceProjectId) {
-      baseQb.andWhere("user.project_id = :sourceProjectId", { sourceProjectId });
+      baseQb.andWhere("user.project_id = :sourceProjectId", {
+        sourceProjectId,
+      });
     }
 
     const diagnostics = {
@@ -2724,7 +2867,8 @@ export class JourneyService {
           ? JourneyStatus.CLOSED
           : JourneyStatus.PRESENT;
 
-        const targetProjectId = branch.project?.id || projectId || user.project_id;
+        const targetProjectId =
+          branch.project?.id || projectId || user.project_id;
 
         if (projectId && targetProjectId !== projectId) {
           result.skipped++;
@@ -2960,8 +3104,12 @@ export class JourneyService {
 
     const diagnostics = {
       totalJourneys: allJourneys.length,
-      withPlan: allJourneys.filter((j) => j.journeyPlan && (j.journeyPlan as any).id).length,
-      withoutPlan: allJourneys.filter((j) => !j.journeyPlan || !(j.journeyPlan as any).id).length,
+      withPlan: allJourneys.filter(
+        (j) => j.journeyPlan && (j.journeyPlan as any).id,
+      ).length,
+      withoutPlan: allJourneys.filter(
+        (j) => !j.journeyPlan || !(j.journeyPlan as any).id,
+      ).length,
       plannedWithoutPlan: journeys.length,
     };
 
@@ -3536,7 +3684,6 @@ export class JourneyService {
             mobile: mobile ? mobile.toString().trim() : undefined,
             national_id: nationalId ? nationalId.toString().trim() : undefined,
             password: username.toString().trim(), // Password same as username
-
           };
 
           user = await this.authService.importSinglePromoter(

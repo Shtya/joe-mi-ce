@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -6,14 +6,22 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsEnum,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsPositive,
   IsString,
+  IsUUID,
   Matches,
   Max,
   Min,
   ValidateNested,
 } from "class-validator";
+import {
+  PayrollAdjustmentType,
+  PayrollPeriodStatus,
+} from "src/payroll/payroll.types";
 
 export class SetPayrollEnabledDto {
   @IsBoolean()
@@ -62,4 +70,137 @@ export class ReplacePayrollViolationRulesDto {
   @ValidateNested({ each: true })
   @Type(() => PayrollViolationRuleDto)
   rules: PayrollViolationRuleDto[];
+}
+
+export class CreatePayrollPeriodDto {
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month: string;
+}
+
+export class CreatePayrollLineDto {
+  @IsUUID()
+  userId: string;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  grossSalary: number;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}
+
+export class UpdatePayrollLineDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  grossSalary?: number;
+
+  @IsOptional()
+  @IsString()
+  note?: string | null;
+}
+
+export class CreatePayrollAdjustmentDto {
+  @IsEnum(PayrollAdjustmentType)
+  type: PayrollAdjustmentType;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  amount: number;
+
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string | null;
+}
+
+export class UpdatePayrollAdjustmentDto {
+  @IsOptional()
+  @IsEnum(PayrollAdjustmentType)
+  type?: PayrollAdjustmentType;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  amount?: number;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  reason?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string | null;
+}
+
+function parseBoolean(value: unknown): unknown {
+  if (value === true || value === "true") return true;
+  if (value === false || value === "false") return false;
+  return value;
+}
+
+export class PayrollPeriodFilterDto {
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+
+  @IsOptional()
+  @IsEnum(PayrollPeriodStatus)
+  status?: PayrollPeriodStatus;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => parseBoolean(value))
+  @IsBoolean()
+  hasAdditions?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => parseBoolean(value))
+  @IsBoolean()
+  hasDeductions?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => parseBoolean(value))
+  @IsBoolean()
+  hasViolations?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  grossMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  grossMax?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  netMin?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  netMax?: number;
 }

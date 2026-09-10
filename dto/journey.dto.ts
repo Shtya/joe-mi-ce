@@ -8,8 +8,10 @@ import {
   IsEmail,
   IsNumber,
   IsBoolean,
-} from 'class-validator';
-import { Type } from 'class-transformer';
+  IsLatitude,
+  IsLongitude,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class CreateJourneyPlanDto {
   @IsUUID()
@@ -20,7 +22,7 @@ export class CreateJourneyPlanDto {
 
   @IsArray()
   @ArrayNotEmpty()
-  @IsUUID('all', { each: true })
+  @IsUUID("all", { each: true })
   shiftId: string[];
 
   @IsArray()
@@ -30,7 +32,6 @@ export class CreateJourneyPlanDto {
 
   @IsOptional()
   includeToday?: boolean;
-
 }
 export class UpdateJourneyPlanDto {
   @IsOptional()
@@ -48,7 +49,6 @@ export class UpdateJourneyPlanDto {
   @ArrayNotEmpty()
   @IsString({ each: true })
   days: string[];
-
 }
 export class AssignShiftAllDaysDto {
   @IsUUID()
@@ -58,7 +58,6 @@ export class AssignShiftAllDaysDto {
   shiftId: string;
 }
 
-
 export class CreateUnplannedJourneyDto {
   @IsUUID()
   userId: string;
@@ -67,11 +66,34 @@ export class CreateUnplannedJourneyDto {
   branchId: string;
 
   @IsOptional()
-  date?:string|null
+  date?: string | null;
   @IsUUID()
   shiftId: string;
+}
 
+export class SupervisorUnplannedCheckInDto {
+  @Type(() => Number)
+  @IsLatitude()
+  lat: number;
 
+  @Type(() => Number)
+  @IsLongitude()
+  lng: number;
+
+  @IsDateString()
+  checkInTime: string;
+
+  @IsOptional()
+  @IsString()
+  image?: string;
+
+  @IsOptional()
+  @IsString()
+  checkInDocument?: string;
+
+  @IsOptional()
+  @IsString()
+  noteIn?: string;
 }
 
 export class UpdateJourneyDto {
@@ -96,7 +118,7 @@ export class CheckInOutDto {
   @IsString()
   journeyId: string;
 
-	@IsOptional()
+  @IsOptional()
   @IsString()
   userId: string;
 

@@ -7,13 +7,20 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
+  CreatePayrollAdjustmentDto,
+  CreatePayrollLineDto,
+  CreatePayrollPeriodDto,
+  PayrollPeriodFilterDto,
   SalaryImportDto,
   ReplacePayrollViolationRulesDto,
+  UpdatePayrollAdjustmentDto,
+  UpdatePayrollLineDto,
 } from "dto/payroll.dto";
 import { CheckIn, Journey } from "entities/all_plans.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { EmployeeSalary } from "entities/payroll/employee-salary.entity";
+import { PayrollAdjustment } from "entities/payroll/payroll-adjustment.entity";
 import { PayrollLineViolation } from "entities/payroll/payroll-line-violation.entity";
 import { PayrollLine } from "entities/payroll/payroll-line.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
@@ -41,6 +48,7 @@ import {
 } from "./payroll-calculator";
 import {
   DefaultViolationRule,
+  PayrollAdjustmentType,
   PayrollPeriodStatus,
   PayrollViolationEventType,
 } from "./payroll.types";
@@ -67,6 +75,8 @@ export class PayrollService {
     private readonly periodRepo: Repository<PayrollPeriod>,
     @InjectRepository(PayrollLine)
     private readonly lineRepo: Repository<PayrollLine>,
+    @InjectRepository(PayrollAdjustment)
+    private readonly adjustmentRepo: Repository<PayrollAdjustment>,
     @InjectRepository(PayrollLineViolation)
     private readonly lineViolationRepo: Repository<PayrollLineViolation>,
     @InjectRepository(Journey)
@@ -415,6 +425,425 @@ export class PayrollService {
     });
   }
 
+  private assertPendingPeriod(period: PayrollPeriod): void {
+    if (period.status === PayrollPeriodStatus.PAID)
+      throw new ConflictException("Paid payroll periods are locked");
+  }
+
+  private async requireEnabledProject(projectId: string): Promise<Project> {
+    const project = await this.requireProject(projectId);
+    if (!project.payrollEnabled)
+      throw new ConflictException("Payroll is not enabled for this project");
+    return project;
+  }
+
+  private assertAdjustmentReason(reason: string): string {
+    const normalized = reason?.trim();
+    if (!normalized)
+      throw new BadRequestException("Adjustment reason is required");
+    return normalized;
+  }
+
+  private async requirePendingLine(
+    manager: any,
+    lineId: string,
+    actor: User,
+  ): Promise<PayrollLine> {
+    const line: PayrollLine | null = await manager.findOne(PayrollLine, {
+      where: { id: lineId },
+      relations: ["period", "adjustments", "violations", "user"],
+    });
+    if (!line) throw new NotFoundException("Payroll line not found");
+    this.assertProjectPayrollAccess(
+      actor,
+      line.period.projectId,
+      EPermission.PAYROLL_MANAGE,
+    );
+    this.assertPendingPeriod(line.period);
+    return line;
+  }
+
+  private async recalculateLine(
+    manager: any,
+    line: PayrollLine,
+    attendanceDeductionOverride?: number,
+  ): Promise<PayrollLine> {
+    const adjustments: PayrollAdjustment[] = await manager.find(
+      PayrollAdjustment,
+      { where: { lineId: line.id } },
+    );
+    let attendanceDeduction = attendanceDeductionOverride;
+    if (attendanceDeduction === undefined) {
+      const violations: PayrollLineViolation[] = await manager.find(
+        PayrollLineViolation,
+        { where: { lineId: line.id } },
+      );
+      attendanceDeduction = violations.reduce(
+        (sum, violation) => sum + Number(violation.deductionAmount),
+        0,
+      );
+    }
+    const totalAddition = roundMoney(
+      adjustments
+        .filter((item) => item.type === PayrollAdjustmentType.ADDITION)
+        .reduce((sum, item) => sum + Number(item.amount), 0),
+    );
+    const manualDeduction = roundMoney(
+      adjustments
+        .filter((item) => item.type === PayrollAdjustmentType.DEDUCTION)
+        .reduce((sum, item) => sum + Number(item.amount), 0),
+    );
+    const roundedAttendanceDeduction = roundMoney(attendanceDeduction);
+    const totalDeduction = roundMoney(
+      roundedAttendanceDeduction + manualDeduction,
+    );
+    const netPay = roundMoney(
+      Number(line.grossSalary) + totalAddition - totalDeduction,
+    );
+
+    line.attendanceDeduction = roundedAttendanceDeduction.toFixed(2);
+    line.manualDeduction = manualDeduction.toFixed(2);
+    line.totalAddition = totalAddition.toFixed(2);
+    line.totalDeduction = totalDeduction.toFixed(2);
+    line.netPay = netPay.toFixed(2);
+    return manager.save(line);
+  }
+
+  private async upsertSalaryFromLine(
+    manager: any,
+    projectId: string,
+    userId: string,
+    effectiveFrom: string,
+    grossSalary: number,
+    actorId: string,
+  ): Promise<EmployeeSalary> {
+    let salary: EmployeeSalary | null = await manager.findOne(EmployeeSalary, {
+      where: { projectId, userId, effectiveFrom },
+    });
+    if (!salary) {
+      const active: EmployeeSalary | null = await manager.findOne(
+        EmployeeSalary,
+        {
+          where: {
+            projectId,
+            userId,
+            effectiveFrom: LessThanOrEqual(effectiveFrom),
+          },
+          order: { effectiveFrom: "DESC" },
+        },
+      );
+      if (
+        active &&
+        (!active.effectiveTo || active.effectiveTo >= effectiveFrom)
+      ) {
+        const previousDay = new Date(`${effectiveFrom}T00:00:00Z`);
+        previousDay.setUTCDate(previousDay.getUTCDate() - 1);
+        active.effectiveTo = previousDay.toISOString().slice(0, 10);
+        await manager.save(active);
+      }
+      salary = manager.create(EmployeeSalary, {
+        projectId,
+        userId,
+        effectiveFrom,
+        effectiveTo: null,
+        importFileName: null,
+        importSheetName: null,
+        importRowNumber: null,
+      });
+    }
+    salary.monthlySalary = roundMoney(grossSalary).toFixed(2);
+    salary.updatedById = actorId;
+    return manager.save(salary);
+  }
+
+  async createPendingPeriod(
+    projectId: string,
+    dto: CreatePayrollPeriodDto,
+    actor: User,
+  ) {
+    this.assertProjectPayrollAccess(
+      actor,
+      projectId,
+      EPermission.PAYROLL_MANAGE,
+    );
+    await this.requireEnabledProject(projectId);
+    const { startDate, endDate } = this.periodDates(dto.month);
+    return this.dataSource.transaction(async (manager) => {
+      const existing: PayrollPeriod | null = await manager.findOne(
+        PayrollPeriod,
+        { where: { projectId, month: dto.month } },
+      );
+      if (existing) {
+        this.assertPendingPeriod(existing);
+        return { created: false, period: existing };
+      }
+      const period = manager.create(PayrollPeriod, {
+        projectId,
+        month: dto.month,
+        startDate,
+        endDate,
+        status: PayrollPeriodStatus.PENDING,
+        generatedAt: new Date(),
+        generatedById: actor.id,
+        paidAt: null,
+        paidById: null,
+      });
+      return { created: true, period: await manager.save(period) };
+    });
+  }
+
+  async createPayrollLine(
+    projectId: string,
+    periodId: string,
+    dto: CreatePayrollLineDto,
+    actor: User,
+  ) {
+    this.assertProjectPayrollAccess(
+      actor,
+      projectId,
+      EPermission.PAYROLL_MANAGE,
+    );
+    await this.requireEnabledProject(projectId);
+    return this.dataSource.transaction(async (manager) => {
+      const period: PayrollPeriod | null = await manager.findOne(
+        PayrollPeriod,
+        { where: { id: periodId, projectId } },
+      );
+      if (!period) throw new NotFoundException("Payroll period not found");
+      this.assertPendingPeriod(period);
+      const user: User | null = await manager.findOne(User, {
+        where: { id: dto.userId, project_id: projectId },
+      });
+      if (!user)
+        throw new BadRequestException(
+          "Employee does not exist in the authenticated project",
+        );
+      const existing: PayrollLine | null = await manager.findOne(PayrollLine, {
+        where: { periodId, userId: dto.userId },
+      });
+      if (existing)
+        throw new ConflictException(
+          "The employee already has a payroll line for this month",
+        );
+
+      await this.upsertSalaryFromLine(
+        manager,
+        projectId,
+        dto.userId,
+        period.startDate,
+        dto.grossSalary,
+        actor.id,
+      );
+      const grossSalary = roundMoney(dto.grossSalary).toFixed(2);
+      const line: PayrollLine = await manager.save(
+        PayrollLine,
+        manager.create(PayrollLine, {
+          periodId,
+          userId: dto.userId,
+          salarySnapshot: grossSalary,
+          grossSalary,
+          attendanceDeduction: "0.00",
+          manualDeduction: "0.00",
+          totalAddition: "0.00",
+          totalDeduction: "0.00",
+          netPay: grossSalary,
+          note: dto.note?.trim() || null,
+        }),
+      );
+      return line;
+    });
+  }
+
+  async updatePayrollLine(
+    lineId: string,
+    dto: UpdatePayrollLineDto,
+    actor: User,
+  ) {
+    if (dto.grossSalary === undefined && dto.note === undefined)
+      throw new BadRequestException("Provide grossSalary or note to update");
+    return this.dataSource.transaction(async (manager) => {
+      const line = await this.requirePendingLine(manager, lineId, actor);
+      await this.requireEnabledProject(line.period.projectId);
+      if (dto.grossSalary !== undefined) {
+        const grossSalary = roundMoney(dto.grossSalary);
+        line.grossSalary = grossSalary.toFixed(2);
+        line.salarySnapshot = grossSalary.toFixed(2);
+        await this.upsertSalaryFromLine(
+          manager,
+          line.period.projectId,
+          line.userId,
+          line.period.startDate,
+          grossSalary,
+          actor.id,
+        );
+      }
+      if (dto.note !== undefined) line.note = dto.note?.trim() || null;
+      return this.recalculateLine(manager, line);
+    });
+  }
+
+  async addAdjustment(
+    lineId: string,
+    dto: CreatePayrollAdjustmentDto,
+    actor: User,
+  ) {
+    return this.dataSource.transaction(async (manager) => {
+      const line = await this.requirePendingLine(manager, lineId, actor);
+      await this.requireEnabledProject(line.period.projectId);
+      const adjustment = manager.create(PayrollAdjustment, {
+        lineId,
+        type: dto.type,
+        amount: roundMoney(dto.amount).toFixed(2),
+        reason: this.assertAdjustmentReason(dto.reason),
+        note: dto.note?.trim() || null,
+        createdById: actor.id,
+      });
+      const saved = await manager.save(PayrollAdjustment, adjustment);
+      const updatedLine = await this.recalculateLine(manager, line);
+      return { adjustment: saved, line: updatedLine };
+    });
+  }
+
+  async updateAdjustment(
+    adjustmentId: string,
+    dto: UpdatePayrollAdjustmentDto,
+    actor: User,
+  ) {
+    if (
+      dto.type === undefined &&
+      dto.amount === undefined &&
+      dto.reason === undefined &&
+      dto.note === undefined
+    )
+      throw new BadRequestException("Provide an adjustment field to update");
+    return this.dataSource.transaction(async (manager) => {
+      const adjustment: PayrollAdjustment | null = await manager.findOne(
+        PayrollAdjustment,
+        { where: { id: adjustmentId }, relations: ["line", "line.period"] },
+      );
+      if (!adjustment)
+        throw new NotFoundException("Payroll adjustment not found");
+      const line = await this.requirePendingLine(
+        manager,
+        adjustment.lineId,
+        actor,
+      );
+      await this.requireEnabledProject(line.period.projectId);
+      if (dto.type !== undefined) adjustment.type = dto.type;
+      if (dto.amount !== undefined)
+        adjustment.amount = roundMoney(dto.amount).toFixed(2);
+      if (dto.reason !== undefined)
+        adjustment.reason = this.assertAdjustmentReason(dto.reason);
+      if (dto.note !== undefined) adjustment.note = dto.note?.trim() || null;
+      const saved = await manager.save(adjustment);
+      const updatedLine = await this.recalculateLine(manager, line);
+      return { adjustment: saved, line: updatedLine };
+    });
+  }
+
+  async deleteAdjustment(adjustmentId: string, actor: User) {
+    return this.dataSource.transaction(async (manager) => {
+      const adjustment: PayrollAdjustment | null = await manager.findOne(
+        PayrollAdjustment,
+        { where: { id: adjustmentId } },
+      );
+      if (!adjustment)
+        throw new NotFoundException("Payroll adjustment not found");
+      const line = await this.requirePendingLine(
+        manager,
+        adjustment.lineId,
+        actor,
+      );
+      await this.requireEnabledProject(line.period.projectId);
+      await manager.remove(PayrollAdjustment, adjustment);
+      const updatedLine = await this.recalculateLine(manager, line);
+      return { deleted: true, adjustmentId, line: updatedLine };
+    });
+  }
+
+  async listPeriods(
+    projectId: string,
+    filters: PayrollPeriodFilterDto,
+    actor: User,
+  ) {
+    this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
+    await this.requireProject(projectId);
+    if (
+      filters.grossMin !== undefined &&
+      filters.grossMax !== undefined &&
+      filters.grossMin > filters.grossMax
+    )
+      throw new BadRequestException("grossMin cannot exceed grossMax");
+    if (
+      filters.netMin !== undefined &&
+      filters.netMax !== undefined &&
+      filters.netMin > filters.netMax
+    )
+      throw new BadRequestException("netMin cannot exceed netMax");
+
+    const periods = await this.periodRepo.find({
+      where: {
+        projectId,
+        ...(filters.month ? { month: filters.month } : {}),
+        ...(filters.status ? { status: filters.status } : {}),
+      },
+      relations: [
+        "lines",
+        "lines.user",
+        "lines.violations",
+        "lines.adjustments",
+        "lines.adjustments.createdBy",
+      ],
+      order: { month: "DESC" },
+    });
+    const search = filters.search?.trim().toLocaleLowerCase();
+    const hasLineFilters = Boolean(
+      search ||
+        filters.employeeId ||
+        filters.hasAdditions !== undefined ||
+        filters.hasDeductions !== undefined ||
+        filters.hasViolations !== undefined ||
+        filters.grossMin !== undefined ||
+        filters.grossMax !== undefined ||
+        filters.netMin !== undefined ||
+        filters.netMax !== undefined,
+    );
+    const items = periods
+      .map((period) => {
+        period.lines = (period.lines ?? []).filter((line) => {
+          const additions = (line.adjustments ?? []).some(
+            (item) => item.type === PayrollAdjustmentType.ADDITION,
+          );
+          const deductions = (line.adjustments ?? []).some(
+            (item) => item.type === PayrollAdjustmentType.DEDUCTION,
+          );
+          const userSearch =
+            `${line.user?.name ?? ""} ${line.user?.username ?? ""}`.toLocaleLowerCase();
+          return (
+            (!search || userSearch.includes(search)) &&
+            (!filters.employeeId || line.userId === filters.employeeId) &&
+            (filters.hasAdditions === undefined ||
+              additions === filters.hasAdditions) &&
+            (filters.hasDeductions === undefined ||
+              deductions === filters.hasDeductions) &&
+            (filters.hasViolations === undefined ||
+              Boolean(line.violations?.length) === filters.hasViolations) &&
+            (filters.grossMin === undefined ||
+              Number(line.grossSalary) >= filters.grossMin) &&
+            (filters.grossMax === undefined ||
+              Number(line.grossSalary) <= filters.grossMax) &&
+            (filters.netMin === undefined ||
+              Number(line.netPay) >= filters.netMin) &&
+            (filters.netMax === undefined ||
+              Number(line.netPay) <= filters.netMax)
+          );
+        });
+        return period;
+      })
+      .filter((period) => !hasLineFilters || period.lines.length > 0);
+    return { items, total: items.length };
+  }
+
   async syncPeriod(
     projectId: string,
     month: string,
@@ -451,10 +880,20 @@ export class PayrollService {
       period.generatedById = actor?.id ?? null;
       period = await manager.save(period);
 
-      const oldLines = await manager.find(PayrollLine, {
+      const oldLines: PayrollLine[] = await manager.find(PayrollLine, {
         where: { periodId: period.id },
       });
-      if (oldLines.length) await manager.remove(PayrollLine, oldLines);
+      const oldLinesByUser = new Map(
+        oldLines.map((line) => [line.userId, line]),
+      );
+      if (oldLines.length) {
+        const oldLineViolations: PayrollLineViolation[] = await manager.find(
+          PayrollLineViolation,
+          { where: { lineId: In(oldLines.map((line) => line.id)) } },
+        );
+        if (oldLineViolations.length)
+          await manager.remove(PayrollLineViolation, oldLineViolations);
+      }
       const journeys: Journey[] = await manager.find(Journey, {
         where: {
           projectId,
@@ -596,7 +1035,13 @@ export class PayrollService {
         )
           latestByUser.set(salary.userId, salary);
       });
-      for (const [userId, salary] of latestByUser) {
+      const payrollUserIds = new Set([
+        ...latestByUser.keys(),
+        ...oldLinesByUser.keys(),
+      ]);
+      for (const userId of payrollUserIds) {
+        const salary = latestByUser.get(userId);
+        const existingLine = oldLinesByUser.get(userId);
         const userViolations = generated.filter(
           (violation) => violation.userId === userId,
         );
@@ -606,27 +1051,26 @@ export class PayrollService {
             0,
           ),
         );
-        const grossSalary = Number(salary.monthlySalary);
-        const line = await manager.save(
-          PayrollLine,
+        const grossSalary = salary
+          ? Number(salary.monthlySalary)
+          : Number(existingLine?.grossSalary ?? 0);
+        const line =
+          existingLine ??
           manager.create(PayrollLine, {
             periodId: period.id,
             userId,
-            salarySnapshot: grossSalary.toFixed(2),
-            grossSalary: grossSalary.toFixed(2),
-            totalDeduction: totalDeduction.toFixed(2),
-            netPay: Math.max(
-              0,
-              roundMoney(grossSalary - totalDeduction),
-            ).toFixed(2),
-          }),
-        );
+            note: null,
+          });
+        line.salarySnapshot = grossSalary.toFixed(2);
+        line.grossSalary = grossSalary.toFixed(2);
+        const savedLine = await manager.save(PayrollLine, line);
+        await this.recalculateLine(manager, savedLine, totalDeduction);
         if (userViolations.length)
           await manager.save(
             PayrollLineViolation,
             userViolations.map((violation) =>
               manager.create(PayrollLineViolation, {
-                lineId: line.id,
+                lineId: savedLine.id,
                 sourceViolationId: violation.id,
                 eventDate: violation.eventDate,
                 eventType: violation.eventType,
@@ -657,7 +1101,13 @@ export class PayrollService {
     this.periodDates(month);
     const period = await this.periodRepo.findOne({
       where: { projectId, month },
-      relations: ["lines", "lines.user", "lines.violations"],
+      relations: [
+        "lines",
+        "lines.user",
+        "lines.violations",
+        "lines.adjustments",
+        "lines.adjustments.createdBy",
+      ],
     });
     if (!period) throw new NotFoundException("Payroll period not found");
     return period;

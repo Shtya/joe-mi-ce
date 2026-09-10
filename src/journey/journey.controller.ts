@@ -25,6 +25,7 @@ import { AuthGuard } from "../auth/auth.guard";
 import {
   CreateJourneyPlanDto,
   CreateUnplannedJourneyDto,
+  SupervisorUnplannedCheckInDto,
   CheckInOutDto,
   UpdateJourneyDto,
   UpdateJourneyPlanDto,
@@ -771,7 +772,7 @@ export class JourneyController {
                 is_active: true,
                 branch: { id: In(supervisorBranchIds) },
                 user: { role: { name: ERole.PROMOTER }, is_active: true },
-              }
+              },
             ]
           : {
               projectId,
@@ -1217,7 +1218,9 @@ export class JourneyController {
             isActive: promoter.is_active,
             totalJourneys: 0,
           });
-          seenPromoterDate.add(`${promoter.id}:${dateStr}:${promoter.branch?.id}`);
+          seenPromoterDate.add(
+            `${promoter.id}:${dateStr}:${promoter.branch?.id}`,
+          );
           seenUserDateGlobal.add(`${promoter.id}:${dateStr}`);
         }
       });
@@ -1372,6 +1375,22 @@ export class JourneyController {
     @Req() req,
   ) {
     return this.journeyService.createUnplannedJourney(dto, req.user);
+  }
+
+  @Post("unplanned/supervisor/check-in")
+  @UseInterceptors(FileInterceptor("file", multerOptionsCheckinTmp))
+  async checkInSupervisorUnplannedVisit(
+    @Body() dto: SupervisorUnplannedCheckInDto,
+    @Req() req: any,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (file) {
+      const filePath = `/tmp/checkins/${file.filename}`;
+      dto.image = filePath;
+      dto.checkInDocument = filePath;
+    }
+
+    return this.journeyService.checkInSupervisorUnplannedVisit(dto, req.user);
   }
 
   @Get("project/:projectId")
@@ -1618,7 +1637,8 @@ export class JourneyController {
   @Post("repair-orphan-checkins")
   @Permissions(EPermission.JOURNEY_UPDATE)
   async repairOrphanCheckIns(
-    @Body() body: {
+    @Body()
+    body: {
       projectId?: string;
       sourceProjectId?: string;
       userId?: string;

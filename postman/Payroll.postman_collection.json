@@ -1,0 +1,276 @@
+{
+  "info": {
+    "name": "Project Payroll API",
+    "description": "Project payroll workflow for project admins and super admins. Project-admin requests use the project_id from the bearer token. Payroll must be enabled before salaries, periods, lines, adjustments, or sync can be managed. Pending payroll can be edited; paid payroll is locked. Net pay is gross salary + additions - manual deductions - attendance deductions.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "authToken", "value": "" },
+    { "key": "projectId", "value": "" },
+    { "key": "month", "value": "2026-09" },
+    { "key": "periodId", "value": "" },
+    { "key": "employeeId", "value": "" },
+    { "key": "lineId", "value": "" },
+    { "key": "adjustmentId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "My Project Payroll",
+      "description": "Routes for the assigned PROJECT_ADMIN. The project is resolved from the authenticated token; no project ID is sent in the URL.",
+      "item": [
+        {
+          "name": "Enable or Disable Payroll",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/settings",
+            "description": "Enables or disables payroll for the token project. Enabling a project for the first time seeds the default 10 attendance-violation rules. Requires PAYROLL_MANAGE."
+          }
+        },
+        {
+          "name": "Get Violation Rules",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/payroll/my-project/violation-rules",
+            "description": "Returns the token project's attendance-violation rules. Requires PAYROLL_READ."
+          }
+        },
+        {
+          "name": "Import Salaries from Excel",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "" },
+                {
+                  "key": "selectedSheetName",
+                  "type": "text",
+                  "value": "Sheet5",
+                  "description": "Optional when the workbook contains Sheet5."
+                },
+                {
+                  "key": "effectiveFrom",
+                  "type": "text",
+                  "value": "2026-09-01",
+                  "description": "Optional YYYY-MM-DD salary effective date."
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/payroll/my-project/import-salaries",
+            "description": "Bulk creates or updates salary history for existing employees in the token project. User matches username; unmatched users are rejected and no users are created. Validation is all-or-nothing."
+          }
+        },
+        {
+          "name": "Synchronize Pending Payroll",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/payroll/my-project/sync?month={{month}}",
+            "description": "Synchronizes attendance violations for the selected month. Manual lines and adjustments are preserved and totals are recalculated. Paid periods are locked. The automatic job runs every day at 6:00 AM Asia/Riyadh."
+          }
+        },
+        {
+          "name": "Create or Get Pending Period",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"month\": \"{{month}}\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/periods",
+            "description": "Creates an empty pending monthly period or returns the existing pending period. Save the returned period.id as periodId."
+          }
+        },
+        {
+          "name": "Add Employee Payroll Line",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userId\": \"{{employeeId}}\",\n  \"grossSalary\": 4500,\n  \"note\": \"September payroll\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/periods/{{periodId}}/lines",
+            "description": "Adds an existing employee from the token project to a pending period, even without attendance. The gross salary also creates or updates that employee's effective salary history. Duplicate employee lines are rejected. Save the returned line.id as lineId."
+          }
+        },
+        {
+          "name": "Update Employee Payroll Line",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grossSalary\": 4750,\n  \"note\": \"Updated monthly salary\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/lines/{{lineId}}",
+            "description": "Updates gross salary and/or note while pending. Gross salary updates the employee salary effective from the period start, then net pay is recalculated."
+          }
+        },
+        {
+          "name": "Add Addition",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"addition\",\n  \"amount\": 300,\n  \"reason\": \"Sales commission\",\n  \"note\": \"September target achieved\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/lines/{{lineId}}/adjustments",
+            "description": "Adds one positive monthly payroll item. Amount must be greater than zero and reason is required. Any number of additions can be added while pending. Save adjustment.id as adjustmentId."
+          }
+        },
+        {
+          "name": "Add Deduction",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"deduction\",\n  \"amount\": 100,\n  \"reason\": \"Salary advance\",\n  \"note\": \"Advance repayment installment\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/lines/{{lineId}}/adjustments",
+            "description": "Adds one manual deduction. It remains separate from calculated attendance deductions. Amount must be greater than zero and reason is required."
+          }
+        },
+        {
+          "name": "Update Addition or Deduction",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"addition\",\n  \"amount\": 350,\n  \"reason\": \"Corrected sales commission\",\n  \"note\": \"Approved by project admin\"\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/adjustments/{{adjustmentId}}",
+            "description": "Updates any supplied fields on a pending adjustment and recalculates the line. An empty body is rejected."
+          }
+        },
+        {
+          "name": "Delete Addition or Deduction",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/payroll/my-project/adjustments/{{adjustmentId}}",
+            "description": "Deletes an adjustment from a pending payroll and recalculates the employee net pay. Paid history cannot be changed."
+          }
+        },
+        {
+          "name": "List and Search Payroll",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/payroll/my-project/periods?month={{month}}&status=pending&search=AEC&employeeId={{employeeId}}&hasAdditions=true&hasDeductions=true&hasViolations=true&grossMin=3000&grossMax=10000&netMin=2500&netMax=12000",
+            "description": "Returns { items, total }. All filters are optional: month (YYYY-MM), status (pending|paid), search (employee name or username), employeeId, hasAdditions, hasDeductions (manual deductions), hasViolations (attendance deductions), grossMin, grossMax, netMin, and netMax. Remove query parameters you do not want to filter by."
+          }
+        },
+        {
+          "name": "Mark Payroll Paid",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/payroll/periods/{{periodId}}/mark-paid",
+            "description": "Marks the full pending period paid. After this, sync, salary changes, line updates, additions, deductions, edits, and deletion are rejected."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Shared Tools",
+      "item": [
+        {
+          "name": "Download Salary Import Template",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/payroll/import-salaries/template",
+            "description": "Downloads the XLSX salary import template with No, Name, User, and Salary columns."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Super Admin Project Routes",
+      "description": "Existing project-ID routes for a super admin managing a selected project.",
+      "item": [
+        {
+          "name": "Enable Project Payroll",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/projects/{{projectId}}/payroll"
+          }
+        },
+        {
+          "name": "Get Project Violation Rules",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/projects/{{projectId}}/payroll/violation-rules"
+          }
+        },
+        {
+          "name": "Import Project Salaries",
+          "request": {
+            "method": "POST",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "file", "type": "file", "src": "" },
+                {
+                  "key": "selectedSheetName",
+                  "type": "text",
+                  "value": "Sheet5"
+                },
+                {
+                  "key": "effectiveFrom",
+                  "type": "text",
+                  "value": "2026-09-01"
+                }
+              ]
+            },
+            "url": "{{baseUrl}}/payroll/projects/{{projectId}}/import-salaries"
+          }
+        },
+        {
+          "name": "Sync Project Payroll",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/payroll/projects/{{projectId}}/sync?month={{month}}"
+          }
+        },
+        {
+          "name": "Get Project Period Details",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/payroll/projects/{{projectId}}/periods/{{month}}",
+            "description": "Returns one project's payroll month with employee lines, attendance violations, and manual adjustments."
+          }
+        }
+      ]
+    }
+  ]
+}

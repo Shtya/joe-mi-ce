@@ -4,6 +4,7 @@ import { CheckIn, Journey } from "entities/all_plans.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { EmployeeSalary } from "entities/payroll/employee-salary.entity";
+import { PayrollAdjustment } from "entities/payroll/payroll-adjustment.entity";
 import { PayrollLineViolation } from "entities/payroll/payroll-line-violation.entity";
 import { PayrollLine } from "entities/payroll/payroll-line.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
@@ -21,6 +22,7 @@ import { PayrollService } from "./payroll.service";
       Project,
       User,
       EmployeeSalary,
+      PayrollAdjustment,
       PayrollViolationRule,
       PayrollViolation,
       PayrollPeriod,
