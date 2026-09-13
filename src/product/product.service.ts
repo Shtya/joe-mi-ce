@@ -30,6 +30,14 @@ import * as path from "path";
 import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
+import { BadRequestException as CatalogUpdateBadRequestException } from "@nestjs/common";
+import { loadCatalogUpdateWorkbook } from "./catalog-update.workbook";
+import { buildCatalogUpdatePlan } from "./catalog-update.plan";
+import { applyCatalogUpdatePlan } from "./catalog-update.executor";
+import {
+  CatalogUpdateApplyResult,
+  CatalogUpdatePreviewResult,
+} from "./catalog-update.types";
 @Injectable()
 export class ProductService {
   private readonly uploadPath = "./uploads/products";
@@ -56,6 +64,78 @@ export class ProductService {
   private async projectWhere(user: any, extra: any = {}) {
     const projectId = await this.userService.resolveProjectIdFromUser(user.id);
     return { project: { id: projectId }, ...extra };
+  }
+
+  async previewCatalogUpdate(
+    filePath: string,
+    userId: string,
+  ): Promise<CatalogUpdatePreviewResult> {
+    const projectId = await this.userService.resolveProjectIdFromUser(userId);
+    if (!projectId) {
+      throw new CatalogUpdateBadRequestException(
+        "Authenticated user does not belong to a project",
+      );
+    }
+
+    let workbook;
+    try {
+      workbook = await loadCatalogUpdateWorkbook(filePath);
+    } catch (error) {
+      throw new CatalogUpdateBadRequestException(
+        `Unable to read catalog update workbook: ${error.message}`,
+      );
+    }
+
+    const products = await this.productRepository.find({
+      where: { project_id: projectId },
+      select: ["id", "project_id", "name", "model", "sku", "price"],
+    });
+    const plan = buildCatalogUpdatePlan(workbook.rows, products);
+
+    return {
+      ...plan,
+      metadata: {
+        projectId,
+        worksheetName: workbook.worksheetName,
+        headerRowNumber: workbook.headerRowNumber,
+        blankRowCount: workbook.blankRowCount,
+        ignoredWorksheetNames: workbook.ignoredWorksheetNames,
+        workbookErrors: workbook.errors,
+      },
+    };
+  }
+
+  async applyCatalogUpdate(
+    filePath: string,
+    userId: string,
+  ): Promise<CatalogUpdateApplyResult> {
+    const preview = await this.previewCatalogUpdate(filePath, userId);
+    if (preview.metadata.workbookErrors.length > 0) {
+      throw new CatalogUpdateBadRequestException(
+        preview.metadata.workbookErrors.join("; "),
+      );
+    }
+
+    const execution = await applyCatalogUpdatePlan<Product>(
+      preview,
+      preview.metadata.projectId,
+      {
+        transaction: (work) =>
+          this.productRepository.manager.transaction(async (manager) => {
+            const repository = manager.getRepository(Product);
+            return work({
+              findProduct: (id, projectId) =>
+                repository.findOne({ where: { id, project_id: projectId } }),
+              saveProduct: (product) => repository.save(product),
+            });
+          }),
+      },
+    );
+
+    return {
+      ...execution,
+      metadata: preview.metadata,
+    };
   }
 
   async create(dto: CreateProductDto): Promise<Product> {
@@ -320,7 +400,12 @@ export class ProductService {
       .leftJoin("product.category", "category")
       .where("category.id = :categoryId", { categoryId })
       .andWhere("brand.id = :brandId", { brandId })
-      .select(["product.id", "product.name", "product.price", "product.image_url"])
+      .select([
+        "product.id",
+        "product.name",
+        "product.price",
+        "product.image_url",
+      ])
       .orderBy(`product.${sortBy}`, sortOrder);
 
     this.userService.applyBrandScopeToProductQuery(qb, "product", scope);

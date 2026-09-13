@@ -37,6 +37,7 @@ import { multerOptions } from "common/multer.config";
 import { parse } from "papaparse";
 import * as ExcelJS from "exceljs";
 import * as XLSX from "xlsx";
+import { isCatalogUpdateDryRun } from "./catalog-update.endpoint";
 
 @UseGuards(AuthGuard)
 @Controller("products")
@@ -224,8 +225,9 @@ export class ProductController {
   async findAll(@Query() q: any, @Req() req: any) {
     const user = req.user;
 
-    const scope =
-      await this.productService.userService.resolveBrandAccessScope(user.id);
+    const scope = await this.productService.userService.resolveBrandAccessScope(
+      user.id,
+    );
 
     const filters: any = {};
 
@@ -253,11 +255,12 @@ export class ProductController {
       relations,
       searchFields,
       filters,
-      (qb) => this.productService.userService.applyBrandScopeToProductQuery(
-        qb,
-        "product",
-        scope,
-      ),
+      (qb) =>
+        this.productService.userService.applyBrandScopeToProductQuery(
+          qb,
+          "product",
+          scope,
+        ),
     );
   }
 
@@ -471,6 +474,36 @@ export class ProductController {
     } catch (err) {
       console.error("Import error:", err);
       throw new BadRequestException(`Import failed: ${err.message}`);
+    }
+  }
+
+  @Post("import/catalog-update")
+  @Permissions(EPermission.PRODUCT_UPDATE)
+  @UseInterceptors(FileInterceptor("file", multerOptions))
+  async importCatalogUpdate(
+    @UploadedFile() file: Express.Multer.File,
+    @Query("dryRun") dryRun: string | undefined,
+    @Req() req: any,
+  ) {
+    if (!file) {
+      throw new BadRequestException("File is required");
+    }
+
+    if (!file.originalname.toLowerCase().endsWith(".xlsx")) {
+      if (fs.existsSync(file.path)) await fs.promises.unlink(file.path);
+      throw new BadRequestException(
+        "Catalog update import requires an .xlsx file",
+      );
+    }
+
+    try {
+      return isCatalogUpdateDryRun(dryRun)
+        ? await this.productService.previewCatalogUpdate(file.path, req.user.id)
+        : await this.productService.applyCatalogUpdate(file.path, req.user.id);
+    } finally {
+      if (fs.existsSync(file.path)) {
+        await fs.promises.unlink(file.path);
+      }
     }
   }
 
