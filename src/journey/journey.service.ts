@@ -1760,7 +1760,11 @@ export class JourneyService {
     const isCheckGeo = !chainName?.toLowerCase().includes("roaming");
 
     const isWithinGeofence = isCheckGeo
-      ? this.isWithinGeofence(journey.branch, dto.geo)
+      ? this.isWithinGeofence(
+          journey.branch,
+          dto.geo,
+          journey.visitGeo ?? journey.branch?.geo,
+        )
       : true;
 
     // 📍 Log location on every check-in/out (even if within radius)
@@ -2346,14 +2350,14 @@ export class JourneyService {
   private isWithinGeofence(
     branch: Branch,
     geo: any,
-    targetGeo: { lat: number; lng: number } | undefined = branch.geo,
+    targetGeo?: { lat: number; lng: number } | null,
   ): boolean {
     const userCoords = this.parseLatLng(geo);
     return !this.evaluateLocationStatus(
       branch,
       userCoords.lat,
       userCoords.lng,
-      targetGeo,
+      targetGeo ?? branch.geo,
     ).isOutside;
   }
 
@@ -2367,7 +2371,7 @@ export class JourneyService {
     isOutside: boolean;
     distanceMeters: number;
   } {
-    const branchCoords = this.parseLatLng(targetGeo);
+    const branchCoords = this.parseLatLng(targetGeo ?? branch.geo);
     const distanceMeters = getDistance(
       { latitude: branchCoords.lat, longitude: branchCoords.lng },
       { latitude: lat, longitude: lng },
