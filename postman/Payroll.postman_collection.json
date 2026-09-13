@@ -199,6 +199,14 @@
           }
         },
         {
+          "name": "Get Detailed Payroll Period",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/payroll/my-project/periods/{{periodId}}",
+            "description": "Returns one period from the authenticated admin's project with payroll lines, employee details, attendance violations, and manual additions and deductions. Requires PAYROLL_READ."
+          }
+        },
+        {
           "name": "Mark Payroll Paid",
           "request": {
             "method": "POST",

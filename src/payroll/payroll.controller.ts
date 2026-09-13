@@ -122,6 +122,19 @@ export class PayrollController {
     );
   }
 
+  @Get("payroll/my-project/periods/:periodId")
+  @Permissions(EPermission.PAYROLL_READ)
+  getTokenProjectPeriodById(
+    @Param("periodId") periodId: string,
+    @Req() req: any,
+  ) {
+    return this.payrollService.getPeriodById(
+      this.tokenProjectId(req),
+      periodId,
+      req.user,
+    );
+  }
+
   @Post("payroll/my-project/periods")
   @Permissions(EPermission.PAYROLL_MANAGE)
   createTokenProjectPeriod(

@@ -1161,6 +1161,22 @@ export class PayrollService {
     return period;
   }
 
+  async getPeriodById(projectId: string, periodId: string, actor: User) {
+    this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
+    const period = await this.periodRepo.findOne({
+      where: { id: periodId, projectId },
+      relations: [
+        "lines",
+        "lines.user",
+        "lines.violations",
+        "lines.adjustments",
+        "lines.adjustments.createdBy",
+      ],
+    });
+    if (!period) throw new NotFoundException("Payroll period not found");
+    return period;
+  }
+
   async markPaid(periodId: string, actor: User) {
     return this.dataSource.transaction(async (manager) => {
       const period = await manager.findOne(PayrollPeriod, {
