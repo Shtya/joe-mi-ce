@@ -120,7 +120,6 @@ export class PayrollService {
     projectId: string,
     permission: EPermission,
   ): void {
-    if (actor?.role?.name === ERole.SUPER_ADMIN) return;
     if (
       actor?.role?.name !== ERole.PROJECT_ADMIN ||
       actor?.project_id !== projectId ||
@@ -146,7 +145,7 @@ export class PayrollService {
       projectId,
       EPermission.PAYROLL_MANAGE,
     );
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const project = await manager.findOne(Project, {
         where: { id: projectId },
       });
@@ -180,6 +179,11 @@ export class PayrollService {
       }
       return { projectId, payrollEnabled: enabled };
     });
+    if (!enabled) return result;
+
+    const month = this.riyadhDate().slice(0, 7);
+    const period = await this.syncPeriod(projectId, month, actor);
+    return { ...result, period };
   }
 
   async getViolationRules(projectId: string, actor: User) {

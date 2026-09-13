@@ -27,6 +27,7 @@ import {
   CreateJourneyPlanDto,
   CreateUnplannedJourneyDto,
   SupervisorUnplannedCheckInDto,
+  SupervisorUnplannedCheckOutDto,
   CheckInOutDto,
   UpdateJourneyDto,
   UpdateJourneyPlanDto,
@@ -1373,6 +1374,69 @@ export class JourneyService {
     });
   }
 
+  async checkOutSupervisorUnplannedVisit(
+    dto: SupervisorUnplannedCheckOutDto,
+    requester: User,
+  ) {
+    const supervisor = await this.userRepo.findOne({
+      where: { id: requester.id },
+      relations: ["role"],
+    });
+    if (!supervisor || supervisor.role?.name !== ERole.SUPERVISOR) {
+      throw new ForbiddenException(
+        "Only supervisors can check out unplanned visits",
+      );
+    }
+
+    const journey = await this.journeyRepo.findOne({
+      where: {
+        id: dto.journeyId,
+        user: { id: supervisor.id },
+        type: JourneyType.UNPLANNED,
+        is_active: true,
+      },
+      relations: ["branch", "user", "checkin"],
+    });
+    if (!journey) {
+      throw new NotFoundException("Unplanned journey not found");
+    }
+    if (!journey.checkin?.checkInTime) {
+      throw new ConflictException("Cannot check out before checking in");
+    }
+    if (!journey.visitGeo) {
+      throw new BadRequestException("Unplanned visit location is missing");
+    }
+
+    const geo = `${dto.lat},${dto.lng}`;
+    if (!this.isWithinGeofence(journey.branch, geo, journey.visitGeo)) {
+      throw new BadRequestException(this.messages.tooFar.en);
+    }
+
+    const checkOutTime = new Date(dto.checkOutTime);
+    if (Number.isNaN(checkOutTime.getTime())) {
+      throw new BadRequestException("Invalid check-out time");
+    }
+
+    journey.checkin.checkOutTime = checkOutTime;
+    journey.checkin.checkOutDocument = dto.checkOutDocument;
+    journey.checkin.noteOut = dto.noteOut;
+    journey.checkin.geo = geo;
+    journey.checkin.isWithinRadius = true;
+    journey.checkin.isAutoClosed = false;
+    journey.status = JourneyStatus.UNPLANNED_CLOSED;
+
+    await this.journeyRepo.manager.transaction(async (manager) => {
+      await manager.save(Journey, journey);
+      await manager.save(CheckIn, journey.checkin);
+    });
+
+    return {
+      code: 200,
+      message: "Checked out successfully",
+      data: { checkOutTime: dayjs(checkOutTime).format("HH:mm") },
+    };
+  }
+
   async updateJourney(id: string, dto: UpdateJourneyDto) {
     const journey = await this.journeyRepo.findOne({
       where: { id, is_active: true },
@@ -1696,7 +1760,7 @@ export class JourneyService {
     const isCheckGeo = !chainName?.toLowerCase().includes("roaming");
 
     const isWithinGeofence = isCheckGeo
-      ? this.isWithinGeofence(journey.branch, dto.geo, journey.visitGeo)
+      ? this.isWithinGeofence(journey.branch, dto.geo)
       : true;
 
     // 📍 Log location on every check-in/out (even if within radius)

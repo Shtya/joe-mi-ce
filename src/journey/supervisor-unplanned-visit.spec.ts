@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { Branch } from "../../entities/branch.entity";
 import {
   CheckIn,
@@ -187,7 +187,7 @@ describe("JourneyService supervisor unplanned visit", () => {
     expect(result.journey.branch).toBe(unplannedBranch);
   });
 
-  it("checks out against the unplanned visit location instead of the shared branch location", async () => {
+  it("keeps the standard checkout endpoint bound to the branch location", async () => {
     const journey = {
       id: "journey-1",
       type: "unplanned",
@@ -216,15 +216,47 @@ describe("JourneyService supervisor unplanned visit", () => {
       callback({ save: jest.fn(async (_entity, value) => value) }),
     );
 
-    const result = await service.checkInOut({
-      journeyId: "journey-1",
-      userId: "supervisor-1",
-      geo: "30.01,31.02",
-      checkOutTime: "2026-09-10T09:30:00.000Z",
-    });
+    await expect(
+      service.checkInOut({
+        journeyId: "journey-1",
+        userId: "supervisor-1",
+        geo: "30.01,31.02",
+        checkOutTime: "2026-09-10T09:30:00.000Z",
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
 
-    expect((result as { code: number }).code).toBe(200);
+  it("checks out a supervisor unplanned visit using its saved visit location", async () => {
+    const supervisor = {
+      id: "supervisor-1",
+      role: { name: ERole.SUPERVISOR },
+    } as User;
+    const journey = {
+      id: "journey-1",
+      type: "unplanned",
+      status: JourneyStatus.UNPLANNED_PRESENT,
+      visitGeo: { lat: 30.01, lng: 31.02 },
+      branch: { geo: { lat: 0, lng: 0 }, geofence_radius_meters: 500 },
+      user: supervisor,
+      checkin: { id: "check-in-1", checkInTime: new Date() },
+    } as Journey;
+    userRepo.findOne.mockResolvedValue(supervisor);
+    journeyRepo.findOne.mockResolvedValue(journey);
+    journeyRepo.manager.transaction.mockImplementation(async (callback) =>
+      callback({ save: jest.fn(async (_entity, value) => value) }),
+    );
+
+    const result = await service.checkOutSupervisorUnplannedVisit(
+      {
+        journeyId: "journey-1",
+        lat: 30.01,
+        lng: 31.02,
+        checkOutTime: "2026-09-10T12:00:00.000Z",
+      },
+      supervisor,
+    );
+
+    expect(result.code).toBe(200);
     expect(journey.status).toBe(JourneyStatus.UNPLANNED_CLOSED);
-    expect(checkIn.isWithinRadius).toBe(true);
   });
 });

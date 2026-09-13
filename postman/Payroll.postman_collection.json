@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Project Payroll API",
-    "description": "Project payroll workflow for project admins and super admins. Project-admin requests use the project_id from the bearer token. Payroll must be enabled before salaries, periods, lines, adjustments, or sync can be managed. Pending payroll can be edited; paid payroll is locked. Net pay is gross salary + additions - manual deductions - attendance deductions.",
+    "description": "Project payroll workflow for the assigned project admin only. Every payroll route resolves the project from the bearer token, so no project ID is sent in a payroll URL. Payroll must be enabled before salaries, periods, lines, adjustments, or sync can be managed. Pending payroll can be edited; paid payroll is locked. Net pay is gross salary + additions - manual deductions - attendance deductions.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -15,9 +15,8 @@
     ]
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:3000" },
+    { "key": "baseUrl", "value": "https://ce-api.joe-mi.com/api/v1" },
     { "key": "authToken", "value": "" },
-    { "key": "projectId", "value": "" },
     { "key": "month", "value": "2026-09" },
     { "key": "periodId", "value": "" },
     { "key": "employeeId", "value": "" },
@@ -40,7 +39,7 @@
               "options": { "raw": { "language": "json" } }
             },
             "url": "{{baseUrl}}/payroll/my-project/settings",
-            "description": "Enables or disables payroll for the token project. Enabling a project for the first time seeds the default 10 attendance-violation rules. Requires PAYROLL_MANAGE."
+            "description": "Enables or disables payroll for the token project. Enabling creates or recalculates the current pending period from day 1 through today, including employees with active salaries and attendance violations. The first enable also seeds the default 10 attendance-violation rules. Requires PAYROLL_MANAGE."
           }
         },
         {
@@ -49,6 +48,20 @@
             "method": "GET",
             "url": "{{baseUrl}}/payroll/my-project/violation-rules",
             "description": "Returns the token project's attendance-violation rules. Requires PAYROLL_READ."
+          }
+        },
+        {
+          "name": "Replace Violation Rules",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rules\": []\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": "{{baseUrl}}/payroll/my-project/violation-rules",
+            "description": "Replaces the token project's attendance-violation policy. Provide the complete validated rules array. Requires PAYROLL_MANAGE."
           }
         },
         {
@@ -204,70 +217,6 @@
             "method": "GET",
             "url": "{{baseUrl}}/payroll/import-salaries/template",
             "description": "Downloads the XLSX salary import template with No, Name, User, and Salary columns."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Super Admin Project Routes",
-      "description": "Existing project-ID routes for a super admin managing a selected project.",
-      "item": [
-        {
-          "name": "Enable Project Payroll",
-          "request": {
-            "method": "PATCH",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"enabled\": true\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": "{{baseUrl}}/projects/{{projectId}}/payroll"
-          }
-        },
-        {
-          "name": "Get Project Violation Rules",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/projects/{{projectId}}/payroll/violation-rules"
-          }
-        },
-        {
-          "name": "Import Project Salaries",
-          "request": {
-            "method": "POST",
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                { "key": "file", "type": "file", "src": "" },
-                {
-                  "key": "selectedSheetName",
-                  "type": "text",
-                  "value": "Sheet5"
-                },
-                {
-                  "key": "effectiveFrom",
-                  "type": "text",
-                  "value": "2026-09-01"
-                }
-              ]
-            },
-            "url": "{{baseUrl}}/payroll/projects/{{projectId}}/import-salaries"
-          }
-        },
-        {
-          "name": "Sync Project Payroll",
-          "request": {
-            "method": "POST",
-            "url": "{{baseUrl}}/payroll/projects/{{projectId}}/sync?month={{month}}"
-          }
-        },
-        {
-          "name": "Get Project Period Details",
-          "request": {
-            "method": "GET",
-            "url": "{{baseUrl}}/payroll/projects/{{projectId}}/periods/{{month}}",
-            "description": "Returns one project's payroll month with employee lines, attendance violations, and manual adjustments."
           }
         }
       ]

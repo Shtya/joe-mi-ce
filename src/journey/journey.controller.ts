@@ -26,6 +26,7 @@ import {
   CreateJourneyPlanDto,
   CreateUnplannedJourneyDto,
   SupervisorUnplannedCheckInDto,
+  SupervisorUnplannedCheckOutDto,
   CheckInOutDto,
   UpdateJourneyDto,
   UpdateJourneyPlanDto,
@@ -1391,6 +1392,20 @@ export class JourneyController {
     }
 
     return this.journeyService.checkInSupervisorUnplannedVisit(dto, req.user);
+  }
+
+  @Post("unplanned/supervisor/check-out")
+  @UseInterceptors(FileInterceptor("file", multerOptionsCheckinTmp))
+  async checkOutSupervisorUnplannedVisit(
+    @Body() dto: SupervisorUnplannedCheckOutDto,
+    @Req() req: any,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    if (file) {
+      dto.checkOutDocument = `/tmp/checkins/${file.filename}`;
+    }
+
+    return this.journeyService.checkOutSupervisorUnplannedVisit(dto, req.user);
   }
 
   @Get("project/:projectId")

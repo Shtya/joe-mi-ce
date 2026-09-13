@@ -68,6 +68,19 @@ export class PayrollController {
     );
   }
 
+  @Put("payroll/my-project/violation-rules")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  replaceTokenProjectViolationRules(
+    @Body() dto: ReplacePayrollViolationRulesDto,
+    @Req() req: any,
+  ) {
+    return this.payrollService.replaceViolationRules(
+      this.tokenProjectId(req),
+      dto,
+      req.user,
+    );
+  }
+
   @Post("payroll/my-project/import-salaries")
   @Permissions(EPermission.PAYROLL_MANAGE)
   @UseInterceptors(
@@ -176,36 +189,6 @@ export class PayrollController {
     return this.payrollService.deleteAdjustment(adjustmentId, req.user);
   }
 
-  @Patch("projects/:projectId/payroll")
-  @Permissions(EPermission.PAYROLL_MANAGE)
-  enablePayroll(
-    @Param("projectId") projectId: string,
-    @Body() dto: SetPayrollEnabledDto,
-    @Req() req: any,
-  ) {
-    return this.payrollService.enableProjectPayroll(
-      projectId,
-      dto.enabled,
-      req.user,
-    );
-  }
-
-  @Get("projects/:projectId/payroll/violation-rules")
-  @Permissions(EPermission.PAYROLL_READ)
-  getViolationRules(@Param("projectId") projectId: string, @Req() req: any) {
-    return this.payrollService.getViolationRules(projectId, req.user);
-  }
-
-  @Put("projects/:projectId/payroll/violation-rules")
-  @Permissions(EPermission.PAYROLL_MANAGE)
-  replaceViolationRules(
-    @Param("projectId") projectId: string,
-    @Body() dto: ReplacePayrollViolationRulesDto,
-    @Req() req: any,
-  ) {
-    return this.payrollService.replaceViolationRules(projectId, dto, req.user);
-  }
-
   @Get("payroll/import-salaries/template")
   getSalaryImportTemplate(@Res() res: Response) {
     return this.payrollService.getSalaryImportTemplate().then((buffer) => {
@@ -218,44 +201,6 @@ export class PayrollController {
       });
       res.end(buffer);
     });
-  }
-
-  @Post("payroll/projects/:projectId/import-salaries")
-  @Permissions(EPermission.PAYROLL_MANAGE)
-  @UseInterceptors(
-    FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 },
-      fileFilter: (_req, file, callback) =>
-        callback(null, /\.(xlsx|xls)$/i.test(file.originalname)),
-    }),
-  )
-  importSalaries(
-    @Param("projectId") projectId: string,
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: SalaryImportDto,
-    @Req() req: any,
-  ) {
-    return this.payrollService.importSalaries(projectId, file, req.user, dto);
-  }
-
-  @Post("payroll/projects/:projectId/sync")
-  @Permissions(EPermission.PAYROLL_MANAGE)
-  sync(
-    @Param("projectId") projectId: string,
-    @Query() query: PayrollMonthQueryDto,
-    @Req() req: any,
-  ) {
-    return this.payrollService.syncPeriod(projectId, query.month, req.user);
-  }
-
-  @Get("payroll/projects/:projectId/periods/:month")
-  @Permissions(EPermission.PAYROLL_READ)
-  getPeriod(
-    @Param("projectId") projectId: string,
-    @Param("month") month: string,
-    @Req() req: any,
-  ) {
-    return this.payrollService.getPeriod(projectId, month, req.user);
   }
 
   @Post("payroll/periods/:periodId/mark-paid")

@@ -96,6 +96,30 @@ export class SupervisorUnplannedCheckInDto {
   noteIn?: string;
 }
 
+export class SupervisorUnplannedCheckOutDto {
+  @IsUUID()
+  journeyId: string;
+
+  @Type(() => Number)
+  @IsLatitude()
+  lat: number;
+
+  @Type(() => Number)
+  @IsLongitude()
+  lng: number;
+
+  @IsDateString()
+  checkOutTime: string;
+
+  @IsOptional()
+  @IsString()
+  checkOutDocument?: string;
+
+  @IsOptional()
+  @IsString()
+  noteOut?: string;
+}
+
 export class UpdateJourneyDto {
   @IsOptional()
   @IsUUID()
