@@ -188,7 +188,7 @@ export class PayrollService {
 
   async getViolationRules(projectId: string, actor: User) {
     this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
-    await this.requireProject(projectId);
+    await this.requireEnabledProject(projectId);
     return this.ruleRepo.find({
       where: { projectId },
       order: { sortOrder: "ASC" },
@@ -205,7 +205,7 @@ export class PayrollService {
       projectId,
       EPermission.PAYROLL_MANAGE,
     );
-    await this.requireProject(projectId);
+    await this.requireEnabledProject(projectId);
     const keys = dto.rules.map((rule) => rule.ruleKey);
     if (new Set(keys).size !== keys.length)
       throw new BadRequestException("Rule keys must be unique");
@@ -378,7 +378,13 @@ export class PayrollService {
       }
       return result;
     });
-    return { updatedRows, rejectedRows: [] };
+    const month = effectiveFrom.slice(0, 7);
+    const currentMonth = this.riyadhDate().slice(0, 7);
+    const period =
+      month <= currentMonth
+        ? await this.syncPeriod(projectId, month, actor)
+        : null;
+    return { updatedRows, rejectedRows: [], period };
   }
 
   private riyadhDate(now = new Date()): string {
@@ -483,6 +489,12 @@ export class PayrollService {
     if (!project.payrollEnabled)
       throw new ConflictException("Payroll is not enabled for this project");
     return project;
+  }
+
+  async getPayrollSettings(projectId: string, actor: User) {
+    this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
+    const project = await this.requireProject(projectId);
+    return { projectId: project.id, payrollEnabled: project.payrollEnabled };
   }
 
   private assertAdjustmentReason(reason: string): string {
@@ -815,7 +827,7 @@ export class PayrollService {
     actor: User,
   ) {
     this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
-    await this.requireProject(projectId);
+    await this.requireEnabledProject(projectId);
     if (
       filters.grossMin !== undefined &&
       filters.grossMax !== undefined &&
@@ -1079,6 +1091,7 @@ export class PayrollService {
       projectSalaries.forEach((salary) => {
         if (
           !latestByUser.has(salary.userId) &&
+          Number(salary.monthlySalary) > 0 &&
           (!salary.effectiveTo || salary.effectiveTo >= startDate)
         )
           latestByUser.set(salary.userId, salary);
@@ -1146,6 +1159,7 @@ export class PayrollService {
 
   async getPeriod(projectId: string, month: string, actor: User) {
     this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
+    await this.requireEnabledProject(projectId);
     this.periodDates(month);
     const period = await this.periodRepo.findOne({
       where: { projectId, month },
@@ -1163,6 +1177,7 @@ export class PayrollService {
 
   async getPeriodById(projectId: string, periodId: string, actor: User) {
     this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
+    await this.requireEnabledProject(projectId);
     const period = await this.periodRepo.findOne({
       where: { id: periodId, projectId },
       relations: [
@@ -1188,6 +1203,7 @@ export class PayrollService {
         period.projectId,
         EPermission.PAYROLL_MANAGE,
       );
+      await this.requireEnabledProject(period.projectId);
       if (period.status === PayrollPeriodStatus.PAID)
         throw new ConflictException("Payroll period is already paid");
       period.status = PayrollPeriodStatus.PAID;

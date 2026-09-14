@@ -29,6 +29,14 @@
       "description": "Routes for the assigned PROJECT_ADMIN. The project is resolved from the authenticated token; no project ID is sent in the URL.",
       "item": [
         {
+          "name": "Get Payroll Settings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/payroll/my-project/settings",
+            "description": "Returns whether payroll is enabled for the authenticated project. This endpoint remains available when payroll is disabled. Requires PAYROLL_READ."
+          }
+        },
+        {
           "name": "Enable or Disable Payroll",
           "request": {
             "method": "PATCH",
@@ -87,7 +95,7 @@
               ]
             },
             "url": "{{baseUrl}}/payroll/my-project/import-salaries",
-            "description": "Bulk creates or updates salary history for existing employees in the token project. User matches username; unmatched users are rejected and no users are created. Validation is all-or-nothing."
+            "description": "Bulk creates or updates salary history for existing employees in the token project. User matches username; unmatched users are rejected and no users are created. Validation is all-or-nothing. For a current or past effective month, the period is synchronized immediately so employees with a salary above zero are added to payroll lines."
           }
         },
         {

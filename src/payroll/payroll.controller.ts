@@ -46,6 +46,15 @@ export class PayrollController {
     return projectId;
   }
 
+  @Get("payroll/my-project/settings")
+  @Permissions(EPermission.PAYROLL_READ)
+  getTokenProjectPayrollSettings(@Req() req: any) {
+    return this.payrollService.getPayrollSettings(
+      this.tokenProjectId(req),
+      req.user,
+    );
+  }
+
   @Patch("payroll/my-project/settings")
   @Permissions(EPermission.PAYROLL_MANAGE)
   enableTokenProjectPayroll(

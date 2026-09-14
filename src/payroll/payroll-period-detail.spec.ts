@@ -5,10 +5,15 @@ import { ERole } from "enums/Role.enum";
 describe("PayrollService.getPeriodById", () => {
   it("returns a detailed period only from the project administrator's project", async () => {
     const period = { id: "period-1", projectId: "project-1", lines: [] };
+    const projectRepo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValue({ id: "project-1", payrollEnabled: true }),
+    };
     const periodRepo = { findOne: jest.fn().mockResolvedValue(period) };
     const service = new PayrollService(
       {} as any,
-      {} as any,
+      projectRepo as any,
       {} as any,
       {} as any,
       {} as any,
