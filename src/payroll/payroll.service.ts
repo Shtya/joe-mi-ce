@@ -1120,6 +1120,11 @@ export class PayrollService {
           manager.create(PayrollLine, {
             periodId: period.id,
             userId,
+            attendanceDeduction: "0.00",
+            manualDeduction: "0.00",
+            totalAddition: "0.00",
+            totalDeduction: "0.00",
+            netPay: "0.00",
             note: null,
           });
         line.salarySnapshot = grossSalary.toFixed(2);
