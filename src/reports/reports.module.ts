@@ -12,6 +12,7 @@ import { Product } from "entities/products/product.entity";
 import { Stock } from "entities/products/stock.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
+import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { VacationDate } from "entities/employee/vacation-date.entity";
       Stock,
       Vacation,
       VacationDate,
+      PayrollPeriod,
     ]),
     MailModule,
   ],

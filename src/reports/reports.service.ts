@@ -19,6 +19,7 @@ import { Stock } from "entities/products/stock.entity";
 import { Project } from "entities/project.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
+import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
 
 type MonthlyReportTabOptions = {
   attendance?: boolean;
@@ -61,6 +62,8 @@ export class ReportsService {
     private readonly vacationRepository: Repository<Vacation>,
     @InjectRepository(VacationDate)
     private readonly vacationDateRepository: Repository<VacationDate>,
+    @InjectRepository(PayrollPeriod)
+    private readonly payrollPeriodRepository: Repository<PayrollPeriod>,
   ) {}
 
   async generateMonthlyReport(
@@ -222,7 +225,11 @@ export class ReportsService {
       { header: "Duration", key: "duration", width: 14 },
       { header: "Is Late", key: "is_late", width: 10 },
       { header: "Late Time", key: "late_time", width: 16 },
-      { header: "Check-in Diff Minutes", key: "check_in_diff_minutes", width: 20 },
+      {
+        header: "Check-in Diff Minutes",
+        key: "check_in_diff_minutes",
+        width: 20,
+      },
       {
         header: "Check-out Diff Minutes",
         key: "check_out_diff_minutes",
@@ -262,7 +269,8 @@ export class ReportsService {
         .filter(Boolean),
     );
 
-    let users = await this.userRepository.createQueryBuilder("user")
+    let users = await this.userRepository
+      .createQueryBuilder("user")
       .leftJoinAndSelect("user.role", "role")
       .leftJoinAndSelect("user.branch", "branch")
       .leftJoinAndSelect("branch.city", "city")
@@ -296,43 +304,47 @@ export class ReportsService {
     const reportUserIds = new Set(users.map((user) => user.id));
 
     const journeys = (
-      await this.journeyRepository.createQueryBuilder("journey")
-      .leftJoinAndSelect("journey.user", "user")
-      .leftJoinAndSelect("journey.branch", "branch")
-      .leftJoinAndSelect("branch.city", "journeyCity")
-      .leftJoinAndSelect("branch.chain", "chain")
-      .leftJoinAndSelect("journey.checkin", "checkin")
-      .leftJoinAndSelect("journey.shift", "shift")
-      .where("journey.projectId = :projectId", { projectId })
-      .andWhere("journey.date BETWEEN :start AND :end", {
-        start: journeyQueryStart.format("YYYY-MM-DD"),
-        end: journeyQueryEnd.format("YYYY-MM-DD"),
-      })
-      .select([
-        "journey.id",
-        "journey.date",
-        "journey.status",
-        "user.id",
-        "user.name",
-        "user.username",
-        "branch.id",
-        "branch.name",
-        "journeyCity.id",
-        "journeyCity.name",
-        "chain.id",
-        "chain.name",
-        "checkin.id",
-        "checkin.checkInTime",
-        "checkin.checkOutTime",
-        "checkin.checkInDocument",
-        "checkin.checkOutDocument",
-        "checkin.isAutoClosed",
-        "shift.id",
-        "shift.startTime",
-        "shift.endTime",
-      ])
-      .getMany()
-    ).filter((journey) => !requestedUsernames.size || reportUserIds.has(journey.user?.id));
+      await this.journeyRepository
+        .createQueryBuilder("journey")
+        .leftJoinAndSelect("journey.user", "user")
+        .leftJoinAndSelect("journey.branch", "branch")
+        .leftJoinAndSelect("branch.city", "journeyCity")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("journey.checkin", "checkin")
+        .leftJoinAndSelect("journey.shift", "shift")
+        .where("journey.projectId = :projectId", { projectId })
+        .andWhere("journey.date BETWEEN :start AND :end", {
+          start: journeyQueryStart.format("YYYY-MM-DD"),
+          end: journeyQueryEnd.format("YYYY-MM-DD"),
+        })
+        .select([
+          "journey.id",
+          "journey.date",
+          "journey.status",
+          "user.id",
+          "user.name",
+          "user.username",
+          "branch.id",
+          "branch.name",
+          "journeyCity.id",
+          "journeyCity.name",
+          "chain.id",
+          "chain.name",
+          "checkin.id",
+          "checkin.checkInTime",
+          "checkin.checkOutTime",
+          "checkin.checkInDocument",
+          "checkin.checkOutDocument",
+          "checkin.isAutoClosed",
+          "shift.id",
+          "shift.startTime",
+          "shift.endTime",
+        ])
+        .getMany()
+    ).filter(
+      (journey) =>
+        !requestedUsernames.size || reportUserIds.has(journey.user?.id),
+    );
     this.logger.log(`Fetched ${journeys.length} journeys.`);
 
     const salesQuery = this.saleRepository
@@ -390,7 +402,9 @@ export class ReportsService {
           "supervisor.name",
         ])
         .getMany()
-    ).filter((sale) => !requestedUsernames.size || reportUserIds.has(sale.user?.id));
+    ).filter(
+      (sale) => !requestedUsernames.size || reportUserIds.has(sale.user?.id),
+    );
 
     const vacations = await this.vacationRepository.find({
       where: {
@@ -481,9 +495,7 @@ export class ReportsService {
       const mins = absMinutes % 60;
       const sign = minutes < 0 ? "-" : "";
 
-      return hours > 0
-        ? `${sign}${hours}h ${mins}m`
-        : `${sign}${mins} mins`;
+      return hours > 0 ? `${sign}${hours}h ${mins}m` : `${sign}${mins} mins`;
     };
 
     const formatJourneyDuration = (journey: Journey) => {
@@ -532,10 +544,7 @@ export class ReportsService {
         journey.shift.startTime,
       );
       const checkInDiffMinutes = shiftStart.diff(checkInSaudi, "minute");
-      const lateMinutes = Math.max(
-        checkInSaudi.diff(shiftStart, "minute"),
-        0,
-      );
+      const lateMinutes = Math.max(checkInSaudi.diff(shiftStart, "minute"), 0);
       let checkOutDiffMinutes: number | null = null;
       let totalMinutes = checkInDiffMinutes;
 
@@ -990,17 +999,17 @@ export class ReportsService {
       currentColIndex_t3 += 2;
 
       // Duration Sheet
-    //   const dateCell_dur = headerRow1_dur.getCell(currentColIndex_dur);
-    //   dateCell_dur.value = dateStr;
-    //   durationSheet.mergeCells(
-    //     1,
-    //     currentColIndex_dur,
-    //     1,
-    //     currentColIndex_dur + 1,
-    //   );
-    //   headerRow2_dur.getCell(currentColIndex_dur).value = "Duration";
-    //   headerRow2_dur.getCell(currentColIndex_dur + 1).value = "Shift Count";
-    //   currentColIndex_dur += 2;
+      //   const dateCell_dur = headerRow1_dur.getCell(currentColIndex_dur);
+      //   dateCell_dur.value = dateStr;
+      //   durationSheet.mergeCells(
+      //     1,
+      //     currentColIndex_dur,
+      //     1,
+      //     currentColIndex_dur + 1,
+      //   );
+      //   headerRow2_dur.getCell(currentColIndex_dur).value = "Duration";
+      //   headerRow2_dur.getCell(currentColIndex_dur + 1).value = "Shift Count";
+      //   currentColIndex_dur += 2;
     }
 
     // Totals columns for Tab 3
@@ -1168,7 +1177,7 @@ export class ReportsService {
         branch: s.branch?.name || "-",
         brand: s.product?.brand?.name || "-",
         categories: s.product?.category?.name || "-",
-        product_model:s.product?.name || "-",
+        product_model: s.product?.name || "-",
         price: s.price ?? "-",
         total_amount: s.total_amount ?? "-",
         quantity: s.quantity ?? "-",
@@ -1235,7 +1244,9 @@ export class ReportsService {
         currentSales + Number(s.total_amount || 0),
       );
     });
-    this.logger.log(`Sales Matched in BP Matrix: ${bpSalesMatrix.size} branches have sales entries in the matrix.`);
+    this.logger.log(
+      `Sales Matched in BP Matrix: ${bpSalesMatrix.size} branches have sales entries in the matrix.`,
+    );
 
     // Filter promoters to only those who have either a journey or a sale this month
     const activePromoterIds = new Set<string>();
@@ -1248,7 +1259,9 @@ export class ReportsService {
       .filter((p) => activePromoterIds.has(p.id))
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
-    this.logger.log(`Active Promoters Filtered: ${sortedPromoters.length} from ${promotersMap.size}`);
+    this.logger.log(
+      `Active Promoters Filtered: ${sortedPromoters.length} from ${promotersMap.size}`,
+    );
 
     const bpCols = [
       { header: "Branch Name", key: "branch_name", width: 30 },
@@ -1365,8 +1378,7 @@ export class ReportsService {
       }
       // if (isBPMatrix) effectiveBaseColCount = 1;
 
-      const startRow =
-        isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
+      const startRow = isTab3 || sheet.name === "Attendance Duration" ? 2 : 1;
 
       if (sheet.rowCount > startRow && sheet.columnCount > 0) {
         sheet.autoFilter = {
@@ -1376,15 +1388,13 @@ export class ReportsService {
       }
 
       // Freeze headers (and totals row for Attendance)
-      sheet.views = [
-        { state: "frozen", xSplit: 0, ySplit: startRow },
-      ];
+      sheet.views = [{ state: "frozen", xSplit: 0, ySplit: startRow }];
 
       sheet.eachRow((row, rowNumber) => {
         const isHeader = isTab3 ? rowNumber <= 2 : rowNumber === 1;
         // const isTotalRow =
         //   (isAttendance && rowNumber === 2) ||
-          // (isBPMatrix && rowNumber === sheet.rowCount);
+        // (isBPMatrix && rowNumber === sheet.rowCount);
 
         row.eachCell((cell, colNumber) => {
           cell.alignment = { vertical: "middle", horizontal: "center" };
@@ -1401,9 +1411,9 @@ export class ReportsService {
             }
             cell.fill = headerFill as exceljs.Fill;
             cell.border = cellBorder as Partial<exceljs.Borders>;
-          // } else if (isTotalRow) {
-          //   cell.font = { bold: true };
-          //   cell.border = thickBottomBorder as Partial<exceljs.Borders>;
+            // } else if (isTotalRow) {
+            //   cell.font = { bold: true };
+            //   cell.border = thickBottomBorder as Partial<exceljs.Borders>;
           } else {
             cell.border = cellBorder as Partial<exceljs.Borders>;
           }
@@ -1469,7 +1479,8 @@ export class ReportsService {
       : dayjs().tz("Asia/Riyadh");
     const yesterday = now.clone().subtract(1, "day");
 
-    // Custom Reporting Period: 7 AM Yesterday to 5 AM Today (Saudi Time)
+    // Attendance uses the 7 AM to 5 AM shift window. Sales use the previous
+    // Saudi calendar day, matching the date filter in the sales export.
     const reportStart = yesterday
       .clone()
       .set("hour", 7)
@@ -1482,12 +1493,17 @@ export class ReportsService {
       .set("minute", 0)
       .set("second", 0)
       .set("millisecond", 0);
+    const salesStart = yesterday.clone().startOf("day");
+    const salesEnd = yesterday.clone().endOf("day");
 
     this.logger.log(
       `Gatemea Report Range (Saudi Time): ${reportStart.format()} to ${reportEnd.format()}`,
     );
     this.logger.log(
       `Gatemea Query UTC Range: ${reportStart.toDate().toISOString()} to ${reportEnd.toDate().toISOString()}`,
+    );
+    this.logger.log(
+      `Gatemea Sales Range (Saudi Time): ${salesStart.format()} to ${salesEnd.format()}`,
     );
 
     const workbook = new exceljs.Workbook();
@@ -1509,62 +1525,91 @@ export class ReportsService {
     } as const;
 
     // 1. Fetch Sales, Products & Journeys for Custom Period
-    const [sales, products, journeys, stocks] = await Promise.all([
-      this.saleRepository.createQueryBuilder("sale")
-        .leftJoinAndSelect("sale.product", "product")
-        .leftJoinAndSelect("sale.branch", "branch")
-        .leftJoinAndSelect("branch.chain", "chain")
-        .leftJoinAndSelect("sale.user", "user")
-        .leftJoinAndSelect("user.role", "role")
-        .where("sale.projectId = :projectId", { projectId })
-        .andWhere("sale.sale_date BETWEEN :start AND :end", {
-          start: reportStart.toDate(),
-          end: reportEnd.toDate(),
-        })
-        .select([
-          "sale.id", "sale.quantity", "sale.sale_date",
-          "product.id", "product.name", "product.model",
-          "branch.id", "branch.name",
-          "chain.id", "chain.name",
-          "user.id", "role.name"
-        ])
-        .getMany(),
-      this.productRepository.find({
-        where: { project_id: projectId, is_active: true },
-        select: ["id", "name", "model"]
-      }),
-      this.journeyRepository.createQueryBuilder("journey")
-        .leftJoinAndSelect("journey.user", "user")
-        .leftJoinAndSelect("user.role", "role")
-        .leftJoinAndSelect("journey.branch", "branch")
-        .leftJoinAndSelect("branch.chain", "chain")
-        .leftJoinAndSelect("journey.checkin", "checkin")
-        .where("journey.projectId = :projectId", { projectId })
-        .andWhere("journey.date IN (:...dates)", {
-          dates: [yesterday.format("YYYY-MM-DD"), now.format("YYYY-MM-DD")]
-        })
-        .select([
-          "journey.id", "journey.date", "journey.status",
-          "user.id", "role.name",
-          "branch.id", "branch.name",
-          "chain.id", "chain.name",
-          "checkin.id", "checkin.checkInTime"
-        ])
-        .getMany(),
-      this.stockRepository.createQueryBuilder("stock")
-        .leftJoinAndSelect("stock.branch", "branch")
-        .leftJoinAndSelect("branch.chain", "chain")
-        .leftJoinAndSelect("stock.product", "product")
-        .where("product.project_id = :projectId", { projectId })
-        .andWhere("product.is_active = :isActive", { isActive: true })
-        .select([
-          "stock.id", "stock.quantity",
-          "branch.id", "branch.name",
-          "chain.id", "chain.name",
-          "product.id", "product.name", "product.model"
-        ])
-        .getMany(),
-    ]);
+    const [sales, products, journeys, stocks, payrollPeriod] =
+      await Promise.all([
+        this.saleRepository
+          .createQueryBuilder("sale")
+          .leftJoinAndSelect("sale.product", "product")
+          .leftJoinAndSelect("sale.branch", "branch")
+          .leftJoinAndSelect("branch.chain", "chain")
+          .leftJoinAndSelect("sale.user", "user")
+          .leftJoinAndSelect("user.role", "role")
+          .where("sale.projectId = :projectId", { projectId })
+          .andWhere("sale.sale_date BETWEEN :start AND :end", {
+            start: salesStart.toDate(),
+            end: salesEnd.toDate(),
+          })
+          .select([
+            "sale.id",
+            "sale.quantity",
+            "sale.sale_date",
+            "product.id",
+            "product.name",
+            "product.model",
+            "branch.id",
+            "branch.name",
+            "chain.id",
+            "chain.name",
+            "user.id",
+            "role.name",
+          ])
+          .getMany(),
+        this.productRepository.find({
+          where: { project_id: projectId, is_active: true },
+          select: ["id", "name", "model"],
+        }),
+        this.journeyRepository
+          .createQueryBuilder("journey")
+          .leftJoinAndSelect("journey.user", "user")
+          .leftJoinAndSelect("user.role", "role")
+          .leftJoinAndSelect("journey.branch", "branch")
+          .leftJoinAndSelect("branch.chain", "chain")
+          .leftJoinAndSelect("journey.checkin", "checkin")
+          .where("journey.projectId = :projectId", { projectId })
+          .andWhere("journey.date IN (:...dates)", {
+            dates: [yesterday.format("YYYY-MM-DD"), now.format("YYYY-MM-DD")],
+          })
+          .select([
+            "journey.id",
+            "journey.date",
+            "journey.status",
+            "user.id",
+            "role.name",
+            "branch.id",
+            "branch.name",
+            "chain.id",
+            "chain.name",
+            "checkin.id",
+            "checkin.checkInTime",
+          ])
+          .getMany(),
+        this.stockRepository
+          .createQueryBuilder("stock")
+          .leftJoinAndSelect("stock.branch", "branch")
+          .leftJoinAndSelect("branch.chain", "chain")
+          .leftJoinAndSelect("stock.product", "product")
+          .where("product.project_id = :projectId", { projectId })
+          .andWhere("product.is_active = :isActive", { isActive: true })
+          .select([
+            "stock.id",
+            "stock.quantity",
+            "branch.id",
+            "branch.name",
+            "chain.id",
+            "chain.name",
+            "product.id",
+            "product.name",
+            "product.model",
+          ])
+          .getMany(),
+        this.payrollPeriodRepository.findOne({
+          where: {
+            projectId,
+            month: yesterday.format("YYYY-MM"),
+          },
+          relations: ["lines", "lines.user", "lines.violations"],
+        }),
+      ]);
 
     this.logger.log(
       `Fetched Data: ${sales.length} sales, ${products.length} products, ${journeys.length} journeys, ${stocks.length} stock records for Project ID ${projectId}`,
@@ -1873,6 +1918,60 @@ export class ReportsService {
         row.getCell(idx + 2).alignment = { horizontal: "center" };
       });
       row.getCell(1).border = borderObj;
+    });
+
+    const payrollSheet = workbook.addWorksheet("Payroll Details");
+    payrollSheet.columns = [
+      { header: "Date", key: "date", width: 14 },
+      { header: "Employee", key: "employee", width: 28 },
+      { header: "Username", key: "username", width: 20 },
+      { header: "Gross Salary", key: "grossSalary", width: 20 },
+      { header: "Additions", key: "additions", width: 18 },
+      {
+        header: "Attendance Deduction",
+        key: "attendanceDeduction",
+        width: 24,
+      },
+      { header: "Manual Deduction", key: "manualDeduction", width: 20 },
+      { header: "Net Pay", key: "netPay", width: 18 },
+    ];
+    payrollSheet.getRow(1).font = { bold: true };
+    payrollSheet.getRow(1).fill = headerPattern;
+
+    const reportDate = yesterday.format("YYYY-MM-DD");
+    (payrollPeriod?.lines || [])
+      .slice()
+      .sort((first, second) =>
+        (first.user?.name || first.user?.username || "").localeCompare(
+          second.user?.name || second.user?.username || "",
+        ),
+      )
+      .forEach((line) => {
+        const dailyAttendanceDeduction = (line.violations || [])
+          .filter((violation) => violation.eventDate === reportDate)
+          .reduce(
+            (total, violation) =>
+              total + Number(violation.deductionAmount || 0),
+            0,
+          );
+
+        payrollSheet.addRow({
+          date: reportDate,
+          employee: line.user?.name || "-",
+          username: line.user?.username || "-",
+          grossSalary: Number(line.grossSalary || 0),
+          additions: Number(line.totalAddition || 0),
+          attendanceDeduction: dailyAttendanceDeduction,
+          manualDeduction: Number(line.manualDeduction || 0),
+          netPay: Number(line.netPay || 0),
+        });
+      });
+
+    payrollSheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.border = borderObj;
+        cell.alignment = { horizontal: "center" };
+      });
     });
 
     const executionDateStr = now.format("YYYY_MM_DD_HHmmss_SSS");

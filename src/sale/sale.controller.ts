@@ -135,7 +135,9 @@ export class SaleController {
     }
 
     if (query.filters?.fromDate || query.filters?.toDate) {
-      mergedFilters.created_at = {};
+      // The exported date column is sale_date, so date filters must use the
+      // same field as the SixSeven sales summary.
+      mergedFilters.sale_date = {};
 
       const normalizeDate = (d: string) => {
         if (/^\d{2}-\d{2}-\d{4}$/.test(d)) {
@@ -147,13 +149,13 @@ export class SaleController {
 
       if (query.filters.fromDate) {
         const d = normalizeDate(query.filters.fromDate);
-        mergedFilters.created_at.gte = d.includes("T")
+        mergedFilters.sale_date.gte = d.includes("T")
           ? d
           : `${d}T00:00:00.000+03:00`;
       }
       if (query.filters.toDate) {
         const d = normalizeDate(query.filters.toDate);
-        mergedFilters.created_at.lte = d.includes("T")
+        mergedFilters.sale_date.lte = d.includes("T")
           ? d
           : `${d}T23:59:59.999+03:00`;
       }
