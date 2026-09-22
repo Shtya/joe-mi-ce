@@ -97,7 +97,9 @@ The Gatemea daily report already has access to attendance journeys. For a payrol
 
 The job does not parse a temporary Excel file back into payroll. It records the source journey and calculation snapshot directly in the database, then produces the Excel time sheet/report from those stored records. This makes the process repeatable, prevents duplicate overtime from rerunning a cron job, and leaves an audit trail for every amount in the final cut-off payroll.
 
-At the cutoff, the normal payroll sync completes the period, totals the overtime additions, and produces the final workbook for the closed date range. If the daily job was missed, a manual or scheduled period sync rebuilds the same result from journeys.
+Every daily Gatemea run produces the complete overtime time-sheet workbook for the active cutoff period, in the same August format. It includes the full employee list, every date column in that period, the bilingual legend, attendance colours, summaries, and overtime values. The run refreshes all completed days through the prior Riyadh business day; future dates remain blank. It is not a separate one-day worksheet and it does not replace the visual structure with a Gatemea-specific report.
+
+At the cutoff, the normal payroll sync completes the period, totals the overtime additions, and produces the final workbook for the closed date range. If the daily job was missed, a manual or scheduled period sync rebuilds the same result from journeys and generates the same complete workbook.
 
 ## Data integrity and error handling
 
@@ -122,7 +124,7 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 - Unit tests for normal and overnight overtime, no overtime, missing clock-out, shift-length hourly-rate calculation, and money rounding.
 - Service tests for default settings, mode update authorization/validation, a cutoff-aware sync, paid-period locking, and duplicate-safe daily sync.
 - Workbook tests that verify the supplied symbols, bilingual legend, yellow weekly-off fill, light-blue lateness fill, resolved date headers, numeric calculation cells, and import validation/rollback.
-- Gatemea report tests that prove the overtime-mode daily job records source data exactly once and the cutoff payroll includes its addition.
+- Gatemea report tests that prove the overtime-mode daily job records source data exactly once, regenerates the complete cutoff-aware August-format workbook through the completed day, and includes its addition in the cutoff payroll.
 - Run the repository's Jest tests, lint script, and production build after implementation.
 
 ## Non-goals
