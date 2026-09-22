@@ -1,6 +1,7 @@
 import { PayrollService } from "./payroll.service";
 import { EPermission } from "enums/Permissions.enum";
 import { ERole } from "enums/Role.enum";
+import { PayrollCalculationMode } from "./payroll.types";
 
 describe("PayrollService payroll settings", () => {
   const actor = {
@@ -11,7 +12,12 @@ describe("PayrollService payroll settings", () => {
     },
   };
 
-  function createService(project: { id: string; payrollEnabled: boolean }) {
+  function createService(project: {
+    id: string;
+    payrollEnabled: boolean;
+    payrollCalculationMode?: PayrollCalculationMode;
+    payrollCutoffDay?: number;
+  }) {
     const projectRepo = { findOne: jest.fn().mockResolvedValue(project) };
     const periodRepo = { find: jest.fn().mockResolvedValue([]) };
     return {
@@ -37,18 +43,38 @@ describe("PayrollService payroll settings", () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it("returns whether payroll is enabled for the authenticated project", async () => {
+  it("returns default violation mode and day-one cutoff", async () => {
     const { service } = createService({
       id: "project-1",
-      payrollEnabled: false,
+      payrollEnabled: true,
     });
 
     await expect(
       (service as any).getPayrollSettings("project-1", actor),
-    ).resolves.toEqual({ projectId: "project-1", payrollEnabled: false });
+    ).resolves.toEqual({
+      projectId: "project-1",
+      payrollEnabled: true,
+      calculationMode: PayrollCalculationMode.VIOLATION,
+      cutoffDay: 1,
+    });
     expect(actor.role.hasPermission).toHaveBeenCalledWith(
       EPermission.PAYROLL_READ,
     );
+  });
+
+  it("rejects cutoff day 32", async () => {
+    const { service } = createService({
+      id: "project-1",
+      payrollEnabled: true,
+    });
+
+    await expect(
+      (service as any).updatePayrollSettings(
+        "project-1",
+        { cutoffDay: 32 },
+        actor,
+      ),
+    ).rejects.toThrow("cutoffDay must not be greater than 31");
   });
 
   it("blocks listing payroll while the project has payroll disabled", async () => {

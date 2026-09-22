@@ -24,9 +24,9 @@ import {
   PayrollPeriodFilterDto,
   ReplacePayrollViolationRulesDto,
   SalaryImportDto,
-  SetPayrollEnabledDto,
   UpdatePayrollAdjustmentDto,
   UpdatePayrollLineDto,
+  UpdatePayrollSettingsDto,
 } from "dto/payroll.dto";
 import { Permissions } from "decorators/permissions.decorators";
 import { EPermission } from "enums/Permissions.enum";
@@ -57,13 +57,13 @@ export class PayrollController {
 
   @Patch("payroll/my-project/settings")
   @Permissions(EPermission.PAYROLL_MANAGE)
-  enableTokenProjectPayroll(
-    @Body() dto: SetPayrollEnabledDto,
+  updateTokenProjectPayrollSettings(
+    @Body() dto: UpdatePayrollSettingsDto,
     @Req() req: any,
   ) {
-    return this.payrollService.enableProjectPayroll(
+    return this.payrollService.updatePayrollSettings(
       this.tokenProjectId(req),
-      dto.enabled,
+      dto,
       req.user,
     );
   }

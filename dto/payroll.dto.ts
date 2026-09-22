@@ -20,12 +20,30 @@ import {
 } from "class-validator";
 import {
   PayrollAdjustmentType,
+  PayrollCalculationMode,
   PayrollPeriodStatus,
 } from "src/payroll/payroll.types";
 
 export class SetPayrollEnabledDto {
   @IsBoolean()
   enabled: boolean;
+}
+
+export class UpdatePayrollSettingsDto {
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsEnum(PayrollCalculationMode)
+  calculationMode?: PayrollCalculationMode;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(31)
+  cutoffDay?: number;
 }
 
 export class PayrollMonthQueryDto {

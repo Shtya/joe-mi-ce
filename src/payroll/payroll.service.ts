@@ -15,6 +15,7 @@ import {
   ReplacePayrollViolationRulesDto,
   UpdatePayrollAdjustmentDto,
   UpdatePayrollLineDto,
+  UpdatePayrollSettingsDto,
 } from "dto/payroll.dto";
 import { CheckIn, Journey } from "entities/all_plans.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
@@ -51,6 +52,7 @@ import {
 import {
   calculateOvertimeAmount,
   resolvePayrollPeriod,
+  validatePayrollCutoffDay,
 } from "./payroll-period";
 import {
   DefaultViolationRule,
@@ -147,20 +149,42 @@ export class PayrollService {
   }
 
   async enableProjectPayroll(projectId: string, enabled: boolean, actor: User) {
+    return this.updatePayrollSettings(projectId, { enabled }, actor);
+  }
+
+  async updatePayrollSettings(
+    projectId: string,
+    dto: UpdatePayrollSettingsDto,
+    actor: User,
+  ) {
     this.assertProjectPayrollAccess(
       actor,
       projectId,
       EPermission.PAYROLL_MANAGE,
     );
+    if (dto.cutoffDay !== undefined) {
+      try {
+        validatePayrollCutoffDay(dto.cutoffDay);
+      } catch {
+        throw new BadRequestException(
+          dto.cutoffDay > 31
+            ? "cutoffDay must not be greater than 31"
+            : "cutoffDay must not be less than 1",
+        );
+      }
+    }
     const result = await this.dataSource.transaction(async (manager) => {
       const project = await manager.findOne(Project, {
         where: { id: projectId },
       });
       if (!project) throw new NotFoundException("Project not found");
-      project.payrollEnabled = enabled;
+      if (dto.enabled !== undefined) project.payrollEnabled = dto.enabled;
+      if (dto.calculationMode !== undefined)
+        project.payrollCalculationMode = dto.calculationMode;
+      if (dto.cutoffDay !== undefined) project.payrollCutoffDay = dto.cutoffDay;
       await manager.save(project);
       if (
-        enabled &&
+        dto.enabled === true &&
         (await manager.count(PayrollViolationRule, {
           where: { projectId },
         })) === 0
@@ -184,9 +208,15 @@ export class PayrollService {
           ),
         );
       }
-      return { projectId, payrollEnabled: enabled };
+      return {
+        projectId,
+        payrollEnabled: project.payrollEnabled,
+        calculationMode:
+          project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION,
+        cutoffDay: project.payrollCutoffDay ?? 1,
+      };
     });
-    if (!enabled) return result;
+    if (dto.enabled !== true) return result;
 
     const month = this.riyadhDate().slice(0, 7);
     const period = await this.syncPeriod(projectId, month, actor);
@@ -512,7 +542,13 @@ export class PayrollService {
   async getPayrollSettings(projectId: string, actor: User) {
     this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
     const project = await this.requireProject(projectId);
-    return { projectId: project.id, payrollEnabled: project.payrollEnabled };
+    return {
+      projectId: project.id,
+      payrollEnabled: project.payrollEnabled,
+      calculationMode:
+        project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION,
+      cutoffDay: project.payrollCutoffDay ?? 1,
+    };
   }
 
   private assertAdjustmentReason(reason: string): string {
