@@ -3,6 +3,11 @@ export enum PayrollPeriodStatus {
   PAID = "paid",
 }
 
+export enum PayrollCalculationMode {
+  VIOLATION = "violation",
+  OVERTIME = "overtime",
+}
+
 export enum PayrollAdjustmentType {
   ADDITION = "addition",
   DEDUCTION = "deduction",

@@ -11,6 +11,7 @@ import {
   BeforeInsert,
   BeforeUpdate,
 } from "typeorm";
+import { PayrollCalculationMode } from "src/payroll/payroll.types";
 import { CoreEntity } from "./core.entity";
 import { Branch } from "./branch.entity";
 import { User } from "./user.entity";
@@ -37,6 +38,16 @@ export class Project extends CoreEntity {
 
   @Column({ default: false })
   payrollEnabled: boolean;
+
+  @Column({
+    type: "enum",
+    enum: PayrollCalculationMode,
+    default: PayrollCalculationMode.VIOLATION,
+  })
+  payrollCalculationMode: PayrollCalculationMode;
+
+  @Column({ type: "int", default: 1 })
+  payrollCutoffDay: number;
 
   // Sales Target Configuration for Project
   @Column({
