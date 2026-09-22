@@ -70,16 +70,24 @@ The generated overtime record stores the project, payroll period, employee, sour
 
 ## Time-sheet import and export
 
-The supplied `AUG Time Sheet 2026 for 67.xlsx` is the layout reference. The generated workbook must preserve its recognizable attendance format:
+The import/export workflow depends on the selected project calculation mode.
 
-- an employee directory sheet and a period time-sheet sheet;
+### Violation mode import and export
+
+Violation-mode projects retain the normal payroll workflow. Salary import/export, payroll periods, payroll-line adjustments, violation details, and payroll reports continue to use the existing normal payroll formats and endpoints. The overtime time-sheet workbook is neither generated nor accepted for a violation-mode project.
+
+### Overtime mode time sheet
+
+The supplied `AUG Time Sheet 2026 for 67.xlsx` is the required workbook format, not merely a loose visual reference. An overtime-mode project generates and imports the same file structure, including its sheets, headers, column ordering, date-column layout, summaries, legend text, symbol meanings, and visual conventions. The generated workbook must preserve its recognizable attendance format:
+
+- the `Employees_DB` employee directory sheet and the period time-sheet sheet;
 - employee identity and salary fields followed by one date column per resolved payroll-period day;
 - the bilingual legend and the same attendance symbols: `1` for present/one shift, `0` for absent, `V` for vacation, `R` for resignation, and `N` for new promoter;
 - the same visual convention: weekly rest day highlighted yellow and late over fifteen minutes highlighted light blue;
 - summary columns for paid days, daily rate, calculated salary, deductions, bonus, final salary, and lateness;
 - read-only overtime-hours and overtime-amount values derived from stored overtime records.
 
-The time-sheet creator derives attendance symbols from the authoritative journey and approved-vacation data. It does not infer hours from a present marker. In particular, existing values such as `1.75` or `2` are not treated as overtime hours.
+The time-sheet creator derives attendance symbols from the authoritative journey and approved-vacation data. It does not infer hours from a present marker. In particular, existing values such as `1.75` or `2` are not treated as overtime hours. Any new overtime detail required for calculation is stored in hidden/metadata fields or a compatible continuation area so that the visible August workbook format remains unchanged.
 
 The importer accepts only the generated time-sheet structure (including an explicit version marker). It validates period boundaries, project membership, unique employee identity, date columns, and allowed symbols before it writes any attendance overrides. It returns every rejected worksheet row with a reason and performs no partial write on invalid input. Importing an older August-style workbook without the marker is supported only as a preview/validation result until its employee identifiers and period are explicitly mapped; it cannot silently alter payroll.
 
@@ -104,8 +112,8 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 
 - `GET /payroll/my-project/settings` returns enabled status, calculation mode, and cutoff day.
 - `PATCH /payroll/my-project/settings` accepts `enabled`, `calculationMode`, and/or `cutoffDay` and applies authorization and validation.
-- `GET /payroll/my-project/time-sheet-template?month=YYYY-MM` downloads the project’s cutoff-aware Excel workbook.
-- `POST /payroll/my-project/time-sheet-import` validates and imports a generated workbook for a requested period, returning accepted and rejected rows.
+- `GET /payroll/my-project/time-sheet-template?month=YYYY-MM` downloads the cutoff-aware August-format workbook only for an overtime-mode project; it rejects violation mode with an explanatory error.
+- `POST /payroll/my-project/time-sheet-import` validates and imports an overtime-mode August-format workbook for a requested period, returning accepted and rejected rows.
 - Existing period sync/list/detail endpoints expose resolved dates, mode snapshot, and itemized overtime additions.
 
 ## Testing and verification
