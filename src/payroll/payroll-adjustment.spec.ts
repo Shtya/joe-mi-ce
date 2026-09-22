@@ -1,5 +1,6 @@
 import { PayrollAdjustment } from "entities/payroll/payroll-adjustment.entity";
 import { PayrollLine } from "entities/payroll/payroll-line.entity";
+import { PayrollOvertime } from "entities/payroll/payroll-overtime.entity";
 import { PayrollAdjustmentType, PayrollPeriodStatus } from "./payroll.types";
 import { PayrollService } from "./payroll.service";
 
@@ -15,7 +16,10 @@ describe("PayrollService employee adjustments", () => {
     },
   };
 
-  function createService(status = PayrollPeriodStatus.PENDING) {
+  function createService(
+    status = PayrollPeriodStatus.PENDING,
+    automaticOvertimeAmount = 0,
+  ) {
     const adjustments: PayrollAdjustment[] = [];
     const line = Object.assign(new PayrollLine(), {
       id: lineId,
@@ -24,6 +28,7 @@ describe("PayrollService employee adjustments", () => {
       salarySnapshot: "4500.00",
       attendanceDeduction: "0.00",
       manualDeduction: "0.00",
+      automaticOvertimeAddition: automaticOvertimeAmount.toFixed(2),
       totalAddition: "0.00",
       totalDeduction: "0.00",
       netPay: "4500.00",
@@ -38,6 +43,10 @@ describe("PayrollService employee adjustments", () => {
       }),
       find: jest.fn(async (entity: unknown) => {
         if (entity === PayrollAdjustment) return adjustments;
+        if (entity === PayrollOvertime)
+          return automaticOvertimeAmount > 0
+            ? [{ lineId, amount: automaticOvertimeAmount.toFixed(2) }]
+            : [];
         return [];
       }),
       create: jest.fn((_entity: unknown, value: object) => value),
@@ -103,6 +112,24 @@ describe("PayrollService employee adjustments", () => {
     expect(line.manualDeduction).toBe("100.00");
     expect(line.totalDeduction).toBe("100.00");
     expect(line.netPay).toBe("4700.00");
+  });
+
+  it("preserves automatic overtime when recalculating manual additions", async () => {
+    const { service, line } = createService(PayrollPeriodStatus.PENDING, 30);
+
+    await service.addAdjustment(
+      lineId,
+      {
+        type: PayrollAdjustmentType.ADDITION,
+        amount: 300,
+        reason: "Commission",
+      },
+      actor as any,
+    );
+
+    expect(line.automaticOvertimeAddition).toBe("30.00");
+    expect(line.totalAddition).toBe("330.00");
+    expect(line.netPay).toBe("4830.00");
   });
 
   it("does not allow adjustments after payroll is paid", async () => {

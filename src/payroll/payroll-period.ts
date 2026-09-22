@@ -13,6 +13,14 @@ export function resolvePayrollPeriod(
   month: string,
   cutoffDay: number,
 ): PayrollPeriodDates {
+  if (validatePayrollCutoffDay(cutoffDay) === 1) {
+    const { year, monthNumber } = parseMonth(month);
+
+    return {
+      startDate: `${month}-01`,
+      endDate: `${month}-${String(daysInMonth(year, monthNumber)).padStart(2, "0")}`,
+    };
+  }
   const endBoundary = clampedDate(month, cutoffDay);
   const startBoundary = clampedDate(previousMonth(month), cutoffDay);
 

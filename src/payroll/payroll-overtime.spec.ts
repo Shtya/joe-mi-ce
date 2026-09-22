@@ -124,9 +124,17 @@ describe("PayrollService overtime synchronization", () => {
       {} as any,
     );
 
-    const result = await service.syncPeriod(projectId, "2026-09", actor as any);
+    const now = new Date("2026-09-14T09:00:00.000Z");
+    const result = await service.syncPeriod(
+      projectId,
+      "2026-09",
+      actor as any,
+      now,
+    );
+    await service.syncPeriod(projectId, "2026-09", actor as any, now);
 
     expect(result.startDate).toBe("2026-08-25");
+    expect(result.endDate).toBe("2026-09-14");
     expect(savedOvertime).toHaveLength(1);
     expect(savedOvertime[0]).toMatchObject({
       sourceJourneyId: journey.id,
@@ -143,5 +151,57 @@ describe("PayrollService overtime synchronization", () => {
       totalAddition: "30.00",
       netPay: "4830.00",
     });
+  });
+
+  it("rejects a paid period before mutating overtime or payroll lines", async () => {
+    const projectId = "21963b9d-0f5c-4c10-a990-00cb1fc9bda3";
+    const manager = {
+      findOne: jest.fn().mockResolvedValue({
+        id: "50e605a7-ed4d-4986-abeb-e908bad3f560",
+        projectId,
+        month: "2026-09",
+        status: PayrollPeriodStatus.PAID,
+      }),
+      find: jest.fn(),
+      create: jest.fn(),
+      save: jest.fn(),
+      remove: jest.fn(),
+    };
+    const service = new PayrollService(
+      { transaction: jest.fn((work) => work(manager)) } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: projectId,
+          payrollEnabled: true,
+          payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+          payrollCutoffDay: 25,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    await expect(
+      service.syncPeriod(
+        projectId,
+        "2026-09",
+        undefined,
+        new Date("2026-09-30T09:00:00.000Z"),
+      ),
+    ).rejects.toThrow("Paid payroll periods are locked");
+    expect(manager.find).not.toHaveBeenCalled();
+    expect(manager.create).not.toHaveBeenCalled();
+    expect(manager.save).not.toHaveBeenCalled();
+    expect(manager.remove).not.toHaveBeenCalled();
   });
 });

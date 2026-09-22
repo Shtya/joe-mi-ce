@@ -6,6 +6,13 @@ import {
 } from "./payroll-period";
 
 describe("payroll period", () => {
+  it("uses the requested calendar month for the default day-one cutoff", () => {
+    expect(resolvePayrollPeriod("2026-09", 1)).toEqual({
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+    });
+  });
+
   it("ends a cutoff-25 September period on the 24th", () => {
     expect(resolvePayrollPeriod("2026-09", 25)).toEqual({
       startDate: "2026-08-25",

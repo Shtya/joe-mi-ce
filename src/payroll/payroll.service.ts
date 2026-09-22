@@ -403,7 +403,7 @@ export class PayrollService {
     }).format(now);
   }
 
-  private periodDates(month: string, now = new Date()) {
+  private periodDates(month: string, now = new Date(), cutoffDay = 1) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
       throw new BadRequestException("month must use YYYY-MM");
     const currentDate = this.riyadhDate(now);
@@ -412,10 +412,11 @@ export class PayrollService {
       throw new BadRequestException(
         "Future payroll months cannot be synchronized",
       );
-    const { startDate, endDate } = this.fullPeriodDates(month);
+    const { startDate, endDate } = resolvePayrollPeriod(month, cutoffDay);
     return {
       startDate,
-      endDate: month === currentMonth ? currentDate : endDate,
+      endDate:
+        month === currentMonth && endDate > currentDate ? currentDate : endDate,
     };
   }
 
@@ -948,8 +949,9 @@ export class PayrollService {
       throw new ConflictException("Payroll is not enabled for this project");
     const calculationMode =
       project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION;
-    const { startDate, endDate } = resolvePayrollPeriod(
+    const { startDate, endDate } = this.periodDates(
       month,
+      now,
       project.payrollCutoffDay ?? 1,
     );
 
