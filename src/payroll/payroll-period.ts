@@ -41,7 +41,7 @@ export function calculateOvertimeAmount(input: OvertimeAmountInput): number {
 function clampedDate(month: string, cutoffDay: number): string {
   const { year, monthNumber } = parseMonth(month);
   const day = Math.min(
-    validateCutoffDay(cutoffDay),
+    validatePayrollCutoffDay(cutoffDay),
     daysInMonth(year, monthNumber),
   );
 
@@ -76,7 +76,7 @@ function parseMonth(month: string): { year: number; monthNumber: number } {
   return { year, monthNumber };
 }
 
-function validateCutoffDay(cutoffDay: number): number {
+export function validatePayrollCutoffDay(cutoffDay: number): number {
   if (!Number.isInteger(cutoffDay) || cutoffDay < 1 || cutoffDay > 31) {
     throw new RangeError("cutoffDay must be an integer between 1 and 31");
   }

@@ -2,6 +2,7 @@ import {
   activePayrollMonth,
   calculateOvertimeAmount,
   resolvePayrollPeriod,
+  validatePayrollCutoffDay,
 } from "./payroll-period";
 
 describe("payroll period", () => {
@@ -34,4 +35,11 @@ describe("payroll period", () => {
       }),
     ).toBe(30);
   });
+
+  it.each([0, 32, 12.5])(
+    "rejects an invalid persisted cutoff day of %s",
+    (cutoffDay) => {
+      expect(() => validatePayrollCutoffDay(cutoffDay)).toThrow(RangeError);
+    },
+  );
 });

@@ -10,6 +10,7 @@ import {
   OneToOne,
   BeforeInsert,
   BeforeUpdate,
+  Check,
 } from "typeorm";
 import { PayrollCalculationMode } from "src/payroll/payroll.types";
 import { CoreEntity } from "./core.entity";
@@ -26,6 +27,7 @@ import { SalesTarget, SalesTargetType } from "./sales-target.entity";
 import { Training } from "./training.entity";
 
 @Entity()
+@Check('"payrollCutoffDay" >= 1 AND "payrollCutoffDay" <= 31')
 export class Project extends CoreEntity {
   @Column()
   name: string;
