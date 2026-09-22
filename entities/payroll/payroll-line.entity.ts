@@ -11,6 +11,7 @@ import {
 import { PayrollPeriod } from "./payroll-period.entity";
 import { PayrollLineViolation } from "./payroll-line-violation.entity";
 import { PayrollAdjustment } from "./payroll-adjustment.entity";
+import { PayrollOvertime } from "./payroll-overtime.entity";
 
 @Entity("payroll_lines")
 @Index(["periodId", "userId"], { unique: true })
@@ -26,6 +27,8 @@ export class PayrollLine extends CoreEntity {
   manualDeduction: string;
   @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
   totalAddition: string;
+  @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
+  automaticOvertimeAddition: string;
   @Column({ type: "decimal", precision: 12, scale: 2 }) netPay: string;
   @Column({ type: "text", nullable: true }) note: string | null;
 
@@ -41,4 +44,6 @@ export class PayrollLine extends CoreEntity {
   violations: PayrollLineViolation[];
   @OneToMany(() => PayrollAdjustment, (item) => item.line)
   adjustments: PayrollAdjustment[];
+  @OneToMany(() => PayrollOvertime, (item) => item.line)
+  overtime: PayrollOvertime[];
 }

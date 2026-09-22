@@ -23,6 +23,7 @@ import { EmployeeSalary } from "entities/payroll/employee-salary.entity";
 import { PayrollAdjustment } from "entities/payroll/payroll-adjustment.entity";
 import { PayrollLineViolation } from "entities/payroll/payroll-line-violation.entity";
 import { PayrollLine } from "entities/payroll/payroll-line.entity";
+import { PayrollOvertime } from "entities/payroll/payroll-overtime.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
 import { PayrollViolationRule } from "entities/payroll/payroll-violation-rule.entity";
 import { PayrollViolation } from "entities/payroll/payroll-violation.entity";
@@ -42,13 +43,19 @@ import * as XLSX from "xlsx";
 import * as ExcelJS from "exceljs";
 import { DEFAULT_VIOLATION_RULES } from "./default-violation-policy";
 import {
+  calculateMinutesAfterShift,
   calculatePayrollViolation,
   calculateShiftVariance,
   roundMoney,
 } from "./payroll-calculator";
 import {
+  calculateOvertimeAmount,
+  resolvePayrollPeriod,
+} from "./payroll-period";
+import {
   DefaultViolationRule,
   PayrollAdjustmentType,
+  PayrollCalculationMode,
   PayrollPeriodStatus,
   PayrollViolationEventType,
 } from "./payroll.types";
@@ -423,6 +430,16 @@ export class PayrollService {
     };
   }
 
+  private shiftMinutes(startTime: string, endTime: string): number {
+    const normalizedStart = startTime.replace(/^(\d{2}:\d{2})$/, "$1:00");
+    const normalizedEnd = endTime.replace(/^(\d{2}:\d{2})$/, "$1:00");
+    const start = Date.parse(`1970-01-01T${normalizedStart}Z`);
+    let end = Date.parse(`1970-01-01T${normalizedEnd}Z`);
+    if (end <= start) end += 24 * 60 * 60_000;
+
+    return Math.floor((end - start) / 60_000);
+  }
+
   /** Creates the period only; daily sync is responsible for calculating its lines. */
   private async ensurePayrollPeriodForEffectiveDate(
     manager: any,
@@ -532,6 +549,9 @@ export class PayrollService {
       PayrollAdjustment,
       { where: { lineId: line.id } },
     );
+    const overtime: PayrollOvertime[] = await manager.find(PayrollOvertime, {
+      where: { lineId: line.id },
+    });
     let attendanceDeduction = attendanceDeductionOverride;
     if (attendanceDeduction === undefined) {
       const violations: PayrollLineViolation[] = await manager.find(
@@ -543,10 +563,16 @@ export class PayrollService {
         0,
       );
     }
-    const totalAddition = roundMoney(
+    const manualAdditions = roundMoney(
       adjustments
         .filter((item) => item.type === PayrollAdjustmentType.ADDITION)
         .reduce((sum, item) => sum + Number(item.amount), 0),
+    );
+    const automaticOvertimeAddition = roundMoney(
+      overtime.reduce((sum, item) => sum + Number(item.amount), 0),
+    );
+    const totalAddition = roundMoney(
+      automaticOvertimeAddition + manualAdditions,
     );
     const manualDeduction = roundMoney(
       adjustments
@@ -563,6 +589,7 @@ export class PayrollService {
 
     line.attendanceDeduction = roundedAttendanceDeduction.toFixed(2);
     line.manualDeduction = manualDeduction.toFixed(2);
+    line.automaticOvertimeAddition = automaticOvertimeAddition.toFixed(2);
     line.totalAddition = totalAddition.toFixed(2);
     line.totalDeduction = totalDeduction.toFixed(2);
     line.netPay = netPay.toFixed(2);
@@ -919,7 +946,12 @@ export class PayrollService {
     const project = await this.requireProject(projectId);
     if (!project.payrollEnabled)
       throw new ConflictException("Payroll is not enabled for this project");
-    const { startDate, endDate } = this.periodDates(month, now);
+    const calculationMode =
+      project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION;
+    const { startDate, endDate } = resolvePayrollPeriod(
+      month,
+      project.payrollCutoffDay ?? 1,
+    );
 
     return this.dataSource.transaction(async (manager) => {
       let period = await manager.findOne(PayrollPeriod, {
@@ -954,6 +986,12 @@ export class PayrollService {
         if (oldLineViolations.length)
           await manager.remove(PayrollLineViolation, oldLineViolations);
       }
+      const oldOvertime: PayrollOvertime[] = await manager.find(
+        PayrollOvertime,
+        { where: { periodId: period.id } },
+      );
+      if (oldOvertime.length)
+        await manager.remove(PayrollOvertime, oldOvertime);
       const journeys: Journey[] = await manager.find(Journey, {
         where: {
           projectId,
@@ -1005,12 +1043,26 @@ export class PayrollService {
         ),
       );
       const generated: PayrollViolation[] = [];
+      const overtimeByUser = new Map<
+        string,
+        Array<{
+          projectId: string;
+          periodId: string;
+          userId: string;
+          sourceJourneyId: string;
+          workDate: string;
+          scheduledShiftMinutes: number;
+          overtimeMinutes: number;
+          salarySnapshot: string;
+          hourlyRateSnapshot: string;
+          amount: string;
+        }>
+      >();
 
       for (const journey of journeys) {
+        if (!journey.user?.id || !journey.shift || !journey.checkin) continue;
         if (
-          !journey.user?.id ||
-          !journey.shift ||
-          !journey.checkin ||
+          calculationMode === PayrollCalculationMode.VIOLATION &&
           approvedDates.has(`${journey.user.id}:${journey.date}`)
         )
           continue;
@@ -1021,6 +1073,46 @@ export class PayrollService {
           journey.date,
         );
         if (!salary) continue;
+        if (calculationMode === PayrollCalculationMode.OVERTIME) {
+          if (!journey.checkin.checkInTime || !journey.checkin.checkOutTime)
+            continue;
+          const scheduledShiftMinutes = this.shiftMinutes(
+            journey.shift.startTime,
+            journey.shift.endTime,
+          );
+          if (scheduledShiftMinutes <= 0) continue;
+          const overtimeMinutes = calculateMinutesAfterShift({
+            journeyDate: journey.date,
+            shiftStartTime: journey.shift.startTime,
+            shiftEndTime: journey.shift.endTime,
+            checkOutTime: journey.checkin.checkOutTime,
+          });
+          if (overtimeMinutes <= 0) continue;
+          const monthlySalary = Number(salary.monthlySalary);
+          const hourlyRate = roundMoney(
+            monthlySalary / 30 / (scheduledShiftMinutes / 60),
+          );
+          const amount = calculateOvertimeAmount({
+            monthlySalary,
+            scheduledShiftMinutes,
+            overtimeMinutes,
+          });
+          const userOvertime = overtimeByUser.get(journey.user.id) ?? [];
+          userOvertime.push({
+            projectId,
+            periodId: period.id,
+            userId: journey.user.id,
+            sourceJourneyId: journey.id,
+            workDate: journey.date,
+            scheduledShiftMinutes,
+            overtimeMinutes,
+            salarySnapshot: monthlySalary.toFixed(2),
+            hourlyRateSnapshot: hourlyRate.toFixed(2),
+            amount: amount.toFixed(2),
+          });
+          overtimeByUser.set(journey.user.id, userOvertime);
+          continue;
+        }
         const variance = calculateShiftVariance({
           journeyDate: journey.date,
           shiftStartTime: journey.shift.startTime,
@@ -1123,6 +1215,7 @@ export class PayrollService {
             attendanceDeduction: "0.00",
             manualDeduction: "0.00",
             totalAddition: "0.00",
+            automaticOvertimeAddition: "0.00",
             totalDeduction: "0.00",
             netPay: "0.00",
             note: null,
@@ -1130,6 +1223,17 @@ export class PayrollService {
         line.salarySnapshot = grossSalary.toFixed(2);
         line.grossSalary = grossSalary.toFixed(2);
         const savedLine = await manager.save(PayrollLine, line);
+        const userOvertime = overtimeByUser.get(userId) ?? [];
+        if (userOvertime.length)
+          await manager.save(
+            PayrollOvertime,
+            userOvertime.map((item) =>
+              manager.create(PayrollOvertime, {
+                ...item,
+                lineId: savedLine.id,
+              }),
+            ),
+          );
         await this.recalculateLine(manager, savedLine, totalDeduction);
         if (userViolations.length)
           await manager.save(
