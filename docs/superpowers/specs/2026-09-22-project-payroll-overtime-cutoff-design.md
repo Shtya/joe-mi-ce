@@ -127,6 +127,10 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 - Gatemea report tests that prove the overtime-mode daily job records source data exactly once, regenerates the complete cutoff-aware August-format workbook through the completed day, and includes its addition in the cutoff payroll.
 - Run the repository's Jest tests, lint script, and production build after implementation.
 
+## Production deployment
+
+Production runs with TypeORM schema synchronization disabled (`synchronize: false`). Before rolling out this feature, deploy a reviewed TypeORM migration that creates the project payroll settings, the automatic overtime addition column, and the payroll overtime snapshot table with its required indexes. Apply and verify that migration before the application rollout; the application must not rely on runtime schema synchronization.
+
 ## Non-goals
 
 - Changing salaries from a time-sheet import.
