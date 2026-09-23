@@ -351,7 +351,7 @@ export class PayrollService {
     const project = await this.requireOvertimeProject(projectId);
     const throughDate = this.previousRiyadhBusinessDate(now);
     const month = this.activeCutoffPeriodMonth(
-      throughDate,
+      this.riyadhDate(now),
       project.payrollCutoffDay ?? 1,
     );
 
@@ -1312,11 +1312,9 @@ export class PayrollService {
         }
       : this.periodDates(month, now, cutoffDay);
     let sourceEndDate = endDate;
+    let hasSourceRange = true;
     if (throughDate) {
-      if (throughDate < startDate)
-        throw new BadRequestException(
-          "throughDate cannot be before the payroll period start",
-        );
+      hasSourceRange = throughDate >= startDate;
       sourceEndDate = throughDate > endDate ? endDate : throughDate;
     }
 
@@ -1359,15 +1357,17 @@ export class PayrollService {
       );
       if (oldOvertime.length)
         await manager.remove(PayrollOvertime, oldOvertime);
-      const journeys: Journey[] = await manager.find(Journey, {
-        where: {
-          projectId,
-          date: Between(startDate, sourceEndDate),
-          is_active: true,
-        },
-        relations: ["user", "shift", "checkin"],
-        order: { date: "ASC" },
-      });
+      const journeys: Journey[] = hasSourceRange
+        ? await manager.find(Journey, {
+            where: {
+              projectId,
+              date: Between(startDate, sourceEndDate),
+              is_active: true,
+            },
+            relations: ["user", "shift", "checkin"],
+            order: { date: "ASC" },
+          })
+        : [];
       const journeyIds = journeys.map((journey) => journey.id);
       if (journeyIds.length) {
         const oldViolations = await manager.find(PayrollViolation, {
@@ -1384,16 +1384,20 @@ export class PayrollService {
       const ruleVersions = new Map(
         rules.map((rule) => [rule.ruleKey, rule.version]),
       );
-      const vacationRows: VacationDate[] = await manager
-        .createQueryBuilder(VacationDate, "date")
-        .innerJoinAndSelect("date.vacation", "vacation")
-        .innerJoinAndSelect("vacation.user", "user")
-        .where("vacation.overall_status = :status", { status: "approved" })
-        .andWhere("date.date BETWEEN :startDate AND :endDate", {
-          startDate,
-          endDate: sourceEndDate,
-        })
-        .getMany();
+      const vacationRows: VacationDate[] = hasSourceRange
+        ? await manager
+            .createQueryBuilder(VacationDate, "date")
+            .innerJoinAndSelect("date.vacation", "vacation")
+            .innerJoinAndSelect("vacation.user", "user")
+            .where("vacation.overall_status = :status", {
+              status: "approved",
+            })
+            .andWhere("date.date BETWEEN :startDate AND :endDate", {
+              startDate,
+              endDate: sourceEndDate,
+            })
+            .getMany()
+        : [];
       const approvedDates = new Set(
         vacationRows.map((row) => `${row.vacation.user.id}:${row.date}`),
       );

@@ -12,7 +12,7 @@ import { PayrollService } from "./payroll.service";
 import { PayrollCalculationMode, PayrollPeriodStatus } from "./payroll.types";
 
 describe("PayrollService overtime synchronization", () => {
-  it("keeps a newly active cutoff period complete while limiting its source sync through yesterday", async () => {
+  it("refreshes the newly active cutoff period on cutoff day with an empty source range", async () => {
     const projectId = "gatemea-project";
     const manager = {
       findOne: jest.fn().mockResolvedValue(null),
@@ -51,26 +51,31 @@ describe("PayrollService overtime synchronization", () => {
       {} as any,
     );
 
-    const result = await (service.syncPeriod as any)(
+    const expectedWorkbook = Buffer.from("time-sheet");
+    jest
+      .spyOn(service, "getOvertimeTimeSheet")
+      .mockResolvedValue(expectedWorkbook);
+
+    const result = await service.refreshDailyOvertimeTimeSheet(
+      projectId,
+      new Date("2026-09-25T08:00:00.000Z"),
+    );
+
+    expect(result).toBe(expectedWorkbook);
+    expect(manager.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        month: "2026-10",
+        startDate: "2026-09-25",
+        endDate: "2026-10-24",
+      }),
+    );
+    expect(service.getOvertimeTimeSheet).toHaveBeenCalledWith(
       projectId,
       "2026-10",
       undefined,
-      new Date("2026-09-26T08:00:00.000Z"),
-      "2026-09-25",
+      "2026-09-24",
     );
-
-    expect(result).toMatchObject({
-      month: "2026-10",
-      startDate: "2026-09-25",
-      endDate: "2026-10-24",
-    });
-    const journeyFindCall = manager.find.mock.calls.find(
-      ([entity]) => entity === Journey,
-    );
-    expect(journeyFindCall?.[1].where.date._value).toEqual([
-      "2026-09-25",
-      "2026-09-25",
-    ]);
+    expect(manager.find).not.toHaveBeenCalledWith(Journey, expect.anything());
   });
 
   it("adds calculated overtime once and does not create violation deductions in overtime mode", async () => {
