@@ -45,6 +45,26 @@ export function activePayrollPeriodMonth(
   return businessDate <= period.endDate ? month : nextMonth(month);
 }
 
+/**
+ * Returns the month label of the period that closes on the day *before*
+ * `date` (i.e. `date` is the cutoff boundary and the period just ended),
+ * or `null` when `date` is not a cutoff day for the given `cutoffDay`.
+ *
+ * The closing period must be finalized/synced before the new active period
+ * is opened on a cutoff day.
+ */
+export function closingPayrollPeriodMonth(
+  date: string,
+  cutoffDay: number,
+): string | null {
+  const month = date.slice(0, 7);
+  const cutoffDate = clampedDate(month, cutoffDay);
+  if (date !== cutoffDate) return null;
+  // Today is the cutoff boundary. The period that just closed ended
+  // yesterday, and its month label is therefore yesterday's calendar month.
+  return previousDate(cutoffDate).slice(0, 7);
+}
+
 export function calculateOvertimeAmount(input: OvertimeAmountInput): number {
   return roundMoney(
     (input.monthlySalary / 30 / input.scheduledShiftMinutes) *

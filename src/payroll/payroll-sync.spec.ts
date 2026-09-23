@@ -349,24 +349,40 @@ describe("PayrollService.syncPeriod", () => {
     );
     const sync = jest.spyOn(service, "syncPeriod").mockResolvedValue({} as any);
 
+    // 2026-09-25 is the cutoff boundary for the cutoff-project (cutoff 25):
+    // closing period "2026-09" is synced first, then new active "2026-10".
+    // calendar-project (cutoff 1) has its cutoff on the 1st — not today —
+    // so only the active period "2026-09" is synced.
     await service.syncMonthEndForEnabledProjects(
       new Date("2026-09-25T09:00:00.000Z"),
     );
 
+    // Call 1: closing period for cutoff-project, capped to its end date.
     expect(sync).toHaveBeenNthCalledWith(
       1,
+      "cutoff-project",
+      "2026-09",
+      undefined,
+      expect.any(Date),
+      "2026-09-24",
+    );
+    // Call 2: new active period for cutoff-project.
+    expect(sync).toHaveBeenNthCalledWith(
+      2,
       "cutoff-project",
       "2026-10",
       undefined,
       expect.any(Date),
     );
+    // Call 3: active period for calendar-project (no closing sync).
     expect(sync).toHaveBeenNthCalledWith(
-      2,
+      3,
       "calendar-project",
       "2026-09",
       undefined,
       expect.any(Date),
     );
+    expect(sync).toHaveBeenCalledTimes(3);
   });
 
   it("serializes payment with synchronization by locking the period row", async () => {
@@ -409,6 +425,153 @@ describe("PayrollService.syncPeriod", () => {
 
     expect(manager.findOne).toHaveBeenCalledWith(PayrollPeriod, {
       where: { id: "period-1" },
+      lock: { mode: "pessimistic_write" },
+    });
+  });
+
+  it("on a cutoff day synchronizes the closing period through its end date then opens the new active period", async () => {
+    const projects = [
+      {
+        id: "cutoff-project",
+        payrollEnabled: true,
+        payrollCutoffDay: 25,
+      },
+    ];
+    const service = new PayrollService(
+      {} as any,
+      { find: jest.fn().mockResolvedValue(projects) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const sync = jest.spyOn(service, "syncPeriod").mockResolvedValue({} as any);
+
+    // 2026-09-25 is the cutoff boundary: the period ending 2026-09-24 closes
+    // and the new period starting 2026-09-25 opens.
+    await service.syncMonthEndForEnabledProjects(
+      new Date("2026-09-25T09:00:00.000Z"),
+    );
+
+    // First call must sync the closing period (2026-09) capped to its end date (2026-09-24).
+    expect(sync).toHaveBeenNthCalledWith(
+      1,
+      "cutoff-project",
+      "2026-09", // closing month label
+      undefined,
+      expect.any(Date),
+      "2026-09-24", // throughDate = closing period end date
+    );
+    // Second call must open the newly active period (2026-10) without a throughDate cap.
+    expect(sync).toHaveBeenNthCalledWith(
+      2,
+      "cutoff-project",
+      "2026-10", // new active month label
+      undefined,
+      expect.any(Date),
+    );
+    expect(sync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not sync a closing period on a non-cutoff day", async () => {
+    const projects = [
+      {
+        id: "cutoff-project",
+        payrollEnabled: true,
+        payrollCutoffDay: 25,
+      },
+    ];
+    const service = new PayrollService(
+      {} as any,
+      { find: jest.fn().mockResolvedValue(projects) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const sync = jest.spyOn(service, "syncPeriod").mockResolvedValue({} as any);
+
+    // 2026-09-14 is a normal day inside the active period — no closing sync.
+    await service.syncMonthEndForEnabledProjects(
+      new Date("2026-09-14T09:00:00.000Z"),
+    );
+
+    expect(sync).toHaveBeenCalledTimes(1);
+    expect(sync).toHaveBeenCalledWith(
+      "cutoff-project",
+      "2026-09",
+      undefined,
+      expect.any(Date),
+    );
+  });
+
+  it("locks an existing period before checking or saving it in createPendingPeriod", async () => {
+    const existing = {
+      id: "period-1",
+      projectId: "project-1",
+      month: "2026-09",
+      status: "pending",
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+      calculationMode: PayrollCalculationMode.VIOLATION,
+    };
+    const manager = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      save: jest.fn(async (value) => value),
+    };
+    const service = new PayrollService(
+      { transaction: jest.fn((work) => work(manager)) } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: "project-1",
+          payrollEnabled: true,
+          payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+          payrollCutoffDay: 25,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const actor = {
+      id: "admin-1",
+      project_id: "project-1",
+      role: { name: ERole.PROJECT_ADMIN, hasPermission: () => true },
+    };
+
+    await service.createPendingPeriod(
+      "project-1",
+      { month: "2026-09" },
+      actor as any,
+    );
+
+    expect(manager.findOne).toHaveBeenCalledWith(PayrollPeriod, {
+      where: { projectId: "project-1", month: "2026-09" },
       lock: { mode: "pessimistic_write" },
     });
   });

@@ -1,6 +1,7 @@
 import {
   activePayrollPeriodMonth,
   calculateOvertimeAmount,
+  closingPayrollPeriodMonth,
   resolvePayrollPeriod,
   validatePayrollCutoffDay,
 } from "./payroll-period";
@@ -52,6 +53,30 @@ describe("payroll period", () => {
     "rejects an invalid persisted cutoff day of %s",
     (cutoffDay) => {
       expect(() => validatePayrollCutoffDay(cutoffDay)).toThrow(RangeError);
+    },
+  );
+
+  it.each([
+    ["2026-09-25", 25, "2026-09"],
+    ["2026-03-31", 31, "2026-03"],
+    ["2028-02-29", 29, "2028-02"],
+    ["2026-09-01", 1, "2026-08"],
+  ])(
+    "closingPayrollPeriodMonth(%s, %s) returns %s on a cutoff day",
+    (date, cutoffDay, expected) => {
+      expect(closingPayrollPeriodMonth(date, cutoffDay)).toBe(expected);
+    },
+  );
+
+  it.each([
+    ["2026-09-24", 25],
+    ["2026-09-26", 25],
+    ["2026-09-14", 25],
+    ["2026-09-02", 1],
+  ])(
+    "closingPayrollPeriodMonth(%s, %s) returns null on a non-cutoff day",
+    (date, cutoffDay) => {
+      expect(closingPayrollPeriodMonth(date, cutoffDay)).toBeNull();
     },
   );
 });

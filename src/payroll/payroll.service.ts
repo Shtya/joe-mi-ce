@@ -66,6 +66,7 @@ import {
 import {
   activePayrollPeriodMonth,
   calculateOvertimeAmount,
+  closingPayrollPeriodMonth,
   resolvePayrollPeriod,
   validatePayrollCutoffDay,
 } from "./payroll-period";
@@ -1018,7 +1019,10 @@ export class PayrollService {
     return this.dataSource.transaction(async (manager) => {
       const existing: PayrollPeriod | null = await manager.findOne(
         PayrollPeriod,
-        { where: { projectId, month: dto.month } },
+        {
+          where: { projectId, month: dto.month },
+          lock: { mode: "pessimistic_write" },
+        },
       );
       if (existing) {
         this.assertPendingPeriod(existing);
@@ -1398,18 +1402,45 @@ export class PayrollService {
             paidOvertimeSourceIds.add(snapshot.sourceJourneyId),
           );
         if (reassignedPendingSnapshots.length) {
-          await manager.remove(PayrollOvertime, reassignedPendingSnapshots);
-          const reassignedLineIds = [
-            ...new Set(
-              reassignedPendingSnapshots.map((snapshot) => snapshot.lineId),
-            ),
-          ];
-          for (const lineId of reassignedLineIds) {
-            const reassignedLine = await manager.findOne(PayrollLine, {
-              where: { id: lineId },
+          // Group snapshots by source period and lock each one before mutating.
+          const snapshotsBySourcePeriod = new Map<
+            string,
+            typeof reassignedPendingSnapshots
+          >();
+          for (const snapshot of reassignedPendingSnapshots) {
+            const list = snapshotsBySourcePeriod.get(snapshot.periodId) ?? [];
+            list.push(snapshot);
+            snapshotsBySourcePeriod.set(snapshot.periodId, list);
+          }
+          const confirmedPendingSnapshots: typeof reassignedPendingSnapshots =
+            [];
+          for (const [sourcePeriodId, snapshots] of snapshotsBySourcePeriod) {
+            const lockedSource = await manager.findOne(PayrollPeriod, {
+              where: { id: sourcePeriodId },
+              lock: { mode: "pessimistic_write" },
             });
-            if (reassignedLine) {
-              await this.recalculateLine(manager, reassignedLine);
+            // After acquiring the lock, verify the period is still pending.
+            if (
+              !lockedSource ||
+              lockedSource.status === PayrollPeriodStatus.PAID
+            )
+              continue;
+            confirmedPendingSnapshots.push(...snapshots);
+          }
+          if (confirmedPendingSnapshots.length) {
+            await manager.remove(PayrollOvertime, confirmedPendingSnapshots);
+            const reassignedLineIds = [
+              ...new Set(
+                confirmedPendingSnapshots.map((snapshot) => snapshot.lineId),
+              ),
+            ];
+            for (const lineId of reassignedLineIds) {
+              const reassignedLine = await manager.findOne(PayrollLine, {
+                where: { id: lineId },
+              });
+              if (reassignedLine) {
+                await this.recalculateLine(manager, reassignedLine);
+              }
             }
           }
         }
@@ -1760,11 +1791,29 @@ export class PayrollService {
     });
     const results = [];
     for (const project of projects) {
+      const cutoffDay = project.payrollCutoffDay ?? 1;
       try {
-        const month = activePayrollPeriodMonth(
-          businessDate,
-          project.payrollCutoffDay ?? 1,
-        );
+        // On a cutoff day, finalize the period that just closed (ending
+        // yesterday) before opening the newly active period.  This guarantees
+        // both periods are fully synchronized without overlap or gap.
+        const closingMonth = closingPayrollPeriodMonth(businessDate, cutoffDay);
+        if (closingMonth) {
+          const { endDate: closingEndDate } = resolvePayrollPeriod(
+            closingMonth,
+            cutoffDay,
+          );
+          // Sync the closing period capped to its own end date.
+          results.push(
+            await this.syncPeriod(
+              project.id,
+              closingMonth,
+              undefined,
+              now,
+              closingEndDate,
+            ),
+          );
+        }
+        const month = activePayrollPeriodMonth(businessDate, cutoffDay);
         results.push(await this.syncPeriod(project.id, month, undefined, now));
       } catch (error) {
         if (!(error instanceof ConflictException)) throw error;
