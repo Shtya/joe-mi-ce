@@ -202,6 +202,13 @@ export async function createOvertimeTimeSheet(
   ]);
   styleRow(header, 19 + dates.length, true);
   header.height = 92.25;
+  for (let column = 1; column <= 12; column++) {
+    const cell = header.getCell(column);
+    cell.border = {
+      ...cell.border,
+      top: { style: "medium", color: { argb: "FF000000" } },
+    };
+  }
   dates.forEach((_, index) => {
     header.getCell(13 + index).numFmt = "dd/mm/yyyy ddd";
     header.getCell(13 + index).alignment = {
@@ -229,10 +236,16 @@ export async function createOvertimeTimeSheet(
     const identity = identityValues(employee);
     const directoryRow = directory.addRow(identity);
     styleRow(directoryRow, 12);
-    directoryRow.getCell(9).numFmt = "#,##0.00";
+    directoryRow.eachCell((cell) => {
+      cell.fill = { type: "pattern", pattern: "none" };
+    });
     const row = sheet.addRow(identity);
     styleRow(row, 19 + dates.length);
     row.getCell(1).fill = fill("FF9DC3E6");
+    for (let column = 2; column <= 11; column++)
+      row.getCell(column).fill = fill("FFB2A1C7");
+    row.getCell(2).alignment = { horizontal: "right", vertical: "middle" };
+    row.getCell(12).fill = { type: "pattern", pattern: "none" };
     const attendance = new Map(
       employee.attendance.map((day) => [day.workDate, day]),
     );
@@ -295,9 +308,11 @@ export async function createOvertimeTimeSheet(
     ].forEach((value, index) => {
       row.getCell(13 + dates.length + index).value = value;
     });
-    row.getCell(9).numFmt = "#,##0.00";
-    for (let index = 1; index <= 5; index++)
-      row.getCell(13 + dates.length + index).numFmt = "#,##0.00";
+    for (let index = 0; index <= 6; index++) {
+      const cell = row.getCell(13 + dates.length + index);
+      cell.numFmt = "0";
+      cell.fill = fill([3, 4, 6].includes(index) ? "FFD6E3BC" : "FFCCC0D9");
+    }
     metadata.addRow([employee.identity, employee.userId]);
     overtime.forEach((item) =>
       metadata.addRow([

@@ -109,6 +109,16 @@ describe("overtime time sheet", () => {
     expect(sheet.getCell("I2").value).toBe(3000);
     expect(sheet.getCell("AV2").value).toBe(12.5);
     expect(sheet.getCell("AS2").value).toBe(96.77);
+    expect(sheet.getCell("B2").fill).toMatchObject({
+      fgColor: { argb: "FFB2A1C7" },
+    });
+    expect(sheet.getCell("AR2").fill).toMatchObject({
+      fgColor: { argb: "FFCCC0D9" },
+    });
+    expect(sheet.getCell("AU2").fill).toMatchObject({
+      fgColor: { argb: "FFD6E3BC" },
+    });
+    expect(sheet.getCell("AS2").numFmt).toBe("0");
     expect(sheet.getCell("A4").value).toBe("فهرس الرموز / Legend");
     expect(sheet.getCell("C8").value).toBe(
       "Lateness over 15 minutes (light blue fill)",
