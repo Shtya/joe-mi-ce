@@ -129,7 +129,30 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 
 ## Production deployment
 
-Production runs with TypeORM schema synchronization disabled (`synchronize: false`). This repository does not currently contain an application migration directory or configured migration data source, so no migration file is added by this change. Before rolling out this feature, the deployment must apply and review equivalent schema changes for all of the following: the project payroll mode/cutoff settings and cutoff check constraint; the payroll-period calculation-mode snapshot; the payroll-line automatic overtime addition; the `payroll_overtimes` snapshot table, relations, and unique source-journey index; and the `payroll_timesheet_overrides` audit table, relations, and unique `(periodId, userId, workDate)` index. Apply and verify those schema changes before the application rollout; the application must not rely on runtime schema synchronization.
+Production runs with TypeORM schema synchronization disabled (`synchronize: false`). This repository does not currently contain an application migration directory or configured migration data source, so no migration file is added by this change. Before rolling out this feature, the deployment must apply and review equivalent schema changes for all of the following:
+
+1. **Project settings**:
+   - `projects.payrollCalculationMode` (enum `PayrollCalculationMode`: `violation`, `overtime`, default `violation`).
+   - `projects.payrollCutoffDay` (integer, default `1`, constraint `1 <= payrollCutoffDay <= 31`).
+2. **Payroll period snapshot**:
+   - `payroll_periods.calculationMode` (enum `PayrollCalculationMode`: `violation`, `overtime`, default `violation`).
+3. **Payroll line automatic overtime**:
+   - `payroll_lines.automaticOvertimeAddition` (`numeric(10,2)`, default `0.00`).
+4. **Payroll overtime table**:
+   - `payroll_overtimes` table with columns: `id`, `projectId`, `periodId`, `lineId`, `userId`, `sourceJourneyId`, `workDate`, `scheduledShiftMinutes`, `overtimeMinutes`, `salarySnapshot`, `hourlyRateSnapshot`, `amount`, and timestamps.
+   - Foreign keys to `projects(id)`, `payroll_periods(id)`, `payroll_lines(id)`, `users(id)`, and `journeys(id)`.
+   - Unique index on `(sourceJourneyId)` to prevent duplicate overtime insertions.
+   - Indexes on `(periodId)`, `(lineId)`, and `(userId)`.
+5. **Payroll timesheet overrides table**:
+   - `payroll_timesheet_overrides` audit table with columns: `id`, `projectId`, `periodId`, `userId`, `workDate`, `symbol`, `reason`, `createdById`, and timestamps.
+   - Foreign keys to `projects(id)`, `payroll_periods(id)`, `users(id)`, and `users(id)` (`createdById`).
+   - Unique index on `(periodId, userId, workDate)`.
+6. **Paid-period immutability requirements**:
+   - Paid payroll periods (`status = 'paid'`) are strictly immutable: they cannot be resynchronized, recalculated, or overwritten by manual refresh.
+   - Any source overtime snapshot belonging to a paid period must never be moved, deleted, or reassigned.
+   - Target overtime synchronization excludes journeys that are already captured by a paid period.
+
+Apply and verify those schema changes and invariants before the application rollout; the application must not rely on runtime schema synchronization.
 
 ## Non-goals
 

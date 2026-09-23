@@ -77,6 +77,57 @@ describe("PayrollService payroll settings", () => {
     ).rejects.toThrow("cutoffDay must not be greater than 31");
   });
 
+  it.each([0, -1, -10])(
+    "rejects cutoff day less than 1 (%s)",
+    async (cutoffDay) => {
+      const { service } = createService({
+        id: "project-1",
+        payrollEnabled: true,
+      });
+
+      await expect(
+        (service as any).updatePayrollSettings(
+          "project-1",
+          { cutoffDay },
+          actor,
+        ),
+      ).rejects.toThrow("cutoffDay must not be less than 1");
+    },
+  );
+
+  it.each([12.5, "25" as any, null as any])(
+    "rejects non-integer cutoff day (%s)",
+    async (cutoffDay) => {
+      const { service } = createService({
+        id: "project-1",
+        payrollEnabled: true,
+      });
+
+      await expect(
+        (service as any).updatePayrollSettings(
+          "project-1",
+          { cutoffDay },
+          actor,
+        ),
+      ).rejects.toThrow("cutoffDay must be an integer between 1 and 31");
+    },
+  );
+
+  it("rejects invalid calculation mode", async () => {
+    const { service } = createService({
+      id: "project-1",
+      payrollEnabled: true,
+    });
+
+    await expect(
+      (service as any).updatePayrollSettings(
+        "project-1",
+        { calculationMode: "invalid-mode" as any },
+        actor,
+      ),
+    ).rejects.toThrow("Invalid payroll calculation mode");
+  });
+
   it("blocks listing payroll while the project has payroll disabled", async () => {
     const { service } = createService({
       id: "project-1",

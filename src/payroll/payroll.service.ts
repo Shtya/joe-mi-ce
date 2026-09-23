@@ -352,11 +352,43 @@ export class PayrollService {
   async refreshDailyOvertimeTimeSheet(projectId: string, now = new Date()) {
     const project = await this.requireOvertimeProject(projectId);
     const throughDate = this.previousRiyadhBusinessDate(now);
-    const month = activePayrollPeriodMonth(
-      this.riyadhDate(now),
-      project.payrollCutoffDay ?? 1,
-    );
+    const businessDate = this.riyadhDate(now);
+    const cutoffDay = project.payrollCutoffDay ?? 1;
+    const closingMonth = closingPayrollPeriodMonth(businessDate, cutoffDay);
 
+    if (closingMonth) {
+      // On cutoff day:
+      // 1. Synchronize the closing period capped to throughDate (its final completed day)
+      try {
+        await this.syncPeriod(
+          projectId,
+          closingMonth,
+          undefined,
+          now,
+          throughDate,
+        );
+      } catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
+      }
+
+      // 2. Also initialize/synchronize the new active period
+      const newMonth = activePayrollPeriodMonth(businessDate, cutoffDay);
+      try {
+        await this.syncPeriod(projectId, newMonth, undefined, now);
+      } catch (error) {
+        if (!(error instanceof ConflictException)) throw error;
+      }
+
+      // 3. Return the closing period workbook (which includes the final completed day)
+      return this.getOvertimeTimeSheet(
+        projectId,
+        closingMonth,
+        undefined,
+        throughDate,
+      );
+    }
+
+    const month = activePayrollPeriodMonth(businessDate, cutoffDay);
     await this.syncPeriod(projectId, month, undefined, now, throughDate);
     return this.getOvertimeTimeSheet(projectId, month, undefined, throughDate);
   }
@@ -464,15 +496,26 @@ export class PayrollService {
       projectId,
       EPermission.PAYROLL_MANAGE,
     );
+    if (
+      dto.calculationMode !== undefined &&
+      !Object.values(PayrollCalculationMode).includes(dto.calculationMode)
+    ) {
+      throw new BadRequestException("Invalid payroll calculation mode");
+    }
     if (dto.cutoffDay !== undefined) {
-      try {
-        validatePayrollCutoffDay(dto.cutoffDay);
-      } catch {
+      if (
+        typeof dto.cutoffDay !== "number" ||
+        !Number.isInteger(dto.cutoffDay)
+      ) {
         throw new BadRequestException(
-          dto.cutoffDay > 31
-            ? "cutoffDay must not be greater than 31"
-            : "cutoffDay must not be less than 1",
+          "cutoffDay must be an integer between 1 and 31",
         );
+      }
+      if (dto.cutoffDay < 1) {
+        throw new BadRequestException("cutoffDay must not be less than 1");
+      }
+      if (dto.cutoffDay > 31) {
+        throw new BadRequestException("cutoffDay must not be greater than 31");
       }
     }
     const result = await this.dataSource.transaction(async (manager) => {
@@ -801,7 +844,10 @@ export class PayrollService {
     const { startDate, endDate } = resolvePayrollPeriod(month, cutoffDay);
     const existing: PayrollPeriod | null = await manager.findOne(
       PayrollPeriod,
-      { where: { projectId, month } },
+      {
+        where: { projectId, month },
+        lock: { mode: "pessimistic_write" },
+      },
     );
     if (existing) return existing;
 
@@ -1412,9 +1458,13 @@ export class PayrollService {
             list.push(snapshot);
             snapshotsBySourcePeriod.set(snapshot.periodId, list);
           }
+          const sortedSourcePeriodIds = Array.from(
+            snapshotsBySourcePeriod.keys(),
+          ).sort();
           const confirmedPendingSnapshots: typeof reassignedPendingSnapshots =
             [];
-          for (const [sourcePeriodId, snapshots] of snapshotsBySourcePeriod) {
+          for (const sourcePeriodId of sortedSourcePeriodIds) {
+            const snapshots = snapshotsBySourcePeriod.get(sourcePeriodId)!;
             const lockedSource = await manager.findOne(PayrollPeriod, {
               where: { id: sourcePeriodId },
               lock: { mode: "pessimistic_write" },
@@ -1423,8 +1473,12 @@ export class PayrollService {
             if (
               !lockedSource ||
               lockedSource.status === PayrollPeriodStatus.PAID
-            )
+            ) {
+              for (const snapshot of snapshots) {
+                paidOvertimeSourceIds.add(snapshot.sourceJourneyId);
+              }
               continue;
+            }
             confirmedPendingSnapshots.push(...snapshots);
           }
           if (confirmedPendingSnapshots.length) {

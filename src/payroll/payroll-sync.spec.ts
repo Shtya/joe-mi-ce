@@ -575,4 +575,123 @@ describe("PayrollService.syncPeriod", () => {
       lock: { mode: "pessimistic_write" },
     });
   });
+
+  it("refuses to overwrite an existing paid period during createPendingPeriod", async () => {
+    const paidPeriod = {
+      id: "period-paid",
+      projectId: "project-1",
+      month: "2026-09",
+      status: "paid",
+      startDate: "2026-09-01",
+      endDate: "2026-09-30",
+      calculationMode: PayrollCalculationMode.VIOLATION,
+      paidAt: new Date("2026-10-01T10:00:00.000Z"),
+      paidById: "admin-payer",
+    };
+    const manager = {
+      findOne: jest.fn().mockResolvedValue(paidPeriod),
+      save: jest.fn(),
+    };
+    const service = new PayrollService(
+      { transaction: jest.fn((work) => work(manager)) } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: "project-1",
+          payrollEnabled: true,
+          payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+          payrollCutoffDay: 25,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const actor = {
+      id: "admin-1",
+      project_id: "project-1",
+      role: { name: ERole.PROJECT_ADMIN, hasPermission: () => true },
+    };
+
+    await expect(
+      service.createPendingPeriod(
+        "project-1",
+        { month: "2026-09" },
+        actor as any,
+      ),
+    ).rejects.toThrow("Paid payroll periods are locked");
+
+    expect(manager.save).not.toHaveBeenCalled();
+    expect(paidPeriod.status).toBe("paid");
+  });
+
+  it("is idempotent when createPendingPeriod is called repeatedly for the same pending period", async () => {
+    const existing = {
+      id: "period-1",
+      projectId: "project-1",
+      month: "2026-09",
+      status: "pending",
+      startDate: "2026-08-25",
+      endDate: "2026-09-24",
+      calculationMode: PayrollCalculationMode.OVERTIME,
+    };
+    const manager = {
+      findOne: jest.fn().mockResolvedValue(existing),
+      save: jest.fn(async (value) => value),
+    };
+    const service = new PayrollService(
+      { transaction: jest.fn((work) => work(manager)) } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: "project-1",
+          payrollEnabled: true,
+          payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+          payrollCutoffDay: 25,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    const actor = {
+      id: "admin-1",
+      project_id: "project-1",
+      role: { name: ERole.PROJECT_ADMIN, hasPermission: () => true },
+    };
+
+    const first = await service.createPendingPeriod(
+      "project-1",
+      { month: "2026-09" },
+      actor as any,
+    );
+    const second = await service.createPendingPeriod(
+      "project-1",
+      { month: "2026-09" },
+      actor as any,
+    );
+
+    expect(first.created).toBe(false);
+    expect(second.created).toBe(false);
+    expect(first.period.startDate).toBe("2026-08-25");
+    expect(first.period.endDate).toBe("2026-09-24");
+    expect(second.period.startDate).toBe("2026-08-25");
+    expect(second.period.endDate).toBe("2026-09-24");
+  });
 });
