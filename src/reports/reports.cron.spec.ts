@@ -48,4 +48,51 @@ describe("ReportsCron Gatemea overtime refresh", () => {
       }),
     );
   });
+
+  it.each([
+    { payrollEnabled: false, mode: PayrollCalculationMode.OVERTIME },
+    { payrollEnabled: true, mode: PayrollCalculationMode.VIOLATION },
+  ])(
+    "keeps the legacy Gatemea report path when payrollEnabled is $payrollEnabled and mode is $mode",
+    async ({ payrollEnabled, mode }) => {
+      const reportsService = {
+        getGatemeaProject: jest.fn().mockResolvedValue({
+          id: "gatemea-project",
+          payrollEnabled,
+          payrollCalculationMode: mode,
+        }),
+        generateGatemeaReport: jest
+          .fn()
+          .mockResolvedValue("/tmp/gatemea-daily.xlsx"),
+      };
+      const payrollService = {
+        refreshDailyOvertimeTimeSheet: jest.fn(),
+      };
+      const mailService = {
+        sendEmail: jest.fn(),
+        sendReportEmail: jest.fn().mockResolvedValue(true),
+      };
+      const cron = new (ReportsCron as any)(
+        reportsService as any,
+        mailService as any,
+        payrollService as any,
+      );
+
+      await cron.handleGatemeaReport();
+
+      expect(
+        payrollService.refreshDailyOvertimeTimeSheet,
+      ).not.toHaveBeenCalled();
+      expect(reportsService.generateGatemeaReport).toHaveBeenCalledTimes(1);
+      expect(mailService.sendReportEmail).toHaveBeenCalledWith(
+        "/tmp/gatemea-daily.xlsx",
+        "gatemea-daily.xlsx",
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+        expect.any(String),
+      );
+    },
+  );
 });

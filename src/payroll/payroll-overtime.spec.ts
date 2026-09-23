@@ -12,6 +12,67 @@ import { PayrollService } from "./payroll.service";
 import { PayrollCalculationMode, PayrollPeriodStatus } from "./payroll.types";
 
 describe("PayrollService overtime synchronization", () => {
+  it("keeps a newly active cutoff period complete while limiting its source sync through yesterday", async () => {
+    const projectId = "gatemea-project";
+    const manager = {
+      findOne: jest.fn().mockResolvedValue(null),
+      find: jest.fn().mockResolvedValue([]),
+      create: jest.fn((_entity: unknown, values: object) => values),
+      save: jest.fn(async (value: object) => value),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(() => ({
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })),
+    };
+    const service = new PayrollService(
+      { transaction: jest.fn((work) => work(manager)) } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: projectId,
+          payrollEnabled: true,
+          payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+          payrollCutoffDay: 25,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    const result = await (service.syncPeriod as any)(
+      projectId,
+      "2026-10",
+      undefined,
+      new Date("2026-09-26T08:00:00.000Z"),
+      "2026-09-25",
+    );
+
+    expect(result).toMatchObject({
+      month: "2026-10",
+      startDate: "2026-09-25",
+      endDate: "2026-10-24",
+    });
+    const journeyFindCall = manager.find.mock.calls.find(
+      ([entity]) => entity === Journey,
+    );
+    expect(journeyFindCall?.[1].where.date._value).toEqual([
+      "2026-09-25",
+      "2026-09-25",
+    ]);
+  });
+
   it("adds calculated overtime once and does not create violation deductions in overtime mode", async () => {
     const projectId = "21963b9d-0f5c-4c10-a990-00cb1fc9bda3";
     const userId = "88279b3a-2513-47d6-a85f-540e24262e35";

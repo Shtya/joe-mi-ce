@@ -64,7 +64,6 @@ import {
   roundMoney,
 } from "./payroll-calculator";
 import {
-  activePayrollMonth,
   calculateOvertimeAmount,
   resolvePayrollPeriod,
   validatePayrollCutoffDay,
@@ -351,10 +350,12 @@ export class PayrollService {
   async refreshDailyOvertimeTimeSheet(projectId: string, now = new Date()) {
     const project = await this.requireOvertimeProject(projectId);
     const throughDate = this.previousRiyadhBusinessDate(now);
-    const periodDate = new Date(`${throughDate}T12:00:00.000Z`);
-    const month = activePayrollMonth(periodDate, project.payrollCutoffDay ?? 1);
+    const month = this.activeCutoffPeriodMonth(
+      throughDate,
+      project.payrollCutoffDay ?? 1,
+    );
 
-    await this.syncPeriod(projectId, month, undefined, periodDate);
+    await this.syncPeriod(projectId, month, undefined, now, throughDate);
     return this.getOvertimeTimeSheet(projectId, month, undefined, throughDate);
   }
 
@@ -738,6 +739,16 @@ export class PayrollService {
       date.setUTCDate(date.getUTCDate() - 1);
     } while ([5, 6].includes(date.getUTCDay()));
     return date.toISOString().slice(0, 10);
+  }
+
+  private activeCutoffPeriodMonth(date: string, cutoffDay: number): string {
+    const month = date.slice(0, 7);
+    const period = resolvePayrollPeriod(month, cutoffDay);
+    if (date <= period.endDate) return month;
+
+    const next = new Date(`${month}-01T00:00:00.000Z`);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    return next.toISOString().slice(0, 7);
   }
 
   private periodDates(month: string, now = new Date(), cutoffDay = 1) {
@@ -1280,6 +1291,7 @@ export class PayrollService {
     month: string,
     actor?: User,
     now = new Date(),
+    throughDate?: string,
   ) {
     if (actor)
       this.assertProjectPayrollAccess(
@@ -1292,11 +1304,21 @@ export class PayrollService {
       throw new ConflictException("Payroll is not enabled for this project");
     const calculationMode =
       project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION;
-    const { startDate, endDate } = this.periodDates(
-      month,
-      now,
-      project.payrollCutoffDay ?? 1,
-    );
+    const cutoffDay = project.payrollCutoffDay ?? 1;
+    const { startDate, endDate } = throughDate
+      ? {
+          startDate: resolvePayrollPeriod(month, cutoffDay).startDate,
+          endDate: resolvePayrollPeriod(month, cutoffDay).endDate,
+        }
+      : this.periodDates(month, now, cutoffDay);
+    let sourceEndDate = endDate;
+    if (throughDate) {
+      if (throughDate < startDate)
+        throw new BadRequestException(
+          "throughDate cannot be before the payroll period start",
+        );
+      sourceEndDate = throughDate > endDate ? endDate : throughDate;
+    }
 
     return this.dataSource.transaction(async (manager) => {
       let period = await manager.findOne(PayrollPeriod, {
@@ -1340,7 +1362,7 @@ export class PayrollService {
       const journeys: Journey[] = await manager.find(Journey, {
         where: {
           projectId,
-          date: Between(startDate, endDate),
+          date: Between(startDate, sourceEndDate),
           is_active: true,
         },
         relations: ["user", "shift", "checkin"],
@@ -1369,7 +1391,7 @@ export class PayrollService {
         .where("vacation.overall_status = :status", { status: "approved" })
         .andWhere("date.date BETWEEN :startDate AND :endDate", {
           startDate,
-          endDate,
+          endDate: sourceEndDate,
         })
         .getMany();
       const approvedDates = new Set(
