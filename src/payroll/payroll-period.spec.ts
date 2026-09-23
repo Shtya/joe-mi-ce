@@ -1,5 +1,5 @@
 import {
-  activePayrollMonth,
+  activePayrollPeriodMonth,
   calculateOvertimeAmount,
   resolvePayrollPeriod,
   validatePayrollCutoffDay,
@@ -27,11 +27,16 @@ describe("payroll period", () => {
     });
   });
 
-  it("assigns a date before the cutoff to the preceding payroll month", () => {
-    expect(activePayrollMonth(new Date("2026-09-24T12:00:00.000Z"), 25)).toBe(
-      "2026-08",
-    );
-  });
+  it.each([
+    ["2026-09-24", 25, "2026-09"],
+    ["2026-09-25", 25, "2026-10"],
+    ["2026-09-25", 1, "2026-09"],
+  ])(
+    "assigns %s with cutoff %s to active period %s",
+    (date, cutoffDay, expectedMonth) => {
+      expect(activePayrollPeriodMonth(date, cutoffDay)).toBe(expectedMonth);
+    },
+  );
 
   it("pays 90 overtime minutes at the scheduled-shift hourly rate", () => {
     expect(

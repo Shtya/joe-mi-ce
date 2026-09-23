@@ -140,6 +140,34 @@ describe("overtime time sheet", () => {
     expect(result.rows).toHaveLength(30);
   });
 
+  it("accepts an unrecorded blank day on same-day import without creating an override", async () => {
+    const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
+    const sheet = workbook.getWorksheet("September 26")!;
+    sheet.getCell("AQ2").value = "";
+    const result = await parseOvertimeTimeSheet({
+      buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+      ...fixture,
+      throughDate: "2026-09-25",
+    });
+
+    expect(result.rejectedRows).toEqual([]);
+    expect(result.rows).not.toContainEqual(
+      expect.objectContaining({ workDate: "2026-09-25" }),
+    );
+  });
+
+  it("still rejects a populated attendance value beyond the recorded date", async () => {
+    const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
+    workbook.getWorksheet("September 26")!.getCell("AQ2").value = "1";
+    const result = await parse(workbook);
+
+    expect(result.rejectedRows).toContainEqual({
+      rowNumber: 2,
+      reason: "Future attendance is not allowed for 2026-09-25",
+    });
+    expect(result.rows).toEqual([]);
+  });
+
   it("accepts source-style numeric legend symbols and empty formatted trailing rows", async () => {
     const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
     const sheet = workbook.getWorksheet("September 26")!;

@@ -129,7 +129,7 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 
 ## Production deployment
 
-Production runs with TypeORM schema synchronization disabled (`synchronize: false`). Before rolling out this feature, deploy a reviewed TypeORM migration that creates the project payroll settings, the automatic overtime addition column, and the payroll overtime snapshot table with its required indexes. Apply and verify that migration before the application rollout; the application must not rely on runtime schema synchronization.
+Production runs with TypeORM schema synchronization disabled (`synchronize: false`). This repository does not currently contain an application migration directory or configured migration data source, so no migration file is added by this change. Before rolling out this feature, the deployment must apply and review equivalent schema changes for all of the following: the project payroll mode/cutoff settings and cutoff check constraint; the payroll-period calculation-mode snapshot; the payroll-line automatic overtime addition; the `payroll_overtimes` snapshot table, relations, and unique source-journey index; and the `payroll_timesheet_overrides` audit table, relations, and unique `(periodId, userId, workDate)` index. Apply and verify those schema changes before the application rollout; the application must not rely on runtime schema synchronization.
 
 ## Non-goals
 

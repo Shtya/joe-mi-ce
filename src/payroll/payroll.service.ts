@@ -64,6 +64,7 @@ import {
   roundMoney,
 } from "./payroll-calculator";
 import {
+  activePayrollPeriodMonth,
   calculateOvertimeAmount,
   resolvePayrollPeriod,
   validatePayrollCutoffDay,
@@ -350,7 +351,7 @@ export class PayrollService {
   async refreshDailyOvertimeTimeSheet(projectId: string, now = new Date()) {
     const project = await this.requireOvertimeProject(projectId);
     const throughDate = this.previousRiyadhBusinessDate(now);
-    const month = this.activeCutoffPeriodMonth(
+    const month = activePayrollPeriodMonth(
       this.riyadhDate(now),
       project.payrollCutoffDay ?? 1,
     );
@@ -518,7 +519,7 @@ export class PayrollService {
     });
     if (dto.enabled !== true) return result;
 
-    const month = this.riyadhDate().slice(0, 7);
+    const month = activePayrollPeriodMonth(this.riyadhDate(), result.cutoffDay);
     const period = await this.syncPeriod(projectId, month, actor);
     return { ...result, period };
   }
@@ -666,7 +667,7 @@ export class PayrollService {
     const updatedRows = await this.dataSource.transaction(async (manager) => {
       await this.ensurePayrollPeriodForEffectiveDate(
         manager,
-        projectId,
+        project,
         effectiveFrom,
         actor.id,
       );
@@ -715,10 +716,16 @@ export class PayrollService {
       }
       return result;
     });
-    const month = effectiveFrom.slice(0, 7);
-    const currentMonth = this.riyadhDate().slice(0, 7);
+    const month = activePayrollPeriodMonth(
+      effectiveFrom,
+      project.payrollCutoffDay ?? 1,
+    );
+    const { startDate } = resolvePayrollPeriod(
+      month,
+      project.payrollCutoffDay ?? 1,
+    );
     const period =
-      month <= currentMonth
+      startDate <= this.riyadhDate()
         ? await this.syncPeriod(projectId, month, actor)
         : null;
     return { updatedRows, rejectedRows: [], period };
@@ -741,41 +748,32 @@ export class PayrollService {
     return date.toISOString().slice(0, 10);
   }
 
-  private activeCutoffPeriodMonth(date: string, cutoffDay: number): string {
-    const month = date.slice(0, 7);
-    const period = resolvePayrollPeriod(month, cutoffDay);
-    if (date <= period.endDate) return month;
-
-    const next = new Date(`${month}-01T00:00:00.000Z`);
-    next.setUTCMonth(next.getUTCMonth() + 1);
-    return next.toISOString().slice(0, 7);
-  }
-
-  private periodDates(month: string, now = new Date(), cutoffDay = 1) {
+  private periodWindow(
+    month: string,
+    cutoffDay: number,
+    now = new Date(),
+    throughDate?: string,
+  ) {
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
       throw new BadRequestException("month must use YYYY-MM");
     const currentDate = this.riyadhDate(now);
-    const currentMonth = currentDate.slice(0, 7);
-    if (month > currentMonth)
+    const { startDate, endDate } = resolvePayrollPeriod(month, cutoffDay);
+    if (startDate > currentDate)
       throw new BadRequestException(
         "Future payroll months cannot be synchronized",
       );
-    const { startDate, endDate } = resolvePayrollPeriod(month, cutoffDay);
+    const requestedThroughDate = throughDate ?? currentDate;
+    const sourceEndDate = [
+      endDate,
+      requestedThroughDate,
+      currentDate,
+    ].sort()[0];
+
     return {
       startDate,
-      endDate:
-        month === currentMonth && endDate > currentDate ? currentDate : endDate,
-    };
-  }
-
-  private fullPeriodDates(month: string) {
-    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
-      throw new BadRequestException("month must use YYYY-MM");
-    const [year, monthNumber] = month.split("-").map(Number);
-    const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
-    return {
-      startDate: `${month}-01`,
-      endDate: `${month}-${String(lastDay).padStart(2, "0")}`,
+      endDate,
+      sourceEndDate,
+      hasSourceRange: sourceEndDate >= startDate,
     };
   }
 
@@ -792,12 +790,14 @@ export class PayrollService {
   /** Creates the period only; daily sync is responsible for calculating its lines. */
   private async ensurePayrollPeriodForEffectiveDate(
     manager: any,
-    projectId: string,
+    project: Project,
     effectiveFrom: string,
     actorId: string,
   ): Promise<PayrollPeriod> {
-    const month = effectiveFrom.slice(0, 7);
-    const { startDate, endDate } = this.fullPeriodDates(month);
+    const projectId = project.id;
+    const cutoffDay = project.payrollCutoffDay ?? 1;
+    const month = activePayrollPeriodMonth(effectiveFrom, cutoffDay);
+    const { startDate, endDate } = resolvePayrollPeriod(month, cutoffDay);
     const existing: PayrollPeriod | null = await manager.findOne(
       PayrollPeriod,
       { where: { projectId, month } },
@@ -811,6 +811,8 @@ export class PayrollService {
         month,
         startDate,
         endDate,
+        calculationMode:
+          project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION,
         status: PayrollPeriodStatus.PENDING,
         generatedAt: new Date(),
         generatedById: actorId,
@@ -1008,8 +1010,11 @@ export class PayrollService {
       projectId,
       EPermission.PAYROLL_MANAGE,
     );
-    await this.requireEnabledProject(projectId);
-    const { startDate, endDate } = this.periodDates(dto.month);
+    const project = await this.requireEnabledProject(projectId);
+    const cutoffDay = project.payrollCutoffDay ?? 1;
+    const calculationMode =
+      project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION;
+    const { startDate, endDate } = this.periodWindow(dto.month, cutoffDay);
     return this.dataSource.transaction(async (manager) => {
       const existing: PayrollPeriod | null = await manager.findOne(
         PayrollPeriod,
@@ -1017,13 +1022,19 @@ export class PayrollService {
       );
       if (existing) {
         this.assertPendingPeriod(existing);
-        return { created: false, period: existing };
+        existing.startDate = startDate;
+        existing.endDate = endDate;
+        existing.calculationMode = calculationMode;
+        existing.generatedAt = new Date();
+        existing.generatedById = actor.id;
+        return { created: false, period: await manager.save(existing) };
       }
       const period = manager.create(PayrollPeriod, {
         projectId,
         month: dto.month,
         startDate,
         endDate,
+        calculationMode,
         status: PayrollPeriodStatus.PENDING,
         generatedAt: new Date(),
         generatedById: actor.id,
@@ -1233,6 +1244,7 @@ export class PayrollService {
         "lines",
         "lines.user",
         "lines.violations",
+        "lines.overtime",
         "lines.adjustments",
         "lines.adjustments.createdBy",
       ],
@@ -1305,22 +1317,13 @@ export class PayrollService {
     const calculationMode =
       project.payrollCalculationMode ?? PayrollCalculationMode.VIOLATION;
     const cutoffDay = project.payrollCutoffDay ?? 1;
-    const { startDate, endDate } = throughDate
-      ? {
-          startDate: resolvePayrollPeriod(month, cutoffDay).startDate,
-          endDate: resolvePayrollPeriod(month, cutoffDay).endDate,
-        }
-      : this.periodDates(month, now, cutoffDay);
-    let sourceEndDate = endDate;
-    let hasSourceRange = true;
-    if (throughDate) {
-      hasSourceRange = throughDate >= startDate;
-      sourceEndDate = throughDate > endDate ? endDate : throughDate;
-    }
+    const { startDate, endDate, sourceEndDate, hasSourceRange } =
+      this.periodWindow(month, cutoffDay, now, throughDate);
 
     return this.dataSource.transaction(async (manager) => {
       let period = await manager.findOne(PayrollPeriod, {
         where: { projectId, month },
+        lock: { mode: "pessimistic_write" },
       });
       if (period?.status === PayrollPeriodStatus.PAID)
         throw new ConflictException("Paid payroll periods are locked");
@@ -1333,6 +1336,7 @@ export class PayrollService {
         });
       period.startDate = startDate;
       period.endDate = endDate;
+      period.calculationMode = calculationMode;
       period.generatedAt = new Date();
       period.generatedById = actor?.id ?? null;
       period = await manager.save(period);
@@ -1369,6 +1373,47 @@ export class PayrollService {
           })
         : [];
       const journeyIds = journeys.map((journey) => journey.id);
+      const paidOvertimeSourceIds = new Set<string>();
+      if (
+        calculationMode === PayrollCalculationMode.OVERTIME &&
+        journeyIds.length
+      ) {
+        const sourceSnapshots: PayrollOvertime[] = await manager.find(
+          PayrollOvertime,
+          {
+            where: { projectId, sourceJourneyId: In(journeyIds) },
+            relations: ["period"],
+          },
+        );
+        const reassignedPendingSnapshots = sourceSnapshots.filter(
+          (snapshot) =>
+            snapshot.periodId !== period.id &&
+            snapshot.period?.status === PayrollPeriodStatus.PENDING,
+        );
+        sourceSnapshots
+          .filter(
+            (snapshot) => snapshot.period?.status === PayrollPeriodStatus.PAID,
+          )
+          .forEach((snapshot) =>
+            paidOvertimeSourceIds.add(snapshot.sourceJourneyId),
+          );
+        if (reassignedPendingSnapshots.length) {
+          await manager.remove(PayrollOvertime, reassignedPendingSnapshots);
+          const reassignedLineIds = [
+            ...new Set(
+              reassignedPendingSnapshots.map((snapshot) => snapshot.lineId),
+            ),
+          ];
+          for (const lineId of reassignedLineIds) {
+            const reassignedLine = await manager.findOne(PayrollLine, {
+              where: { id: lineId },
+            });
+            if (reassignedLine) {
+              await this.recalculateLine(manager, reassignedLine);
+            }
+          }
+        }
+      }
       if (journeyIds.length) {
         const oldViolations = await manager.find(PayrollViolation, {
           where: { projectId, sourceJourneyId: In(journeyIds) },
@@ -1401,16 +1446,22 @@ export class PayrollService {
       const approvedDates = new Set(
         vacationRows.map((row) => `${row.vacation.user.id}:${row.date}`),
       );
-      const eventYear = Number(month.slice(0, 4));
-      const previous: PayrollViolation[] = await manager.find(
-        PayrollViolation,
-        { where: { projectId, eventYear } },
-      );
+      const eventYears = [
+        ...new Set(journeys.map((journey) => Number(journey.date.slice(0, 4)))),
+      ];
+      const previous: PayrollViolation[] =
+        calculationMode === PayrollCalculationMode.VIOLATION &&
+        eventYears.length
+          ? await manager.find(PayrollViolation, {
+              where: { projectId, eventYear: In(eventYears) },
+            })
+          : [];
       const counts = new Map<string, number>();
       previous.forEach((item) =>
         counts.set(
-          `${item.userId}:${item.ruleKey}`,
-          (counts.get(`${item.userId}:${item.ruleKey}`) ?? 0) + 1,
+          `${item.userId}:${item.ruleKey}:${item.eventYear}`,
+          (counts.get(`${item.userId}:${item.ruleKey}:${item.eventYear}`) ??
+            0) + 1,
         ),
       );
       const generated: PayrollViolation[] = [];
@@ -1432,6 +1483,11 @@ export class PayrollService {
 
       for (const journey of journeys) {
         if (!journey.user?.id || !journey.shift || !journey.checkin) continue;
+        if (
+          calculationMode === PayrollCalculationMode.OVERTIME &&
+          paidOvertimeSourceIds.has(journey.id)
+        )
+          continue;
         if (
           calculationMode === PayrollCalculationMode.VIOLATION &&
           approvedDates.has(`${journey.user.id}:${journey.date}`)
@@ -1512,7 +1568,8 @@ export class PayrollService {
                 rule.blocksOtherWorkers === false),
           );
           if (!matchingRule || event.minutes <= 0) continue;
-          const key = `${journey.user.id}:${matchingRule.ruleKey}`;
+          const eventYear = Number(journey.date.slice(0, 4));
+          const key = `${journey.user.id}:${matchingRule.ruleKey}:${eventYear}`;
           const occurrence = (counts.get(key) ?? 0) + 1;
           const calculation = calculatePayrollViolation({
             eventType: event.eventType,
@@ -1639,14 +1696,15 @@ export class PayrollService {
 
   async getPeriod(projectId: string, month: string, actor: User) {
     this.assertProjectPayrollAccess(actor, projectId, EPermission.PAYROLL_READ);
-    await this.requireEnabledProject(projectId);
-    this.periodDates(month);
+    const project = await this.requireEnabledProject(projectId);
+    this.periodWindow(month, project.payrollCutoffDay ?? 1);
     const period = await this.periodRepo.findOne({
       where: { projectId, month },
       relations: [
         "lines",
         "lines.user",
         "lines.violations",
+        "lines.overtime",
         "lines.adjustments",
         "lines.adjustments.createdBy",
       ],
@@ -1664,6 +1722,7 @@ export class PayrollService {
         "lines",
         "lines.user",
         "lines.violations",
+        "lines.overtime",
         "lines.adjustments",
         "lines.adjustments.createdBy",
       ],
@@ -1676,6 +1735,7 @@ export class PayrollService {
     return this.dataSource.transaction(async (manager) => {
       const period = await manager.findOne(PayrollPeriod, {
         where: { id: periodId },
+        lock: { mode: "pessimistic_write" },
       });
       if (!period) throw new NotFoundException("Payroll period not found");
       this.assertProjectPayrollAccess(
@@ -1694,13 +1754,17 @@ export class PayrollService {
   }
 
   async syncMonthEndForEnabledProjects(now = new Date()) {
-    const month = this.riyadhDate(now).slice(0, 7);
+    const businessDate = this.riyadhDate(now);
     const projects = await this.projectRepo.find({
       where: { payrollEnabled: true },
     });
     const results = [];
     for (const project of projects) {
       try {
+        const month = activePayrollPeriodMonth(
+          businessDate,
+          project.payrollCutoffDay ?? 1,
+        );
         results.push(await this.syncPeriod(project.id, month, undefined, now));
       } catch (error) {
         if (!(error instanceof ConflictException)) throw error;

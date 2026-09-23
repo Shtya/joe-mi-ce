@@ -30,13 +30,19 @@ export function resolvePayrollPeriod(
   };
 }
 
-export function activePayrollMonth(date: Date, cutoffDay: number): string {
-  const month = formatMonth(date.getUTCFullYear(), date.getUTCMonth() + 1);
-  const cutoffDate = clampedDate(month, cutoffDay);
+export function activePayrollPeriodMonth(
+  date: string | Date,
+  cutoffDay: number,
+): string {
+  const businessDate =
+    date instanceof Date ? date.toISOString().slice(0, 10) : date;
+  if (!/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(businessDate)) {
+    throw new RangeError("date must use YYYY-MM-DD format");
+  }
+  const month = businessDate.slice(0, 7);
+  const period = resolvePayrollPeriod(month, cutoffDay);
 
-  return date.toISOString().slice(0, 10) < cutoffDate
-    ? previousMonth(month)
-    : month;
+  return businessDate <= period.endDate ? month : nextMonth(month);
 }
 
 export function calculateOvertimeAmount(input: OvertimeAmountInput): number {
@@ -62,6 +68,14 @@ function previousMonth(month: string): string {
   return monthNumber === 1
     ? formatMonth(year - 1, 12)
     : formatMonth(year, monthNumber - 1);
+}
+
+function nextMonth(month: string): string {
+  const { year, monthNumber } = parseMonth(month);
+
+  return monthNumber === 12
+    ? formatMonth(year + 1, 1)
+    : formatMonth(year, monthNumber + 1);
 }
 
 function previousDate(date: string): string {

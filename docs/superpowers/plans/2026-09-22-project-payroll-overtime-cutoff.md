@@ -42,7 +42,7 @@
 - Test: `src/payroll/payroll-period.spec.ts`
 
 **Interfaces:**
-- Produces `PayrollCalculationMode`, `resolvePayrollPeriod(month, cutoffDay)`, `activePayrollMonth(date, cutoffDay)`, and `calculateOvertimeAmount(input)` for all later tasks.
+- Produces `PayrollCalculationMode`, `resolvePayrollPeriod(month, cutoffDay)`, `activePayrollPeriodMonth(date, cutoffDay)`, and `calculateOvertimeAmount(input)` for all later tasks.
 
 - [ ] **Step 1: Write failing resolver and overtime tests**
 
@@ -389,7 +389,7 @@ Expected: exits 0 and creates a production Nest build.
 
 - [ ] **Step 3: Document database deployment requirement**
 
-Append a short deployment note explaining that production has `synchronize: false`, so the deployment must include a reviewed TypeORM migration adding project settings, the automatic overtime addition column, and the overtime snapshot table/indexes before application rollout.
+Append a short deployment note explaining that production has `synchronize: false`, so deployment must include reviewed schema changes for project settings and their cutoff constraint, the payroll-period calculation-mode snapshot, the automatic overtime addition column, the overtime snapshot table/indexes, and the `payroll_timesheet_overrides` table/indexes before application rollout. If the repository has no configured migration mechanism, document the required schema changes instead of adding an ad hoc migration convention.
 
 - [ ] **Step 4: Commit verification documentation**
 

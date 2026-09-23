@@ -200,7 +200,7 @@ describe("PayrollService overtime synchronization", () => {
     await service.syncPeriod(projectId, "2026-09", actor as any, now);
 
     expect(result.startDate).toBe("2026-08-25");
-    expect(result.endDate).toBe("2026-09-14");
+    expect(result.endDate).toBe("2026-09-24");
     expect(savedOvertime).toHaveLength(1);
     expect(savedOvertime[0]).toMatchObject({
       sourceJourneyId: journey.id,
@@ -269,5 +269,220 @@ describe("PayrollService overtime synchronization", () => {
     expect(manager.create).not.toHaveBeenCalled();
     expect(manager.save).not.toHaveBeenCalled();
     expect(manager.remove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [PayrollPeriodStatus.PENDING, true],
+    [PayrollPeriodStatus.PAID, false],
+  ])(
+    "handles an overtime source already owned by a %s period without moving paid snapshots",
+    async (sourcePeriodStatus, shouldRemove) => {
+      const projectId = "21963b9d-0f5c-4c10-a990-00cb1fc9bda3";
+      const journey = {
+        id: "b7062910-d593-4d05-8e80-2e978791cf64",
+        projectId,
+        date: "2026-09-01",
+        is_active: true,
+        user: { id: "employee-1" },
+        shift: { startTime: "09:00:00", endTime: "17:00:00" },
+        checkin: {
+          checkInTime: new Date("2026-09-01T06:00:00.000Z"),
+          checkOutTime: new Date("2026-09-01T15:30:00.000Z"),
+        },
+      };
+      const sourceSnapshot = {
+        id: "source-overtime",
+        projectId,
+        periodId: "old-period",
+        lineId: "old-line",
+        sourceJourneyId: journey.id,
+        period: { id: "old-period", status: sourcePeriodStatus },
+      };
+      const oldLine = {
+        id: "old-line",
+        grossSalary: "4800.00",
+        automaticOvertimeAddition: "30.00",
+      };
+      const manager = {
+        findOne: jest.fn(async (entity: unknown) => {
+          if (entity === PayrollPeriod) return null;
+          if (entity === PayrollLine && shouldRemove) return oldLine;
+          return null;
+        }),
+        find: jest.fn(async (entity: unknown, options: any) => {
+          if (entity === Journey) return [journey];
+          if (entity === PayrollOvertime) {
+            return options?.where?.sourceJourneyId ? [sourceSnapshot] : [];
+          }
+          return [];
+        }),
+        create: jest.fn((_entity: unknown, values: object) => values),
+        save: jest.fn(async (entityOrValue: unknown, value?: any) => {
+          const saved = value ?? entityOrValue;
+          if (saved?.month) saved.id = "new-period";
+          return saved;
+        }),
+        remove: jest.fn(async (_entity: unknown, value: unknown) => value),
+        createQueryBuilder: jest.fn(() => ({
+          innerJoinAndSelect: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          andWhere: jest.fn().mockReturnThis(),
+          getMany: jest.fn().mockResolvedValue([]),
+        })),
+      };
+      const service = new PayrollService(
+        { transaction: jest.fn((work) => work(manager)) } as any,
+        {
+          findOne: jest.fn().mockResolvedValue({
+            id: projectId,
+            payrollEnabled: true,
+            payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+            payrollCutoffDay: 25,
+          }),
+        } as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+      );
+
+      await service.syncPeriod(
+        projectId,
+        "2026-09",
+        undefined,
+        new Date("2026-09-14T09:00:00.000Z"),
+      );
+
+      expect(manager.remove).toHaveBeenCalledTimes(shouldRemove ? 1 : 0);
+      if (shouldRemove) {
+        expect(manager.remove).toHaveBeenCalledWith(PayrollOvertime, [
+          sourceSnapshot,
+        ]);
+        expect(oldLine.automaticOvertimeAddition).toBe("0.00");
+      }
+      expect(manager.save).not.toHaveBeenCalledWith(
+        PayrollOvertime,
+        expect.anything(),
+      );
+    },
+  );
+
+  it("derives each violation event year from its journey in a cross-year cutoff period", async () => {
+    const projectId = "21963b9d-0f5c-4c10-a990-00cb1fc9bda3";
+    const userId = "88279b3a-2513-47d6-a85f-540e24262e35";
+    const salary = {
+      userId,
+      monthlySalary: "4800.00",
+      effectiveFrom: "2025-01-01",
+      effectiveTo: null,
+    };
+    const journeys = ["2025-12-31", "2026-01-01"].map((date, index) => ({
+      id: `journey-${index + 1}`,
+      projectId,
+      date,
+      is_active: true,
+      user: { id: userId },
+      shift: { startTime: "09:00:00", endTime: "17:00:00" },
+      checkin: {
+        checkInTime: new Date(`${date}T06:10:00.000Z`),
+        checkOutTime: new Date(`${date}T14:00:00.000Z`),
+      },
+    }));
+    const rule = Object.assign(new PayrollViolationRule(), {
+      ruleKey: "LATE_UP_TO_15_NO_BLOCK",
+      version: 1,
+      eventType: "late_arrival",
+      minimumMinutes: 1,
+      maximumMinutes: 15,
+      blocksOtherWorkers: false,
+      actions: [
+        { kind: "warning", value: 0 },
+        { kind: "daily_wage_percentage", value: 15 },
+        { kind: "daily_wage_percentage", value: 25 },
+        { kind: "daily_wage_percentage", value: 50 },
+      ],
+    });
+    const savedViolations: PayrollViolation[] = [];
+    let priorYears: unknown;
+    const manager = {
+      findOne: jest.fn(async (entity: unknown) => {
+        if (entity === PayrollPeriod) return null;
+        if (entity === EmployeeSalary) return salary;
+        return null;
+      }),
+      find: jest.fn(async (entity: unknown, options: any) => {
+        if (entity === Journey) return journeys;
+        if (entity === PayrollViolationRule) return [rule];
+        if (entity === EmployeeSalary) return [salary];
+        if (entity === PayrollViolation && options?.where?.eventYear) {
+          priorYears = options.where.eventYear;
+          return [];
+        }
+        return [];
+      }),
+      create: jest.fn((_entity: unknown, values: object) => values),
+      save: jest.fn(async (entityOrValue: unknown, value?: any) => {
+        const entity = value === undefined ? undefined : entityOrValue;
+        const saved = value ?? entityOrValue;
+        if (saved?.month) saved.id = "period-1";
+        if (entity === PayrollLine) saved.id = "line-1";
+        if (
+          entity === PayrollViolation ||
+          (saved?.sourceJourneyId && saved?.eventType)
+        ) {
+          saved.id = `violation-${savedViolations.length + 1}`;
+          savedViolations.push(saved);
+        }
+        return saved;
+      }),
+      remove: jest.fn(),
+      createQueryBuilder: jest.fn(() => ({
+        innerJoinAndSelect: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      })),
+    };
+    const service = new PayrollService(
+      { transaction: jest.fn((work) => work(manager)) } as any,
+      {
+        findOne: jest.fn().mockResolvedValue({
+          id: projectId,
+          payrollEnabled: true,
+          payrollCalculationMode: PayrollCalculationMode.VIOLATION,
+          payrollCutoffDay: 25,
+        }),
+      } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    await service.syncPeriod(
+      projectId,
+      "2026-01",
+      undefined,
+      new Date("2026-01-10T09:00:00.000Z"),
+    );
+
+    expect((priorYears as any)._value).toEqual([2025, 2026]);
+    expect(savedViolations.map((item) => item.eventYear)).toEqual([2025, 2026]);
   });
 });

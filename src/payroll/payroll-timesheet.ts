@@ -448,7 +448,7 @@ export async function parseOvertimeTimeSheet(
     seen.add(identity);
     dates.forEach((workDate, index) => {
       const value = row.getCell(13 + index).value;
-      if (value === null && workDate > input.throughDate) return;
+      if (value === null || value === "") return;
       const symbol = value === 1 || value === 0 ? String(value) : value;
       if (!isSymbol(symbol))
         reject(rowNumber, `Invalid attendance symbol for ${workDate}`);

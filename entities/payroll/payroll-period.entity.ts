@@ -1,6 +1,9 @@
 import { CoreEntity } from "entities/core.entity";
 import { Project } from "entities/project.entity";
-import { PayrollPeriodStatus } from "src/payroll/payroll.types";
+import {
+  PayrollCalculationMode,
+  PayrollPeriodStatus,
+} from "src/payroll/payroll.types";
 import {
   Column,
   Entity,
@@ -18,6 +21,12 @@ export class PayrollPeriod extends CoreEntity {
   @Column({ type: "char", length: 7 }) month: string;
   @Column({ type: "date" }) startDate: string;
   @Column({ type: "date" }) endDate: string;
+  @Column({
+    type: "enum",
+    enum: PayrollCalculationMode,
+    default: PayrollCalculationMode.VIOLATION,
+  })
+  calculationMode: PayrollCalculationMode;
   @Column({
     type: "enum",
     enum: PayrollPeriodStatus,
