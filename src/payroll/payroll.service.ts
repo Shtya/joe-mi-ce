@@ -11,13 +11,19 @@ import {
   CreatePayrollLineDto,
   CreatePayrollPeriodDto,
   PayrollPeriodFilterDto,
+  PayrollTimeSheetImportDto,
   SalaryImportDto,
   ReplacePayrollViolationRulesDto,
   UpdatePayrollAdjustmentDto,
   UpdatePayrollLineDto,
   UpdatePayrollSettingsDto,
 } from "dto/payroll.dto";
-import { CheckIn, Journey } from "entities/all_plans.entity";
+import {
+  CheckIn,
+  Journey,
+  JourneyPlan,
+  JourneyStatus,
+} from "entities/all_plans.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { EmployeeSalary } from "entities/payroll/employee-salary.entity";
@@ -25,6 +31,7 @@ import { PayrollAdjustment } from "entities/payroll/payroll-adjustment.entity";
 import { PayrollLineViolation } from "entities/payroll/payroll-line-violation.entity";
 import { PayrollLine } from "entities/payroll/payroll-line.entity";
 import { PayrollOvertime } from "entities/payroll/payroll-overtime.entity";
+import { PayrollTimeSheetOverride } from "entities/payroll/payroll-timesheet-override.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
 import { PayrollViolationRule } from "entities/payroll/payroll-violation-rule.entity";
 import { PayrollViolation } from "entities/payroll/payroll-violation.entity";
@@ -43,6 +50,13 @@ import {
 import * as XLSX from "xlsx";
 import * as ExcelJS from "exceljs";
 import { DEFAULT_VIOLATION_RULES } from "./default-violation-policy";
+import {
+  createOvertimeTimeSheet,
+  parseOvertimeTimeSheet,
+  timeSheetDates,
+  TimeSheetEmployee,
+  TimeSheetAttendance,
+} from "./payroll-timesheet";
 import {
   calculateMinutesAfterShift,
   calculatePayrollViolation,
@@ -122,6 +136,279 @@ export class PayrollService {
     sheet.getCell("D2").numFmt = "#,##0.00";
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     return Buffer.from(await workbook.xlsx.writeBuffer());
+  }
+
+  private async requireOvertimeProject(projectId: string): Promise<Project> {
+    const project = await this.requireEnabledProject(projectId);
+    if (project.payrollCalculationMode !== PayrollCalculationMode.OVERTIME) {
+      throw new ConflictException("Time sheets require payroll overtime mode");
+    }
+    return project;
+  }
+
+  private async requireTimeSheetPeriod(projectId: string, month: string) {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+      throw new BadRequestException("month must use YYYY-MM format");
+    const period = await this.periodRepo.findOne({
+      where: { projectId, month },
+    });
+    if (!period)
+      throw new NotFoundException(
+        "Payroll period not found; sync the period before exporting or importing a time sheet",
+      );
+    return period;
+  }
+
+  /** Also used by scheduled report generation after payroll synchronization. */
+  async getOvertimeTimeSheet(
+    projectId: string,
+    month: string,
+    actor?: User,
+    throughDate = this.riyadhDate(),
+  ): Promise<Buffer> {
+    if (actor)
+      this.assertProjectPayrollAccess(
+        actor,
+        projectId,
+        EPermission.PAYROLL_READ,
+      );
+    await this.requireOvertimeProject(projectId);
+    const period = await this.requireTimeSheetPeriod(projectId, month);
+    const [
+      users,
+      salaries,
+      lines,
+      journeys,
+      plans,
+      vacations,
+      overrides,
+      overtime,
+    ] = await Promise.all([
+      this.userRepo.find({
+        where: { project_id: projectId },
+        relations: [
+          "branch",
+          "branch.city",
+          "branch.city.region",
+          "branch.chain",
+        ],
+        order: { name: "ASC", id: "ASC" },
+      }),
+      this.salaryRepo.find({
+        where: { projectId, effectiveFrom: LessThanOrEqual(period.endDate) },
+        order: { effectiveFrom: "DESC" },
+      }),
+      this.lineRepo.find({ where: { periodId: period.id } }),
+      this.journeyRepo.find({
+        where: {
+          projectId,
+          date: Between(period.startDate, period.endDate),
+          is_active: true,
+        },
+        relations: ["user", "shift", "checkin"],
+      }),
+      this.dataSource
+        .getRepository(JourneyPlan)
+        .find({ where: { projectId, is_active: true }, relations: ["user"] }),
+      this.vacationDateRepo.find({
+        where: {
+          date: Between(period.startDate, period.endDate),
+          vacation: {
+            overall_status: "approved",
+            user: { project_id: projectId },
+          },
+        },
+        relations: ["vacation", "vacation.user"],
+      }),
+      this.dataSource
+        .getRepository(PayrollTimeSheetOverride)
+        .find({ where: { projectId, periodId: period.id } }),
+      this.dataSource
+        .getRepository(PayrollOvertime)
+        .find({ where: { projectId, periodId: period.id } }),
+    ]);
+    const linesByUser = new Map(lines.map((line) => [line.userId, line]));
+    const salariesByUser = new Map<string, EmployeeSalary>();
+    for (const salary of salaries) {
+      if (
+        !salariesByUser.has(salary.userId) &&
+        (!salary.effectiveTo || salary.effectiveTo >= period.startDate)
+      )
+        salariesByUser.set(salary.userId, salary);
+    }
+    const attendanceByUser = new Map<
+      string,
+      Map<string, TimeSheetAttendance>
+    >();
+    const getDay = (userId: string, workDate: string): TimeSheetAttendance => {
+      let days = attendanceByUser.get(userId);
+      if (!days) {
+        days = new Map();
+        attendanceByUser.set(userId, days);
+      }
+      let day = days.get(workDate);
+      if (!day) {
+        day = { workDate };
+        days.set(workDate, day);
+      }
+      return day;
+    };
+    const scheduledDays = new Map<string, Set<string>>();
+    for (const plan of plans) {
+      if (!plan.user || !plan.days.length) continue;
+      const days = scheduledDays.get(plan.user.id) ?? new Set<string>();
+      plan.days.forEach((day) => days.add(day.toLowerCase()));
+      scheduledDays.set(plan.user.id, days);
+    }
+    for (const [userId, days] of scheduledDays) {
+      for (const date of timeSheetDates(period)) {
+        const weekday = new Date(`${date}T00:00:00Z`)
+          .toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" })
+          .toLowerCase();
+        if (!days.has(weekday)) getDay(userId, date).weeklyOff = true;
+      }
+    }
+    for (const journey of journeys) {
+      if (!journey.user) continue;
+      const day = getDay(journey.user.id, journey.date);
+      day.weeklyOff = false;
+      day.present ||=
+        Boolean(journey.checkin?.checkInTime) ||
+        [
+          JourneyStatus.PRESENT,
+          JourneyStatus.CLOSED,
+          JourneyStatus.UNPLANNED_PRESENT,
+          JourneyStatus.UNPLANNED_CLOSED,
+        ].includes(journey.status);
+      if (journey.checkin?.checkInTime && journey.shift) {
+        const variance = calculateShiftVariance({
+          journeyDate: journey.date,
+          shiftStartTime: journey.shift.startTime,
+          shiftEndTime: journey.shift.endTime,
+          checkInTime: journey.checkin.checkInTime,
+        });
+        day.lateMinutes = Math.max(day.lateMinutes ?? 0, variance.lateMinutes);
+      }
+    }
+    for (const vacation of vacations)
+      getDay(vacation.vacation.user.id, vacation.date).vacation = true;
+    const overridesByUser = new Map<string, PayrollTimeSheetOverride[]>();
+    for (const override of overrides) {
+      const values = overridesByUser.get(override.userId) ?? [];
+      values.push(override);
+      overridesByUser.set(override.userId, values);
+    }
+    const overtimeByUser = new Map<string, PayrollOvertime[]>();
+    for (const item of overtime) {
+      const values = overtimeByUser.get(item.userId) ?? [];
+      values.push(item);
+      overtimeByUser.set(item.userId, values);
+    }
+    const employees: TimeSheetEmployee[] = users.map((user) => {
+      const line = linesByUser.get(user.id);
+      return {
+        userId: user.id,
+        identity: user.national_id || user.username,
+        name: user.name || user.username,
+        mobile: user.mobile,
+        region: user.branch?.city?.region?.name,
+        city: user.branch?.city?.name,
+        chain: user.branch?.chain?.name,
+        store: user.branch?.name,
+        bankAccount: user.iban,
+        monthlySalary: Number(
+          line?.grossSalary ?? salariesByUser.get(user.id)?.monthlySalary ?? 0,
+        ),
+        attendance: [...(attendanceByUser.get(user.id)?.values() ?? [])],
+        overrides: overridesByUser.get(user.id),
+        overtime: (overtimeByUser.get(user.id) ?? []).map((item) => ({
+          workDate: item.workDate,
+          overtimeMinutes: item.overtimeMinutes,
+          amount: Number(item.amount),
+        })),
+        ...(line
+          ? {
+              deduction: Number(line.totalDeduction),
+              manualBonus: roundMoney(
+                Number(line.totalAddition) -
+                  Number(line.automaticOvertimeAddition ?? 0),
+              ),
+              netPay: Number(line.netPay),
+            }
+          : {}),
+      };
+    });
+    return createOvertimeTimeSheet({
+      projectId,
+      period,
+      throughDate,
+      employees,
+    });
+  }
+
+  async importOvertimeTimeSheet(
+    projectId: string,
+    file: Pick<Express.Multer.File, "buffer">,
+    dto: PayrollTimeSheetImportDto,
+    actor: User,
+    throughDate = this.riyadhDate(),
+  ) {
+    this.assertProjectPayrollAccess(
+      actor,
+      projectId,
+      EPermission.PAYROLL_MANAGE,
+    );
+    await this.requireOvertimeProject(projectId);
+    const period = await this.requireTimeSheetPeriod(projectId, dto.month);
+    this.assertPendingPeriod(period);
+    if (!file?.buffer?.length)
+      throw new BadRequestException("An XLSX workbook is required");
+    const users = await this.userRepo.find({
+      where: { project_id: projectId },
+    });
+    const parsed = await parseOvertimeTimeSheet({
+      buffer: file.buffer,
+      projectId,
+      period,
+      throughDate,
+      employees: users.map((user) => ({
+        userId: user.id,
+        identity: user.national_id || user.username,
+        name: user.name,
+        monthlySalary: 0,
+        attendance: [],
+        overtime: [],
+      })),
+    });
+    if (parsed.rejectedRows.length)
+      return { acceptedRows: [], rejectedRows: parsed.rejectedRows };
+    await this.dataSource.transaction(async (manager) => {
+      const locked = await manager.findOne(PayrollPeriod, {
+        where: { id: period.id, projectId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!locked) throw new NotFoundException("Payroll period not found");
+      this.assertPendingPeriod(locked);
+      if (
+        locked.startDate !== period.startDate ||
+        locked.endDate !== period.endDate
+      )
+        throw new ConflictException(
+          "Payroll period changed; download a new time sheet",
+        );
+      if (parsed.rows.length)
+        await manager.upsert(
+          PayrollTimeSheetOverride,
+          parsed.rows.map((row) => ({
+            ...row,
+            projectId,
+            periodId: period.id,
+            updatedById: actor.id,
+          })),
+          ["periodId", "userId", "workDate"],
+        );
+    });
+    return { acceptedRows: parsed.rows, rejectedRows: [] };
   }
 
   private assertProjectPayrollAccess(

@@ -8,6 +8,7 @@ import { PayrollAdjustment } from "entities/payroll/payroll-adjustment.entity";
 import { PayrollLineViolation } from "entities/payroll/payroll-line-violation.entity";
 import { PayrollLine } from "entities/payroll/payroll-line.entity";
 import { PayrollOvertime } from "entities/payroll/payroll-overtime.entity";
+import { PayrollTimeSheetOverride } from "entities/payroll/payroll-timesheet-override.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
 import { PayrollViolationRule } from "entities/payroll/payroll-violation-rule.entity";
 import { PayrollViolation } from "entities/payroll/payroll-violation.entity";
@@ -29,6 +30,7 @@ import { PayrollService } from "./payroll.service";
       PayrollPeriod,
       PayrollLine,
       PayrollOvertime,
+      PayrollTimeSheetOverride,
       PayrollLineViolation,
       Journey,
       CheckIn,

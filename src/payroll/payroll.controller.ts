@@ -22,6 +22,7 @@ import {
   CreatePayrollPeriodDto,
   PayrollMonthQueryDto,
   PayrollPeriodFilterDto,
+  PayrollTimeSheetImportDto,
   ReplacePayrollViolationRulesDto,
   SalaryImportDto,
   UpdatePayrollAdjustmentDto,
@@ -33,6 +34,7 @@ import { EPermission } from "enums/Permissions.enum";
 import { AuthGuard } from "src/auth/auth.guard";
 import { PayrollService } from "./payroll.service";
 import { Response } from "express";
+import { User } from "entities/user.entity";
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -105,6 +107,45 @@ export class PayrollController {
       file,
       req.user,
       dto,
+    );
+  }
+
+  @Get("payroll/my-project/time-sheet-template")
+  @Permissions(EPermission.PAYROLL_READ)
+  async getTokenProjectTimeSheet(
+    @Query() query: PayrollMonthQueryDto,
+    @Req() req: { user: User },
+    @Res() res: Response,
+  ) {
+    const buffer = await this.payrollService.getOvertimeTimeSheet(
+      this.tokenProjectId(req),
+      query.month,
+      req.user,
+    );
+    res.set({
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename=payroll-time-sheet-${query.month}.xlsx`,
+      "Content-Length": buffer.length,
+    });
+    res.end(buffer);
+  }
+
+  @Post("payroll/my-project/time-sheet-import")
+  @Permissions(EPermission.PAYROLL_MANAGE)
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
+  )
+  importTokenProjectTimeSheet(
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: PayrollTimeSheetImportDto,
+    @Req() req: { user: User },
+  ) {
+    return this.payrollService.importOvertimeTimeSheet(
+      this.tokenProjectId(req),
+      file,
+      dto,
+      req.user,
     );
   }
 
