@@ -428,11 +428,11 @@ export async function parseOvertimeTimeSheet(
   if (mappedIdentities.size !== members.size)
     reject(0, "Missing employee identity mapping in workbook metadata");
   const seen = new Set<string>();
-  let legendFound = false;
+  let legendRowNumber: number | undefined;
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber);
     if (row.getCell(1).value === "فهرس الرموز / Legend") {
-      legendFound = true;
+      legendRowNumber = rowNumber;
       break;
     }
     if (row.actualCellCount === 0) continue;
@@ -457,7 +457,35 @@ export async function parseOvertimeTimeSheet(
       else if (userId) rows.push({ userId, workDate, symbol });
     });
   }
-  if (!legendFound) reject(0, "The workbook legend is missing");
+  if (legendRowNumber === undefined)
+    reject(0, "The workbook legend is missing");
+  else {
+    const expectedLegend = [
+      ["فهرس الرموز / Legend", "فهرس الرموز / Legend", "فهرس الرموز / Legend"],
+      ...LEGEND,
+    ];
+    expectedLegend.forEach((expected, index) => {
+      const rowNumber = legendRowNumber + index;
+      const row = sheet.getRow(rowNumber);
+      const matches =
+        row.actualCellCount === expected.length &&
+        expected.every((value, column) => {
+          const actual = row.getCell(column + 1).value;
+          return (
+            (actual === 1 || actual === 0 ? String(actual) : actual) === value
+          );
+        });
+      if (!matches) reject(rowNumber, "Invalid workbook legend row");
+    });
+    for (
+      let rowNumber = legendRowNumber + expectedLegend.length;
+      rowNumber <= sheet.rowCount;
+      rowNumber++
+    ) {
+      if (sheet.getRow(rowNumber).actualCellCount > 0)
+        reject(rowNumber, "Unexpected populated row after the workbook legend");
+    }
+  }
   for (const identity of members.keys())
     if (!seen.has(identity))
       reject(0, `Missing employee identity: ${identity}`);

@@ -140,6 +140,17 @@ describe("overtime time sheet", () => {
     expect(result.rows).toHaveLength(30);
   });
 
+  it("accepts source-style numeric legend symbols and empty formatted trailing rows", async () => {
+    const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
+    const sheet = workbook.getWorksheet("September 26")!;
+    for (const address of ["A6", "A7", "A8"]) sheet.getCell(address).value = 1;
+    sheet.getCell("A9").value = 0;
+    sheet.getCell("A20").numFmt = "0";
+    const result = await parse(workbook);
+    expect(result.rejectedRows).toEqual([]);
+    expect(result.rows).toHaveLength(30);
+  });
+
   it.each(["missing", "version", "project", "period"])(
     "rejects %s metadata",
     async (kind) => {
@@ -195,6 +206,44 @@ describe("overtime time sheet", () => {
       ),
     ).toBe(true);
   });
+
+  it.each(["X", "1"])(
+    "rejects a duplicate employee appended after the legend with attendance %s",
+    async (symbol) => {
+      const workbook = await workbookFrom(
+        await createOvertimeTimeSheet(fixture),
+      );
+      const sheet = workbook.getWorksheet("September 26")!;
+      sheet.getRow(14).values = sheet.getRow(2).values;
+      sheet.getCell("M14").value = symbol;
+      const result = await parse(workbook);
+      expect(result.rejectedRows).toContainEqual({
+        rowNumber: 14,
+        reason: "Unexpected populated row after the workbook legend",
+      });
+      expect(result.rows).toEqual([]);
+    },
+  );
+
+  it.each(["description", "extra attendance", "missing row"])(
+    "rejects a malformed legend: %s",
+    async (change) => {
+      const workbook = await workbookFrom(
+        await createOvertimeTimeSheet(fixture),
+      );
+      const sheet = workbook.getWorksheet("September 26")!;
+      if (change === "description")
+        sheet.getCell("C8").value = "Changed description";
+      if (change === "extra attendance") sheet.getCell("M8").value = "1";
+      if (change === "missing row") sheet.getRow(8).values = [];
+      const result = await parse(workbook);
+      expect(result.rejectedRows).toContainEqual({
+        rowNumber: 8,
+        reason: "Invalid workbook legend row",
+      });
+      expect(result.rows).toEqual([]);
+    },
+  );
 
   it("never trusts metadata to authorize an employee from a different project", async () => {
     const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
@@ -333,21 +382,31 @@ describe("overtime time sheet service boundaries", () => {
     ).rejects.toThrow("overtime mode");
   });
 
-  it("saves no override when any row is invalid", async () => {
-    const { service, written, dataSource } = await createService();
-    const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
-    workbook.getWorksheet("September 26")!.getCell("M2").value = "X";
-    const result = await service.importOvertimeTimeSheet(
-      "project-1",
-      { buffer: Buffer.from(await workbook.xlsx.writeBuffer()) },
-      { month: "2026-09" },
-      actor,
-      "2026-09-24",
-    );
-    expect(result.rejectedRows).toHaveLength(1);
-    expect(written).toEqual([]);
-    expect(dataSource.transaction).not.toHaveBeenCalled();
-  });
+  it.each(["attendance", "trailing row"])(
+    "saves no override when the workbook contains invalid %s",
+    async (invalidPart) => {
+      const { service, written, dataSource } = await createService();
+      const workbook = await workbookFrom(
+        await createOvertimeTimeSheet(fixture),
+      );
+      const sheet = workbook.getWorksheet("September 26")!;
+      if (invalidPart === "attendance") sheet.getCell("M2").value = "X";
+      else {
+        sheet.getRow(14).values = sheet.getRow(2).values;
+        sheet.getCell("M14").value = "X";
+      }
+      const result = await service.importOvertimeTimeSheet(
+        "project-1",
+        { buffer: Buffer.from(await workbook.xlsx.writeBuffer()) },
+        { month: "2026-09" },
+        actor,
+        "2026-09-24",
+      );
+      expect(result.rejectedRows).toHaveLength(1);
+      expect(written).toEqual([]);
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    },
+  );
 
   it("atomically persists attendance overrides with actor and project scope", async () => {
     const { service, written } = await createService();
