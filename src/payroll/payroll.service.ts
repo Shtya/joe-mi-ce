@@ -64,6 +64,7 @@ import {
   roundMoney,
 } from "./payroll-calculator";
 import {
+  activePayrollMonth,
   calculateOvertimeAmount,
   resolvePayrollPeriod,
   validatePayrollCutoffDay,
@@ -344,6 +345,17 @@ export class PayrollService {
       throughDate,
       employees,
     });
+  }
+
+  /** Refreshes the active overtime period from source journeys for a daily report. */
+  async refreshDailyOvertimeTimeSheet(projectId: string, now = new Date()) {
+    const project = await this.requireOvertimeProject(projectId);
+    const throughDate = this.previousRiyadhBusinessDate(now);
+    const periodDate = new Date(`${throughDate}T12:00:00.000Z`);
+    const month = activePayrollMonth(periodDate, project.payrollCutoffDay ?? 1);
+
+    await this.syncPeriod(projectId, month, undefined, periodDate);
+    return this.getOvertimeTimeSheet(projectId, month, undefined, throughDate);
   }
 
   async importOvertimeTimeSheet(
@@ -718,6 +730,14 @@ export class PayrollService {
       month: "2-digit",
       day: "2-digit",
     }).format(now);
+  }
+
+  private previousRiyadhBusinessDate(now = new Date()): string {
+    const date = new Date(`${this.riyadhDate(now)}T12:00:00.000Z`);
+    do {
+      date.setUTCDate(date.getUTCDate() - 1);
+    } while ([5, 6].includes(date.getUTCDay()));
+    return date.toISOString().slice(0, 10);
   }
 
   private periodDates(month: string, now = new Date(), cutoffDay = 1) {

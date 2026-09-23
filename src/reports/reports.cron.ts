@@ -2,6 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { ReportsService } from "./reports.service";
 import { MailService } from "../mail/mail.service";
+import { PayrollService } from "../payroll/payroll.service";
+import { PayrollCalculationMode } from "../payroll/payroll.types";
 import * as path from "path";
 
 @Injectable()
@@ -14,6 +16,7 @@ export class ReportsCron {
   constructor(
     private readonly reportsService: ReportsService,
     private readonly mailService: MailService,
+    private readonly payrollService: PayrollService,
   ) {}
 
   @Cron("0 5,8 * * *", {
@@ -129,14 +132,34 @@ export class ReportsCron {
     this.logger.log("Starting Gatemea report cron job (Daily Yesterday)");
 
     try {
-      const filePath = await this.reportsService.generateGatemeaReport();
-      if (!filePath) {
+      const project = await this.reportsService.getGatemeaProject();
+      let overtimeTimeSheet: Buffer | undefined;
+      if (
+        project?.payrollEnabled &&
+        project.payrollCalculationMode === PayrollCalculationMode.OVERTIME
+      ) {
+        overtimeTimeSheet =
+          await this.payrollService.refreshDailyOvertimeTimeSheet(
+            project.id,
+            new Date(),
+          );
+      }
+
+      const filePath = overtimeTimeSheet
+        ? null
+        : await this.reportsService.generateGatemeaReport();
+      if (!overtimeTimeSheet && !filePath) {
         this.logger.warn("Gatemea report generation skipped or failed.");
         return;
       }
-      this.logger.log(`Gatemea report generated successfully at: ${filePath}`);
+      if (filePath)
+        this.logger.log(
+          `Gatemea report generated successfully at: ${filePath}`,
+        );
 
-      const filename = path.basename(filePath);
+      const filename = overtimeTimeSheet
+        ? "gatemea_overtime_timesheet.xlsx"
+        : path.basename(filePath!);
       const recipient = "abdullah.almeri@gatemea.com";
       const subject = "Gatemea Report Six Seven";
       const ccRecipients =
@@ -190,15 +213,31 @@ export class ReportsCron {
 </body>
 </html>`;
 
-      const emailSent = await this.mailService.sendReportEmail(
-        filePath,
-        filename,
-        recipient,
-        subject,
-        textBody,
-        emailHtml,
-        ccRecipients,
-      );
+      const emailSent = overtimeTimeSheet
+        ? await this.mailService.sendEmail({
+            toEmail: recipient,
+            subject,
+            text: textBody,
+            html: emailHtml,
+            ccEmail: ccRecipients,
+            attachments: [
+              {
+                filename,
+                content: overtimeTimeSheet,
+                contentType:
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              },
+            ],
+          })
+        : await this.mailService.sendReportEmail(
+            filePath!,
+            filename,
+            recipient,
+            subject,
+            textBody,
+            emailHtml,
+            ccRecipients,
+          );
 
       if (emailSent) {
         this.logger.log(

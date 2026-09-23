@@ -13,6 +13,7 @@ import { Stock } from "entities/products/stock.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
+import { PayrollModule } from "../payroll/payroll.module";
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
       PayrollPeriod,
     ]),
     MailModule,
+    PayrollModule,
   ],
   controllers: [ReportsController],
   providers: [ReportsService, ReportsCron],

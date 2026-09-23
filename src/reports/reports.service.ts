@@ -66,6 +66,13 @@ export class ReportsService {
     private readonly payrollPeriodRepository: Repository<PayrollPeriod>,
   ) {}
 
+  async getGatemeaProject(): Promise<Project | null> {
+    return this.projectRepository.findOne({
+      where: { name: "gatemea" },
+      relations: ["chains"],
+    });
+  }
+
   async generateMonthlyReport(
     givenDate?: string | Date,
     options?: MonthlyReportOptions,
@@ -1461,10 +1468,7 @@ export class ReportsService {
     this.logger.log("Started generating GATEMEA Daily report...");
 
     const projectName = "gatemea";
-    const project = await this.projectRepository.findOne({
-      where: { name: projectName },
-      relations: ["chains"],
-    });
+    const project = await this.getGatemeaProject();
     const projectId = project?.id;
 
     if (!projectId) {
