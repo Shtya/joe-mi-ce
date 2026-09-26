@@ -14,12 +14,20 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { RecoveryService } from "./recovery.service";
 import { RecoveryReportType } from "./recovery.types";
 
-const VALID_TYPES: RecoveryReportType[] = ["attendance", "branches", "stock", "sales", "monthly"];
+const VALID_TYPES: RecoveryReportType[] = [
+  "attendance",
+  "branches",
+  "stock",
+  "sales",
+  "monthly",
+  "mappings",
+  "cleanup",
+];
 
 /**
  * Database recovery endpoint.
  *
- * POST /recovery/import?type=attendance|branches|stock|monthly&project=gatemea&dryRun=true
+ * POST /recovery/import?type=attendance|branches|stock|sales|monthly|mappings|cleanup&project=gatemea&dryRun=true
  * Multipart field: file (the Excel report).
  *
  * Imports run asynchronously to avoid gateway timeouts on large reports.
@@ -52,7 +60,9 @@ export class RecoveryController {
       throw new UnauthorizedException("invalid x-recovery-token");
     }
     if (!file?.buffer?.length) {
-      throw new BadRequestException("Excel file is required (multipart field 'file')");
+      throw new BadRequestException(
+        "Excel file is required (multipart field 'file')",
+      );
     }
     if (!VALID_TYPES.includes(type)) {
       throw new BadRequestException(

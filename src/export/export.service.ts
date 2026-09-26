@@ -782,6 +782,7 @@ export class ExportService {
         // Explicitly extract Branch, Chain, City
         if (item.branch) {
           flattened["branch"] = item.branch.name || "-";
+          flattened["branch code"] = item.branch.code || "-";
           if (item.branch.chain) {
             flattened["chain"] = item.branch.chain.name || "-";
           }
@@ -805,6 +806,8 @@ export class ExportService {
           flattened["product model"] =
             item.product.model || item.product.name || "-";
           flattened["product name"] = item.product.name || "-";
+          flattened["saco sku"] = item.product.sacoSku || "-";
+          flattened["extra sku"] = item.product.extraSku || "-";
         }
 
         // Price comes from the Sale itself, not from the Product
@@ -911,10 +914,13 @@ export class ExportService {
           "city name",
           "chain",
           "branch",
+          "branch code",
           "brand",
           "categories",
           "product name",
           "product model",
+          "saco sku",
+          "extra sku",
           "price",
           "total amount",
           "quantity",
@@ -940,6 +946,22 @@ export class ExportService {
         // Replace flattened with saleOrdered
         Object.keys(flattened).forEach((key) => delete flattened[key]);
         Object.assign(flattened, saleOrdered);
+      }
+
+      if (mainEntityLower === "stock") {
+        const stockOrdered = {
+          branch: item.branch?.name || "-",
+          "branch code": item.branch?.code || "-",
+          chain: item.branch?.chain?.name || "-",
+          "product name": item.product?.name || "-",
+          "product model": item.product?.model || item.product?.name || "-",
+          "saco sku": item.product?.sacoSku || "-",
+          "extra sku": item.product?.extraSku || "-",
+          quantity: item.quantity ?? "-",
+        };
+
+        Object.keys(flattened).forEach((key) => delete flattened[key]);
+        Object.assign(flattened, stockOrdered);
       }
 
       // Also ensure ANY field that is a date string is formatted correctly

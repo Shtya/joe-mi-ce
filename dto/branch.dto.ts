@@ -1,22 +1,26 @@
 // dto/create-branch.dto.ts
-import { Type } from 'class-transformer';
+import { Type } from "class-transformer";
 
+import { PartialType } from "@nestjs/mapped-types";
+import { SalesTargetType } from "entities/sales-target.entity";
 
-import { PartialType } from '@nestjs/mapped-types';
-import { SalesTargetType } from 'entities/sales-target.entity';
-
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from "class-validator";
 
 export class GeoDto {
-
   @IsNumber()
   lat: number;
 
   @IsNumber()
   lng: number;
 }
-
-
 
 export class AssignPromoterDto {
   @IsUUID()
@@ -28,9 +32,12 @@ export class CreateBranchDto {
   @IsNotEmpty()
   name: string;
 
+  @IsString()
+  @IsOptional()
+  code?: string;
+
   @IsNotEmpty()
   geo: any;
-
 
   @IsNumber()
   @IsOptional()
@@ -47,7 +54,7 @@ export class CreateBranchDto {
   @IsOptional()
   chainId?: string;
 
-   @IsString()
+  @IsString()
   @IsOptional()
   supervisorId?: string;
 

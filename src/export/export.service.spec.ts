@@ -104,6 +104,40 @@ describe("ExportService", () => {
   });
 
   describe("cleanDataForExport - General Journey and Sale Cleanup", () => {
+    it("exports stock with explicit branch code and chain-specific SKU columns", () => {
+      const result = (service as any).cleanDataForExport(
+        [
+          {
+            quantity: 4,
+            branch: {
+              name: "Saco Takhassusi",
+              code: "1103",
+              chain: { name: "SACO" },
+            },
+            product: {
+              name: "T90",
+              model: "DEX95",
+              sku: "DEX95",
+              sacoSku: "Not ACTV",
+              extraSku: "100523090",
+            },
+          },
+        ],
+        "stock",
+      );
+
+      expect(result[0]).toEqual({
+        branch: "Saco Takhassusi",
+        "branch code": "1103",
+        chain: "SACO",
+        "product name": "T90",
+        "product model": "DEX95",
+        "saco sku": "Not ACTV",
+        "extra sku": "100523090",
+        quantity: 4,
+      });
+    });
+
     it("should aggressively clean metadata fields for journeys", () => {
       const sampleData = [
         {
@@ -153,13 +187,17 @@ describe("ExportService", () => {
           user: { name: "John", username: "john_d", mobile: "0551234567" },
           branch: {
             name: "Al Riyadh",
+            code: "1103",
             chain: { name: "Jarir" },
             city: { name: "Riyadh" },
           },
           product: {
             brand: { name: "Samsung" },
             category: { name: "Electronics" },
+            name: "Galaxy S24",
             model: "S24",
+            sacoSku: "112233",
+            extraSku: "100112233",
           },
         },
       ];
@@ -184,9 +222,13 @@ describe("ExportService", () => {
       expect(branchVal).toBe("Al Riyadh");
       expect(chainVal).toBe("Jarir");
       expect(cleaned["city name"]).toBe("Riyadh");
+      expect(cleaned["branch code"]).toBe("1103");
       expect(cleaned["brand"]).toBe("Samsung");
       expect(cleaned["categories"]).toBe("Electronics");
+      expect(cleaned["product name"]).toBe("Galaxy S24");
       expect(cleaned["product model"]).toBe("S24");
+      expect(cleaned["saco sku"]).toBe("112233");
+      expect(cleaned["extra sku"]).toBe("100112233");
       expect(cleaned["price"]).toBe(150);
       expect(cleaned["total amount"]).toBe(300);
       expect(cleaned["quantity"]).toBe(2);

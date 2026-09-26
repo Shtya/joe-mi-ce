@@ -1,19 +1,28 @@
-import { PartialType } from '@nestjs/mapped-types';
-import { IsString, IsNotEmpty, IsOptional, IsNumber, IsBoolean, IsArray, ValidateNested, IsUUID, Min, IsPositive } from 'class-validator';
-import { Type } from 'class-transformer';
+import { PartialType } from "@nestjs/mapped-types";
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsNumber,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsUUID,
+  Min,
+  IsPositive,
+} from "class-validator";
+import { Type } from "class-transformer";
 
 export class StockDto {
   @IsOptional()
   @IsUUID()
   branch_id?: string;
 
-
   @IsOptional()
   all_branches?: boolean;
 
   // Add validation to ensure either branch_id OR all_branches is provided
   constructor() {
-
     // You can add custom validation decorators if needed
   }
 }
@@ -43,6 +52,14 @@ export class CreateProductDto {
   @IsOptional()
   @IsString()
   sku?: string;
+
+  @IsOptional()
+  @IsString()
+  sacoSku?: string;
+
+  @IsOptional()
+  @IsString()
+  extraSku?: string;
 
   @IsOptional()
   @IsString()
@@ -83,10 +100,14 @@ export function ValidateStock() {
 
       for (const stock of value) {
         if (!stock.all_branches && !stock.branch_id) {
-          throw new Error('Either branch_id must be provided or all_branches must be true');
+          throw new Error(
+            "Either branch_id must be provided or all_branches must be true",
+          );
         }
         if (stock.all_branches && stock.branch_id) {
-          throw new Error('Cannot specify both branch_id and all_branches=true');
+          throw new Error(
+            "Cannot specify both branch_id and all_branches=true",
+          );
         }
       }
       return true;
@@ -103,7 +124,6 @@ export class GetProductsByBranchDto {
   @IsNotEmpty()
   branch_id: string;
 }
-
 
 export class ImportProductRowDto {
   @IsString()
@@ -132,18 +152,26 @@ export class ImportProductRowDto {
 
   @IsOptional()
   @IsString()
+  sacoSku?: string;
+
+  @IsOptional()
+  @IsString()
+  extraSku?: string;
+
+  @IsOptional()
+  @IsString()
   image_url?: string;
 
-    @IsOptional()
+  @IsOptional()
   @IsString()
   device_name?: string;
   @IsOptional()
   @IsBoolean()
   is_high_priority?: boolean;
 
- @IsOptional()
+  @IsOptional()
   @IsBoolean()
-  product_priority?:boolean
+  product_priority?: boolean;
   @IsString()
   @IsNotEmpty()
   category_name: string;

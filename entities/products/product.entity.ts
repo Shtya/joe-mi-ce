@@ -1,29 +1,38 @@
 // product.entity.ts
-import { Entity, Column, OneToMany, Index, JoinColumn, ManyToOne, Unique, JoinTable, ManyToMany } from 'typeorm';
-import { Stock } from './stock.entity';
-import { Sale } from './sale.entity';
-import { Brand } from './brand.entity';
-import { Category } from './category.entity';
-import { CoreEntity } from 'entities/core.entity';
-import { Project } from 'entities/project.entity';
-import { Audit } from 'entities/audit.entity';
-import { Branch } from 'entities/branch.entity';
+import {
+  Entity,
+  Column,
+  OneToMany,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  Unique,
+  JoinTable,
+  ManyToMany,
+} from "typeorm";
+import { Stock } from "./stock.entity";
+import { Sale } from "./sale.entity";
+import { Brand } from "./brand.entity";
+import { Category } from "./category.entity";
+import { CoreEntity } from "entities/core.entity";
+import { Project } from "entities/project.entity";
+import { Audit } from "entities/audit.entity";
+import { Branch } from "entities/branch.entity";
 
-@Entity('products')
-@Index(['brand', 'category'])
-@Unique(['name', 'project_id'])
-
+@Entity("products")
+@Index(["brand", "category"])
+@Unique(["name", "project_id"])
 export class Product extends CoreEntity {
   @Column()
   name: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: "text", nullable: true })
   description: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
+  @Column({ type: "decimal", precision: 10, scale: 2, nullable: true })
   price: number;
 
-  @Column({ type: 'decimal', precision: 5, scale: 2, default: 0 })
+  @Column({ type: "decimal", precision: 5, scale: 2, default: 0 })
   discount: number; // ✅ نسبة الخصم من 0 إلى 100
 
   @Column({ nullable: true })
@@ -31,6 +40,12 @@ export class Product extends CoreEntity {
 
   @Column({ nullable: true })
   sku: string;
+
+  @Column({ name: "saco_sku", nullable: true })
+  sacoSku: string;
+
+  @Column({ name: "extra_sku", nullable: true })
+  extraSku: string;
 
   @Column({ nullable: true })
   image_url: string;
@@ -41,34 +56,34 @@ export class Product extends CoreEntity {
   @Column({ default: true })
   is_active: boolean;
 
-  @ManyToOne(() => Project, project => project.products)
-  @JoinColumn({ name: 'project_id' })
+  @ManyToOne(() => Project, (project) => project.products)
+  @JoinColumn({ name: "project_id" })
   project: Project;
 
   @Column()
   project_id: string;
 
-  @ManyToOne(() => Brand, brand => brand.products)
-  @JoinColumn({ name: 'brand_id' })
+  @ManyToOne(() => Brand, (brand) => brand.products)
+  @JoinColumn({ name: "brand_id" })
   brand: Brand;
 
-  @ManyToOne(() => Category, category => category.products)
-  @JoinColumn({ name: 'category_id' })
+  @ManyToOne(() => Category, (category) => category.products)
+  @JoinColumn({ name: "category_id" })
   category: Category;
 
-  @OneToMany(() => Stock, stock => stock.product)
+  @OneToMany(() => Stock, (stock) => stock.product)
   stock: Stock[];
 
-  @OneToMany(() => Sale, sale => sale.product)
+  @OneToMany(() => Sale, (sale) => sale.product)
   sales: Sale[];
 
-  @OneToMany(() => Audit, audit => audit.branch)
+  @OneToMany(() => Audit, (audit) => audit.branch)
   audits: Audit[];
   @ManyToMany(() => Branch)
   @JoinTable({
-    name: 'product_branches',
-    joinColumn: { name: 'product_id', referencedColumnName: 'id' },
-    inverseJoinColumn: { name: 'branch_id', referencedColumnName: 'id' }
+    name: "product_branches",
+    joinColumn: { name: "product_id", referencedColumnName: "id" },
+    inverseJoinColumn: { name: "branch_id", referencedColumnName: "id" },
   })
   branches: Branch[];
   origin_country: string;

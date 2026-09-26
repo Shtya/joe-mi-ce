@@ -167,21 +167,35 @@ export class RecoveryService {
         );
       }
 
-      const ctx = new RecoveryContext(manager, project, push);
-      await ctx.init();
-
-      if (type === "attendance") {
-        await this.importAttendance(wb, ctx);
-      } else if (type === "branches") {
-        await this.importBranches(wb, ctx);
-      } else if (type === "stock") {
-        await this.importStock(wb, ctx, params.saleDate);
-      } else if (type === "sales") {
-        await this.importSales(wb, ctx);
-      } else if (type === "monthly") {
-        await this.importMonthly(wb, ctx);
+      if (type === "mappings") {
+        await this.importGatemeaReportMappings(
+          wb,
+          manager,
+          project,
+          dryRun,
+          push,
+        );
+      } else if (type === "cleanup") {
+        await this.cleanupGatemeaDuplicates(wb, manager, project, dryRun, push);
       } else {
-        throw new BadRequestException(`Unknown recovery report type '${type}'`);
+        const ctx = new RecoveryContext(manager, project, push);
+        await ctx.init();
+
+        if (type === "attendance") {
+          await this.importAttendance(wb, ctx);
+        } else if (type === "branches") {
+          await this.importBranches(wb, ctx);
+        } else if (type === "stock") {
+          await this.importStock(wb, ctx, params.saleDate);
+        } else if (type === "sales") {
+          await this.importSales(wb, ctx);
+        } else if (type === "monthly") {
+          await this.importMonthly(wb, ctx);
+        } else {
+          throw new BadRequestException(
+            `Unknown recovery report type '${type}'`,
+          );
+        }
       }
 
       if (dryRun) {
@@ -205,6 +219,351 @@ export class RecoveryService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  // ------------------------------------------------------- report mappings
+
+  private async importGatemeaReportMappings(
+    wb: XLSX.WorkBook,
+    manager: EntityManager,
+    project: Project,
+    dryRun: boolean,
+    push: (row: RecoveryRowResult) => void,
+  ) {
+    const itemSheet = wb.Sheets["Sheet1"];
+    const storeSheet = wb.Sheets["Store Name "];
+    if (!itemSheet || !storeSheet) {
+      throw new BadRequestException(
+        `Workbook must contain 'Sheet1' and 'Store Name ' worksheets. Available sheets: ${wb.SheetNames.join(", ")}.`,
+      );
+    }
+
+    const itemRows = XLSX.utils.sheet_to_json<any[]>(itemSheet, {
+      header: 1,
+      defval: null,
+      raw: true,
+    });
+    const storeRows = XLSX.utils.sheet_to_json<any[]>(storeSheet, {
+      header: 1,
+      defval: null,
+      raw: true,
+    });
+    const productRepo = manager.getRepository(Product);
+    const branchRepo = manager.getRepository(Branch);
+    const products = await productRepo.find({
+      where: { project_id: project.id },
+    });
+    const branches = await branchRepo.find({
+      where: { project: { id: project.id } } as any,
+    });
+    const productsByName = new Map(
+      products.map((product) => [mappingKey(product.name), product]),
+    );
+    const branchesByName = new Map(
+      branches.map((branch) => [mappingKey(branch.name), branch]),
+    );
+    const seenProducts = new Set<string>();
+    const seenBranches = new Set<string>();
+
+    for (let index = 2; index < itemRows.length; index++) {
+      const row = itemRows[index];
+      const name = norm(row?.[1]);
+      if (!name) continue;
+      const key = mappingKey(name);
+      if (seenProducts.has(key)) {
+        push({
+          row: index + 1,
+          sheet: "Sheet1",
+          entity: "products",
+          action: "DUPLICATE",
+          confidence: "CONFIRMED",
+          reason: "duplicate system item name in the uploaded workbook",
+          key: `product=${name}`,
+        });
+        continue;
+      }
+      seenProducts.add(key);
+
+      const product = productsByName.get(key);
+      if (!product) {
+        push({
+          row: index + 1,
+          sheet: "Sheet1",
+          entity: "products",
+          action: "UNRESOLVED",
+          confidence: "UNRESOLVED",
+          reason: "product does not exist in the selected project",
+          key: `product=${name}`,
+        });
+        continue;
+      }
+
+      const model = norm(row?.[4]);
+      const sacoSku = norm(row?.[5]);
+      const extraSku = norm(row?.[6]);
+      const changed =
+        product.model !== model ||
+        product.sacoSku !== sacoSku ||
+        product.extraSku !== extraSku;
+      if (changed && !dryRun) {
+        product.model = model;
+        product.sacoSku = sacoSku;
+        product.extraSku = extraSku;
+        await productRepo.save(product);
+      }
+      push({
+        row: index + 1,
+        sheet: "Sheet1",
+        entity: "products",
+        action: changed ? "UPDATED" : "EXISTING",
+        confidence: "CONFIRMED",
+        reason: changed
+          ? "model, Saco SKU, or Extra SKU differs from the workbook"
+          : undefined,
+        key: `product=${name}`,
+        ids: { productId: product.id },
+      });
+    }
+
+    for (let index = 1; index < storeRows.length; index++) {
+      const row = storeRows[index];
+      const name = norm(row?.[1]);
+      const code = norm(row?.[5]);
+      if (!name || !code) continue;
+      const key = mappingKey(name);
+      if (seenBranches.has(key)) {
+        push({
+          row: index + 1,
+          sheet: "Store Name ",
+          entity: "branches",
+          action: "DUPLICATE",
+          confidence: "CONFIRMED",
+          reason: "duplicate branch name in the uploaded workbook",
+          key: `branch=${name}`,
+        });
+        continue;
+      }
+      seenBranches.add(key);
+
+      const branch = branchesByName.get(key);
+      if (!branch) {
+        push({
+          row: index + 1,
+          sheet: "Store Name ",
+          entity: "branches",
+          action: "UNRESOLVED",
+          confidence: "UNRESOLVED",
+          reason: "branch does not exist in the selected project",
+          key: `branch=${name}`,
+        });
+        continue;
+      }
+
+      const changed = branch.code !== code;
+      if (changed && !dryRun) {
+        branch.code = code;
+        await branchRepo.save(branch);
+      }
+      push({
+        row: index + 1,
+        sheet: "Store Name ",
+        entity: "branches",
+        action: changed ? "UPDATED" : "EXISTING",
+        confidence: "CONFIRMED",
+        reason: changed ? "branch code differs from the workbook" : undefined,
+        key: `branch=${name}`,
+        ids: { branchId: branch.id },
+      });
+    }
+  }
+
+  private async cleanupGatemeaDuplicates(
+    wb: XLSX.WorkBook,
+    manager: EntityManager,
+    project: Project,
+    dryRun: boolean,
+    push: (row: RecoveryRowResult) => void,
+  ) {
+    const storeSheet = wb.Sheets["Store Name "];
+    if (!storeSheet) {
+      throw new BadRequestException(
+        "Workbook must contain the 'Store Name ' worksheet.",
+      );
+    }
+    const storeRows = XLSX.utils.sheet_to_json<any[]>(storeSheet, {
+      header: 1,
+      defval: null,
+      raw: true,
+    });
+    const canonicalByCode = new Map<string, string>();
+    const branchNamesByCode = new Map<string, string[]>();
+    for (let index = 1; index < storeRows.length; index++) {
+      const name = norm(storeRows[index]?.[1]);
+      const code = norm(storeRows[index]?.[5]);
+      if (!name || !code) continue;
+      if (!canonicalByCode.has(code)) canonicalByCode.set(code, name);
+      branchNamesByCode.set(code, [
+        ...(branchNamesByCode.get(code) ?? []),
+        name,
+      ]);
+    }
+
+    const branchRepo = manager.getRepository(Branch);
+    const productRepo = manager.getRepository(Product);
+    const branches = await branchRepo.find({
+      where: { project: { id: project.id } } as any,
+    });
+    const products = await productRepo.find({
+      where: { project_id: project.id },
+    });
+    const branchesByName = new Map(
+      branches.map((branch) => [mappingKey(branch.name), branch]),
+    );
+
+    for (const [code, canonicalName] of canonicalByCode) {
+      const canonical = branchesByName.get(mappingKey(canonicalName));
+      if (!canonical) continue;
+      const duplicateNames = new Set(
+        (branchNamesByCode.get(code) ?? []).map(mappingKey),
+      );
+      const duplicates = branches.filter(
+        (branch) =>
+          branch.id !== canonical.id &&
+          duplicateNames.has(mappingKey(branch.name)),
+      );
+      for (const duplicate of duplicates) {
+        if (!dryRun)
+          await this.mergeBranchInto(manager, canonical.id, duplicate.id);
+        push({
+          row: 0,
+          sheet: "Store Name ",
+          entity: "branches",
+          action: "UPDATED",
+          confidence: "CONFIRMED",
+          reason: `merged duplicate branch into ${canonical.name}; stock quantities are summed`,
+          key: `branch=${duplicate.name} -> ${canonical.name}`,
+          ids: { branchId: canonical.id },
+        });
+      }
+    }
+
+    const productsByName = new Map<string, Product[]>();
+    for (const product of products) {
+      const key = mappingKey(product.name);
+      productsByName.set(key, [...(productsByName.get(key) ?? []), product]);
+    }
+    for (const duplicates of productsByName.values()) {
+      if (duplicates.length < 2) continue;
+      const [canonical, ...others] = duplicates;
+      for (const duplicate of others) {
+        if (!dryRun)
+          await this.mergeProductInto(manager, canonical.id, duplicate.id);
+        push({
+          row: 0,
+          sheet: "Sheet1",
+          entity: "products",
+          action: "UPDATED",
+          confidence: "CONFIRMED",
+          reason: `merged duplicate product into ${canonical.name}; stock quantities are summed`,
+          key: `product=${duplicate.name} -> ${canonical.name}`,
+          ids: { productId: canonical.id },
+        });
+      }
+    }
+
+    for (const branch of branches.filter((item) =>
+      /test|roaming/i.test(item.name),
+    )) {
+      if (!dryRun) await this.deleteTestBranch(manager, branch.id);
+      push({
+        row: 0,
+        sheet: "Store Name ",
+        entity: "branches",
+        action: "UPDATED",
+        confidence: "CONFIRMED",
+        reason: "removed test or roaming branch and its dependent test data",
+        key: `branch=${branch.name}`,
+      });
+    }
+  }
+
+  private async mergeBranchInto(
+    manager: EntityManager,
+    targetId: string,
+    sourceId: string,
+  ) {
+    await manager.query(
+      "UPDATE stocks t SET quantity = t.quantity + s.quantity FROM stocks s WHERE s.branch_id = $2 AND t.branch_id = $1 AND t.product_id = s.product_id",
+      [targetId, sourceId],
+    );
+    await manager.query(
+      "DELETE FROM stocks s WHERE s.branch_id = $2 AND EXISTS (SELECT 1 FROM stocks t WHERE t.branch_id = $1 AND t.product_id = s.product_id)",
+      [targetId, sourceId],
+    );
+    await manager.query(
+      "UPDATE stocks SET branch_id = $1 WHERE branch_id = $2",
+      [targetId, sourceId],
+    );
+    for (const table of ["journeys", "journey_plans", "sale", "users"]) {
+      await manager.query(
+        `UPDATE ${table} SET "branchId" = $1 WHERE "branchId" = $2`,
+        [targetId, sourceId],
+      );
+    }
+    await manager.query(
+      "INSERT INTO product_branches (product_id, branch_id) SELECT product_id, $1 FROM product_branches WHERE branch_id = $2 ON CONFLICT DO NOTHING",
+      [targetId, sourceId],
+    );
+    await manager.query("DELETE FROM product_branches WHERE branch_id = $1", [
+      sourceId,
+    ]);
+    await manager.getRepository(Branch).softDelete(sourceId);
+  }
+
+  private async mergeProductInto(
+    manager: EntityManager,
+    targetId: string,
+    sourceId: string,
+  ) {
+    await manager.query(
+      "UPDATE stocks t SET quantity = t.quantity + s.quantity FROM stocks s WHERE s.product_id = $2 AND t.product_id = $1 AND t.branch_id = s.branch_id",
+      [targetId, sourceId],
+    );
+    await manager.query(
+      "DELETE FROM stocks s WHERE s.product_id = $2 AND EXISTS (SELECT 1 FROM stocks t WHERE t.product_id = $1 AND t.branch_id = s.branch_id)",
+      [targetId, sourceId],
+    );
+    await manager.query(
+      "UPDATE stocks SET product_id = $1 WHERE product_id = $2",
+      [targetId, sourceId],
+    );
+    await manager.query(
+      'UPDATE sale SET "productId" = $1 WHERE "productId" = $2',
+      [targetId, sourceId],
+    );
+    await manager.query(
+      "INSERT INTO product_branches (product_id, branch_id) SELECT $1, branch_id FROM product_branches WHERE product_id = $2 ON CONFLICT DO NOTHING",
+      [targetId, sourceId],
+    );
+    await manager.query("DELETE FROM product_branches WHERE product_id = $1", [
+      sourceId,
+    ]);
+    await manager.getRepository(Product).softDelete(sourceId);
+  }
+
+  private async deleteTestBranch(manager: EntityManager, branchId: string) {
+    await manager.query("DELETE FROM stocks WHERE branch_id = $1", [branchId]);
+    await manager.query('DELETE FROM sale WHERE "branchId" = $1', [branchId]);
+    await manager.query('DELETE FROM journeys WHERE "branchId" = $1', [
+      branchId,
+    ]);
+    await manager.query('DELETE FROM journey_plans WHERE "branchId" = $1', [
+      branchId,
+    ]);
+    await manager.query("DELETE FROM product_branches WHERE branch_id = $1", [
+      branchId,
+    ]);
+    await manager.getRepository(Branch).softDelete(branchId);
   }
 
   // ---------------------------------------------------------- attendance
@@ -316,10 +675,22 @@ export class RecoveryService {
       });
       return;
     }
-    const shift = await ctx.getOrCreateShift(shiftStart, shiftEnd, i, sheetName, branchProject);
+    const shift = await ctx.getOrCreateShift(
+      shiftStart,
+      shiftEnd,
+      i,
+      sheetName,
+      branchProject,
+    );
 
     // --- journey plan (minimal reconstruction, inactive so cron ignores it)
-    const plan = await ctx.getOrCreatePlan(user.id, branch.id, shift.id, date, branchProject.id);
+    const plan = await ctx.getOrCreatePlan(
+      user.id,
+      branch.id,
+      shift.id,
+      date,
+      branchProject.id,
+    );
 
     const journey = await ctx.upsertJourney({
       userId: user.id,
@@ -393,7 +764,15 @@ export class RecoveryService {
         continue;
       }
 
-      const branch = (await ctx.getOrCreateBranch(branchName, chainName, cityName, i, "Branches")).branch;
+      const branch = (
+        await ctx.getOrCreateBranch(
+          branchName,
+          chainName,
+          cityName,
+          i,
+          "Branches",
+        )
+      ).branch;
       if (!branch) continue;
 
       // --- update branch attributes from the export
@@ -423,7 +802,10 @@ export class RecoveryService {
         changed = true;
       }
       const targetAmount = toNum(r["Defaultsalestargetamount"]);
-      if (targetAmount != null && +(branch.defaultSalesTargetAmount ?? -1) !== targetAmount) {
+      if (
+        targetAmount != null &&
+        +(branch.defaultSalesTargetAmount ?? -1) !== targetAmount
+      ) {
         branch.defaultSalesTargetAmount = targetAmount;
         changed = true;
       }
@@ -470,7 +852,9 @@ export class RecoveryService {
       }
       if (
         mode &&
-        Object.values(BrandAssignmentMode).includes(mode as BrandAssignmentMode) &&
+        Object.values(BrandAssignmentMode).includes(
+          mode as BrandAssignmentMode,
+        ) &&
         sup.brandAssignmentMode !== mode
       ) {
         sup.brandAssignmentMode = mode as BrandAssignmentMode;
@@ -529,7 +913,8 @@ export class RecoveryService {
       for (let ri = 1; ri < grid.length; ri++) {
         const rowArr = grid[ri];
         const productName = norm(rowArr?.[0]);
-        if (!productName || productName.toLowerCase().includes("grand total")) continue;
+        if (!productName || productName.toLowerCase().includes("grand total"))
+          continue;
         const product = await ctx.getOrCreateProduct(productName, ri, "Stock");
 
         for (let ci = 1; ci < header.length; ci++) {
@@ -562,7 +947,14 @@ export class RecoveryService {
             });
             continue;
           }
-          await ctx.upsertStock(product.id, branch.id, Math.trunc(qty), ri, productName, branchName);
+          await ctx.upsertStock(
+            product.id,
+            branch.id,
+            Math.trunc(qty),
+            ri,
+            productName,
+            branchName,
+          );
         }
       }
     }
@@ -588,8 +980,13 @@ export class RecoveryService {
 
       for (let ri = 2; ri < grid.length; ri++) {
         const productName = norm(grid[ri]?.[0]);
-        if (!productName || productName.toLowerCase() === "grand total") continue;
-        const product = await ctx.getOrCreateProduct(productName, ri, "SixSeven Report");
+        if (!productName || productName.toLowerCase() === "grand total")
+          continue;
+        const product = await ctx.getOrCreateProduct(
+          productName,
+          ri,
+          "SixSeven Report",
+        );
 
         for (const { idx, chain } of chainCols) {
           const qty = toNum(grid[ri]?.[idx]);
@@ -691,26 +1088,46 @@ export class RecoveryService {
 
       const quantity = toNum(r["quantity"]);
       const price = toNum(r["price"]);
-      const totalAmount = toNum(r["total amount"]) ?? (price != null && quantity != null ? price * quantity : null);
-      const saleDate = date ? wallClockToTimestamp(date, toHMS(r["Time of sale"]) ?? "00:00:00") : null;
+      const totalAmount =
+        toNum(r["total amount"]) ??
+        (price != null && quantity != null ? price * quantity : null);
+      const saleDate = date
+        ? wallClockToTimestamp(date, toHMS(r["Time of sale"]) ?? "00:00:00")
+        : null;
 
-      if (!username || !date || !model || quantity == null || price == null || totalAmount == null || !saleDate) {
+      if (
+        !username ||
+        !date ||
+        !model ||
+        quantity == null ||
+        price == null ||
+        totalAmount == null ||
+        !saleDate
+      ) {
         ctx.push({
           row: i,
           sheet: "Sales",
           entity: "sale",
           action: "UNRESOLVED",
           confidence: "UNRESOLVED",
-          reason: "missing username/date/product/quantity/price/total or unparseable sale time",
+          reason:
+            "missing username/date/product/quantity/price/total or unparseable sale time",
           key,
         });
         continue;
       }
 
-      const user = await ctx.getOrCreateUser(username, norm(r["user name"]), i, "Sales", ERole.PROMOTER, {
-        mobile: norm(r["user mobile"]),
-        isActive: true,
-      });
+      const user = await ctx.getOrCreateUser(
+        username,
+        norm(r["user name"]),
+        i,
+        "Sales",
+        ERole.PROMOTER,
+        {
+          mobile: norm(r["user mobile"]),
+          isActive: true,
+        },
+      );
       const resolved = await ctx.getOrCreateBranch(
         norm(r["Branch"]),
         norm(r["Chain"]),
@@ -786,7 +1203,8 @@ export class RecoveryService {
         const u = norm(r["user username"]);
         const b = norm(r["branch name"]);
         const d = toISODate(r["date"]);
-        if (u && b && d) covered.add(`${u.toLowerCase()}|${b.toLowerCase()}|${d}`);
+        if (u && b && d)
+          covered.add(`${u.toLowerCase()}|${b.toLowerCase()}|${d}`);
         if (d && (!evidenceHorizon || d > evidenceHorizon)) evidenceHorizon = d;
         await this.processAttendanceRow(r, i, "Overtime", ctx);
       }
@@ -835,26 +1253,46 @@ export class RecoveryService {
 
         const quantity = toNum(r["Quantity"]);
         const price = toNum(r["Price"]);
-        const totalAmount = toNum(r["Total Amount"]) ?? (price != null && quantity != null ? price * quantity : null);
-        const saleDate = date ? wallClockToTimestamp(date, toHMS(r["Time of Sale"]) ?? "00:00:00") : null;
+        const totalAmount =
+          toNum(r["Total Amount"]) ??
+          (price != null && quantity != null ? price * quantity : null);
+        const saleDate = date
+          ? wallClockToTimestamp(date, toHMS(r["Time of Sale"]) ?? "00:00:00")
+          : null;
 
-        if (!username || !date || !model || quantity == null || price == null || totalAmount == null || !saleDate) {
+        if (
+          !username ||
+          !date ||
+          !model ||
+          quantity == null ||
+          price == null ||
+          totalAmount == null ||
+          !saleDate
+        ) {
           ctx.push({
             row: i,
             sheet: "Sales Detail",
             entity: "sale",
             action: "UNRESOLVED",
             confidence: "UNRESOLVED",
-            reason: "missing username/date/product/quantity/price/total or unparseable sale time",
+            reason:
+              "missing username/date/product/quantity/price/total or unparseable sale time",
             key,
           });
           continue;
         }
 
-        const user = await ctx.getOrCreateUser(username, norm(r["User Name"]), i, "Sales Detail", ERole.PROMOTER, {
-          mobile: norm(r["User Mobile"]),
-          nationalId: norm(r["National ID"]),
-        });
+        const user = await ctx.getOrCreateUser(
+          username,
+          norm(r["User Name"]),
+          i,
+          "Sales Detail",
+          ERole.PROMOTER,
+          {
+            mobile: norm(r["User Mobile"]),
+            nationalId: norm(r["National ID"]),
+          },
+        );
         const branch = (
           await ctx.getOrCreateBranch(
             norm(r["Branch"]),
@@ -908,7 +1346,11 @@ export class RecoveryService {
     // 4) SAR Entries → validation only (derived pivot of sales)
     const sar = wb.Sheets["SAR Entries"];
     if (sar) {
-      const grid = XLSX.utils.sheet_to_json<any[]>(sar, { header: 1, defval: null, raw: true });
+      const grid = XLSX.utils.sheet_to_json<any[]>(sar, {
+        header: 1,
+        defval: null,
+        raw: true,
+      });
       const header = grid[0] ?? [];
       const dayCols: { idx: number; date: string }[] = [];
       for (let ci = 8; ci < header.length; ci++) {
@@ -921,7 +1363,8 @@ export class RecoveryService {
         for (const { idx, date } of dayCols) {
           const expected = toNum(grid[ri]?.[idx]);
           if (expected == null) continue;
-          const actual = sarTotals.get(`${username.toLowerCase()}|${date}`) ?? 0;
+          const actual =
+            sarTotals.get(`${username.toLowerCase()}|${date}`) ?? 0;
           const match = Math.abs(actual - expected) <= 1; // SAR pivot is rounded to whole SAR
           ctx.push({
             row: ri,
@@ -940,9 +1383,16 @@ export class RecoveryService {
 
     // 5) Attendance grids → journeys for user+date NOT covered by Overtime
     const ccGrid = wb.Sheets["Check-in - Check-out"]
-      ? XLSX.utils.sheet_to_json<any[]>(wb.Sheets["Check-in - Check-out"], { header: 1, defval: null, raw: true })
+      ? XLSX.utils.sheet_to_json<any[]>(wb.Sheets["Check-in - Check-out"], {
+          header: 1,
+          defval: null,
+          raw: true,
+        })
       : null;
-    const ccTimes = new Map<string, { in: string | null; out: string | null }>();
+    const ccTimes = new Map<
+      string,
+      { in: string | null; out: string | null }
+    >();
     if (ccGrid && ccGrid.length > 2) {
       const dayCols: { inIdx: number; outIdx: number; date: string }[] = [];
       const hdr = ccGrid[0] ?? [];
@@ -955,10 +1405,13 @@ export class RecoveryService {
         const branch = norm(ccGrid[ri]?.[7]);
         if (!username || !branch) continue;
         for (const { inIdx, outIdx, date } of dayCols) {
-          ccTimes.set(`${username.toLowerCase()}|${branch.toLowerCase()}|${date}`, {
-            in: toHMS(ccGrid[ri]?.[inIdx]),
-            out: toHMS(ccGrid[ri]?.[outIdx]),
-          });
+          ccTimes.set(
+            `${username.toLowerCase()}|${branch.toLowerCase()}|${date}`,
+            {
+              in: toHMS(ccGrid[ri]?.[inIdx]),
+              out: toHMS(ccGrid[ri]?.[outIdx]),
+            },
+          );
         }
       }
     }
@@ -966,7 +1419,11 @@ export class RecoveryService {
     for (const sheetName of ["Attendance", "MG Attendance"] as const) {
       const sheet = wb.Sheets[sheetName];
       if (!sheet) continue;
-      const grid = XLSX.utils.sheet_to_json<any[]>(sheet, { header: 1, defval: null, raw: true });
+      const grid = XLSX.utils.sheet_to_json<any[]>(sheet, {
+        header: 1,
+        defval: null,
+        raw: true,
+      });
       const header = grid[0] ?? [];
       const dayCols: { idx: number; date: string }[] = [];
       for (let ci = 8; ci < header.length; ci++) {
@@ -979,7 +1436,8 @@ export class RecoveryService {
         const city = norm(grid[ri]?.[5]);
         const chain = norm(grid[ri]?.[6]);
         const branchName = norm(grid[ri]?.[7]);
-        if (!username || !branchName || branchName.toUpperCase() === "N/A") continue;
+        if (!username || !branchName || branchName.toUpperCase() === "N/A")
+          continue;
 
         for (const { idx, date } of dayCols) {
           const cell = grid[ri]?.[idx];
@@ -995,18 +1453,35 @@ export class RecoveryService {
           const cellStr = String(cell).trim().toLowerCase();
           let status: JourneyStatus;
           if (cellStr === "vacation") status = JourneyStatus.VACATION;
-          else if (cellStr === "1" || cell === 1) status = JourneyStatus.PRESENT; // may upgrade to CLOSED via CC times
+          else if (cellStr === "1" || cell === 1)
+            status = JourneyStatus.PRESENT; // may upgrade to CLOSED via CC times
           else if (cellStr === "0" || cell === 0) status = JourneyStatus.ABSENT;
           else continue; // unknown cell content — ignore silently (totals columns etc.)
 
-          const user = await ctx.getOrCreateUser(username, name, ri, sheetName, ERole.PROMOTER);
-          const resolved = await ctx.getOrCreateBranch(branchName, chain, city, ri, sheetName);
+          const user = await ctx.getOrCreateUser(
+            username,
+            name,
+            ri,
+            sheetName,
+            ERole.PROMOTER,
+          );
+          const resolved = await ctx.getOrCreateBranch(
+            branchName,
+            chain,
+            city,
+            ri,
+            sheetName,
+          );
           const branch = resolved.branch;
           if (!branch) {
             ctx.push({
-              row: ri, sheet: sheetName, entity: "journeys",
-              action: "UNRESOLVED", confidence: "UNRESOLVED",
-              reason: "branch could not be resolved", key,
+              row: ri,
+              sheet: sheetName,
+              entity: "journeys",
+              action: "UNRESOLVED",
+              confidence: "UNRESOLVED",
+              reason: "branch could not be resolved",
+              key,
             });
             continue;
           }
@@ -1025,16 +1500,31 @@ export class RecoveryService {
 
           // grid rows carry no shift/plan — natural key uses shiftId NULL
           const journey = await ctx.upsertJourney({
-            userId: user.id, branchId: branch.id, shiftId: null, planId: null,
-            date, status, projectId: resolved.project.id, row: ri, sheet: sheetName, key,
+            userId: user.id,
+            branchId: branch.id,
+            shiftId: null,
+            planId: null,
+            date,
+            status,
+            projectId: resolved.project.id,
+            row: ri,
+            sheet: sheetName,
+            key,
           });
 
           if (checkInTime) {
             await ctx.upsertCheckIn({
-              journeyId: journey.id, userId: user.id, journeyStatus: status,
-              checkInTime, checkOutTime,
-              checkInDocument: null, checkOutDocument: null,
-              row: ri, sheet: sheetName, key, extraIds: { branchId: branch.id },
+              journeyId: journey.id,
+              userId: user.id,
+              journeyStatus: status,
+              checkInTime,
+              checkOutTime,
+              checkInDocument: null,
+              checkOutDocument: null,
+              row: ri,
+              sheet: sheetName,
+              key,
+              extraIds: { branchId: branch.id },
             });
           }
         }
@@ -1055,7 +1545,10 @@ class RecoveryContext {
   private userCache = new Map<string, User>();
   private chainCache = new Map<string, Chain>();
   private cityCache = new Map<string, City>();
-  private branchCache = new Map<string, { branch: Branch | null; project: Project }>();
+  private branchCache = new Map<
+    string,
+    { branch: Branch | null; project: Project }
+  >();
   private branchNameOnlyCache = new Map<string, Branch | null>();
   private projectById = new Map<string, Project>();
   private shiftCache = new Map<string, Shift>();
@@ -1110,7 +1603,11 @@ class RecoveryContext {
     row: number,
     sheet: string,
     roleName?: ERole,
-    extra?: { mobile?: string | null; isActive?: boolean | null; nationalId?: string | null },
+    extra?: {
+      mobile?: string | null;
+      isActive?: boolean | null;
+      nationalId?: string | null;
+    },
   ): Promise<User> {
     const cacheKey = username.toLowerCase();
     const cached = this.userCache.get(cacheKey);
@@ -1176,7 +1673,10 @@ class RecoveryContext {
           changed = true;
         }
       }
-      if (mobileConflict) reasons.push("report mobile already belongs to another account — skipped");
+      if (mobileConflict)
+        reasons.push(
+          "report mobile already belongs to another account — skipped",
+        );
       if (changed || mobileConflict) {
         if (changed) await repo.save(user);
         this.push({
@@ -1185,7 +1685,9 @@ class RecoveryContext {
           entity: "users",
           action: changed ? "UPDATED" : "SKIPPED",
           confidence: "CONFIRMED",
-          reason: reasons.length ? reasons.join("; ") : "existing user restored/backfilled",
+          reason: reasons.length
+            ? reasons.join("; ")
+            : "existing user restored/backfilled",
           key: `username=${username}`,
           ids: { userId: user.id },
         });
@@ -1213,7 +1715,9 @@ class RecoveryContext {
         confidence: "PROBABLE",
         reason:
           `user missing from April backup — created with role '${roleName ?? "none"}', initial password = username` +
-          (mobileConflict ? "; report mobile already belongs to another account — skipped" : ""),
+          (mobileConflict
+            ? "; report mobile already belongs to another account — skipped"
+            : ""),
         key: `username=${username}`,
         ids: { userId: user.id },
       });
@@ -1260,17 +1764,23 @@ class RecoveryContext {
     if (!pid || pid === this.project.id) return this.project;
     const cached = this.projectById.get(pid);
     if (cached) return cached;
-    const p = await this.manager.getRepository(Project).findOne({ where: { id: pid } });
+    const p = await this.manager
+      .getRepository(Project)
+      .findOne({ where: { id: pid } });
     const proj = p ?? this.project;
     this.projectById.set(pid, proj);
     return proj;
   }
 
   /** Chain lookup (no creation) scoped to a project. */
-  private async findChain(name: string | null, project: Project): Promise<Chain | null> {
+  private async findChain(
+    name: string | null,
+    project: Project,
+  ): Promise<Chain | null> {
     if (!name) return null;
     const cacheKey = `${project.id}|${name.toLowerCase()}`;
-    if (this.chainCache.has(cacheKey)) return this.chainCache.get(cacheKey) ?? null;
+    if (this.chainCache.has(cacheKey))
+      return this.chainCache.get(cacheKey) ?? null;
     const chain = await this.manager
       .getRepository(Chain)
       .createQueryBuilder("c")
@@ -1298,7 +1808,9 @@ class RecoveryContext {
   ): Promise<Chain> {
     const cacheKey = `${project.id}|${name.toLowerCase()}`;
     const repo = this.manager.getRepository(Chain);
-    const chain = await repo.save(repo.create({ name, project: { id: project.id } as Project }));
+    const chain = await repo.save(
+      repo.create({ name, project: { id: project.id } as Project }),
+    );
     this.push({
       row,
       sheet,
@@ -1313,7 +1825,11 @@ class RecoveryContext {
     return chain;
   }
 
-  async getOrCreateCity(name: string | null, row: number, sheet: string): Promise<City | null> {
+  async getOrCreateCity(
+    name: string | null,
+    row: number,
+    sheet: string,
+  ): Promise<City | null> {
     if (!name) return null;
     const cacheKey = name.toLowerCase();
     const cached = this.cityCache.get(cacheKey);
@@ -1327,14 +1843,26 @@ class RecoveryContext {
 
     if (!city) {
       // attach to any existing region; fall back to a recovery country/region
-      let region = await this.manager.getRepository(Region).find({ take: 1 }).then((r) => r[0]);
+      let region = await this.manager
+        .getRepository(Region)
+        .find({ take: 1 })
+        .then((r) => r[0]);
       if (!region) {
         const countryRepo = this.manager.getRepository(Country);
-        let country = await countryRepo.findOne({ where: { name: "Recovery" } });
-        if (!country) country = await countryRepo.save(countryRepo.create({ name: "Recovery" }));
+        let country = await countryRepo.findOne({
+          where: { name: "Recovery" },
+        });
+        if (!country)
+          country = await countryRepo.save(
+            countryRepo.create({ name: "Recovery" }),
+          );
         region = await this.manager
           .getRepository(Region)
-          .save(this.manager.getRepository(Region).create({ name: "Recovery", country }));
+          .save(
+            this.manager
+              .getRepository(Region)
+              .create({ name: "Recovery", country }),
+          );
       }
       city = await repo.save(repo.create({ name, region }));
       this.push({
@@ -1395,7 +1923,9 @@ class RecoveryContext {
 
     // 2) relaxed: name + chain only
     if (!branch && chain) {
-      branch = await qb().andWhere("ch.id = :chid", { chid: chain.id }).getOne();
+      branch = await qb()
+        .andWhere("ch.id = :chid", { chid: chain.id })
+        .getOne();
     }
 
     // 3) fallback: name only — accept only if unambiguous
@@ -1440,7 +1970,10 @@ class RecoveryContext {
         .leftJoinAndSelect("b.city", "ci")
         .leftJoinAndSelect("b.supervisor", "sup")
         .where("p.id = :pid", { pid: project.id })
-        .andWhere("lower(regexp_replace(b.name, '[^a-zA-Z0-9]', '', 'g')) = :nn", { nn: normName })
+        .andWhere(
+          "lower(regexp_replace(b.name, '[^a-zA-Z0-9]', '', 'g')) = :nn",
+          { nn: normName },
+        )
         .getMany();
       if (candidates.length === 1) {
         branch = candidates[0];
@@ -1480,13 +2013,17 @@ class RecoveryContext {
           .leftJoinAndSelect("b.chain", "ch")
           .leftJoinAndSelect("b.city", "ci")
           .leftJoinAndSelect("b.supervisor", "sup")
-          .where("lower(regexp_replace(b.name, '[^a-zA-Z0-9]', '', 'g')) = :nn", { nn: normName })
+          .where(
+            "lower(regexp_replace(b.name, '[^a-zA-Z0-9]', '', 'g')) = :nn",
+            { nn: normName },
+          )
           .getMany();
       }
       // disambiguate by chain name when several projects have a same-named branch
       if (matches.length > 1 && chainName) {
         const narrowed = matches.filter(
-          (m) => (m.chain as any)?.name?.toLowerCase() === chainName.toLowerCase(),
+          (m) =>
+            (m.chain as any)?.name?.toLowerCase() === chainName.toLowerCase(),
         );
         if (narrowed.length >= 1) matches = narrowed;
       }
@@ -1542,7 +2079,8 @@ class RecoveryContext {
     } else {
       // create the branch (and its chain) in the effective project
       const newChain = chainName
-        ? chain ?? (await this.createChain(chainName, effectiveProject, row, sheet))
+        ? (chain ??
+          (await this.createChain(chainName, effectiveProject, row, sheet)))
         : null;
       branch = await repo.save(
         repo.create({
@@ -1570,9 +2108,14 @@ class RecoveryContext {
   }
 
   /** Name-only branch lookup used by the stock matrix (no chain/city context). */
-  async findBranchByName(name: string, row: number, sheet: string): Promise<Branch | null> {
+  async findBranchByName(
+    name: string,
+    row: number,
+    sheet: string,
+  ): Promise<Branch | null> {
     const cacheKey = name.toLowerCase();
-    if (this.branchNameOnlyCache.has(cacheKey)) return this.branchNameOnlyCache.get(cacheKey);
+    if (this.branchNameOnlyCache.has(cacheKey))
+      return this.branchNameOnlyCache.get(cacheKey);
     const candidates = await this.manager
       .getRepository(Branch)
       .createQueryBuilder("b")
@@ -1697,7 +2240,11 @@ class RecoveryContext {
     return plan;
   }
 
-  async getOrCreateProduct(name: string, row: number, sheet: string): Promise<Product> {
+  async getOrCreateProduct(
+    name: string,
+    row: number,
+    sheet: string,
+  ): Promise<Product> {
     const cacheKey = name.toLowerCase();
     const cached = this.productCache.get(cacheKey);
     if (cached) return cached;
@@ -1717,7 +2264,11 @@ class RecoveryContext {
       }
     } else {
       product = await repo.save(
-        repo.create({ name, project: { id: this.project.id } as Project, project_id: this.project.id }),
+        repo.create({
+          name,
+          project: { id: this.project.id } as Project,
+          project_id: this.project.id,
+        }),
       );
       this.push({
         row,
@@ -1801,7 +2352,8 @@ class RecoveryContext {
     sheet: string;
     key: string;
   }): Promise<Journey> {
-    const { userId, branchId, shiftId, planId, date, status, row, sheet, key } = params;
+    const { userId, branchId, shiftId, planId, date, status, row, sheet, key } =
+      params;
     const projectId = params.projectId ?? this.project.id;
     const type = status.startsWith("unplanned")
       ? JourneyType.UNPLANNED
@@ -1899,8 +2451,17 @@ class RecoveryContext {
     extraIds?: Record<string, string>;
   }): Promise<CheckIn> {
     const {
-      journeyId, userId, journeyStatus, checkInTime, checkOutTime,
-      checkInDocument, checkOutDocument, row, sheet, key, extraIds,
+      journeyId,
+      userId,
+      journeyStatus,
+      checkInTime,
+      checkOutTime,
+      checkInDocument,
+      checkOutDocument,
+      row,
+      sheet,
+      key,
+      extraIds,
     } = params;
 
     const checkInRepo = this.manager.getRepository(CheckIn);
@@ -2012,7 +2573,8 @@ class RecoveryContext {
   async getOrCreateCategory(name: string | null): Promise<Category | null> {
     if (!name) return null;
     const cacheKey = name.toLowerCase();
-    if (this.categoryCache.has(cacheKey)) return this.categoryCache.get(cacheKey);
+    if (this.categoryCache.has(cacheKey))
+      return this.categoryCache.get(cacheKey);
     const repo = this.manager.getRepository(Category);
     let category = await repo
       .createQueryBuilder("c")
@@ -2141,8 +2703,18 @@ class RecoveryContext {
     sheet: string;
     key: string;
   }): Promise<void> {
-    const { userId, branchId, productId, price, quantity, totalAmount, saleDate, row, sheet, key } =
-      params;
+    const {
+      userId,
+      branchId,
+      productId,
+      price,
+      quantity,
+      totalAmount,
+      saleDate,
+      row,
+      sheet,
+      key,
+    } = params;
     const repo = this.manager.getRepository(Sale);
     const qb = repo
       .createQueryBuilder("s")
@@ -2204,6 +2776,10 @@ function norm(v: any): string | null {
   if (v == null) return null;
   const s = String(v).replace(/\s+/g, " ").trim();
   return s === "" || s === "-" ? null : s;
+}
+
+function mappingKey(v: string | null | undefined): string {
+  return (v ?? "").replace(/\s+/g, " ").trim().toLocaleLowerCase();
 }
 
 function toNum(v: any): number | null {
