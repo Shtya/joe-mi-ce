@@ -58,6 +58,7 @@ export class SalaryImportDto {
 
 export class PayrollTimeSheetImportDto {
   @IsOptional()
+  @Transform(({ value }) => (value === "" ? undefined : value))
   @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
   month?: string;
 }
