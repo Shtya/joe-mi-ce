@@ -636,6 +636,29 @@ describe("overtime time sheet service boundaries", () => {
     expect(user.name).toBe("Employee");
   });
 
+  it("does not replace an existing mobile with the employee directory value", async () => {
+    const { service, manager, period, user } = await createService();
+    user.mobile = "500000001";
+    manager.findOne.mockImplementation(async (entity) =>
+      entity === PayrollPeriod ? period : null,
+    );
+    const workbook = await createOvertimeTimeSheet({
+      ...fixture,
+      employees: [{ ...fixture.employees[0], mobile: "570588298" }],
+    });
+
+    const result = await service.importOvertimeTimeSheet(
+      "project-1",
+      { buffer: workbook },
+      { month: "2026-09" },
+      actor,
+      "2026-09-24",
+    );
+
+    expect(result.rejectedRows).toEqual([]);
+    expect(user.mobile).toBe("500000001");
+  });
+
   it("resolves a direct legacy row by the assigned member mobile", async () => {
     const { service, written, user } = await createService();
     user.national_id = null;

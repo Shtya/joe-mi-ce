@@ -487,17 +487,8 @@ export class PayrollService {
       for (const employee of parsed.employees) {
         const user = usersById.get(employee.userId)!;
         user.name = employee.name || user.name;
-        if (employee.mobile && employee.mobile !== user.mobile) {
-          const mobileOwner = await manager.findOne(User, {
-            where: { mobile: employee.mobile },
-          });
-          // The employee directory is authoritative for payroll fields, but a
-          // mobile number is globally unique in Gatemea. Keep its existing
-          // owner instead of failing the entire payroll import or reassigning
-          // another user's phone number.
-          if (!mobileOwner || mobileOwner.id === user.id)
-            user.mobile = employee.mobile;
-        }
+        // Mobile is a globally unique Gatemea account field. The spreadsheet
+        // value is used to find an employee but never changes their account.
         user.nationality = employee.nationality || user.nationality;
         user.iban = employee.bankAccount || user.iban;
         user.bank_name = employee.bankName || user.bank_name;
