@@ -74,6 +74,22 @@ export interface ParsedTimeSheet {
   rejectedRows: Array<{ rowNumber: number; reason: string }>;
 }
 
+export interface PayrollDirectoryEmployee {
+  userId: string;
+  identity: string;
+  name?: string | null;
+  mobile?: string | null;
+}
+
+export interface ParsedPayrollDirectory {
+  employees: Array<{
+    userId: string;
+    monthlySalary: number;
+    rowNumber: number;
+  }>;
+  rejectedRows: Array<{ rowNumber: number; reason: string }>;
+}
+
 const VERSION = "overtime-timesheet-v1";
 const IDENTITY_HEADERS = [
   "Iqama",
@@ -170,6 +186,117 @@ function rowHasValues(row: ExcelJS.Row): boolean {
     if (cellText(row.getCell(column)) !== "") return true;
   }
   return false;
+}
+
+/** Reads payroll salaries from every valid row in the source Employees_DB tab. */
+export async function parsePayrollEmployeeDirectory(
+  buffer: Buffer,
+  projectEmployees: PayrollDirectoryEmployee[],
+): Promise<ParsedPayrollDirectory> {
+  const workbook = new ExcelJS.Workbook();
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    return {
+      employees: [],
+      rejectedRows: [
+        { rowNumber: 0, reason: "The XLSX workbook could not be read" },
+      ],
+    };
+  }
+  const sheet = workbook.getWorksheet("Employees_DB");
+  if (!sheet)
+    return {
+      employees: [],
+      rejectedRows: [
+        { rowNumber: 0, reason: "Employees_DB worksheet is required" },
+      ],
+    };
+
+  const headers = [...IDENTITY_HEADERS];
+  headers[0] = "-+";
+  headers[10] = "Bank name";
+  const headerErrors = headers.flatMap((header, index) =>
+    cellText(sheet.getCell(1, index + 1)) === header
+      ? []
+      : [
+          {
+            rowNumber: 1,
+            reason: `Invalid employee directory header in column ${index + 1}`,
+          },
+        ],
+  );
+  if (sheet.getRow(1).actualCellCount !== headers.length)
+    headerErrors.push({
+      rowNumber: 1,
+      reason: "Unexpected employee directory header columns",
+    });
+  if (headerErrors.length) return { employees: [], rejectedRows: headerErrors };
+
+  const indexByIdentity = new Map<string, string | null>();
+  const indexByName = new Map<string, string | null>();
+  const indexByMobile = new Map<string, string | null>();
+  for (const employee of projectEmployees) {
+    const identity = employee.identity.trim();
+    indexByIdentity.set(
+      identity,
+      indexByIdentity.has(identity) ? null : employee.userId,
+    );
+    const name = normalizedEmployeeName(employee.name ?? "");
+    if (name)
+      indexByName.set(name, indexByName.has(name) ? null : employee.userId);
+    const mobile = String(employee.mobile ?? "").replace(/\D/g, "");
+    if (mobile)
+      indexByMobile.set(
+        mobile,
+        indexByMobile.has(mobile) ? null : employee.userId,
+      );
+  }
+
+  const employees: ParsedPayrollDirectory["employees"] = [];
+  const rejectedRows: ParsedPayrollDirectory["rejectedRows"] = [];
+  const seenUsers = new Set<string>();
+  for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
+    const row = sheet.getRow(rowNumber);
+    if (!rowHasValues(row)) continue;
+    const identity = cellText(row.getCell(1));
+    if (!identity) {
+      rejectedRows.push({ rowNumber, reason: "Employee Iqama is required" });
+      continue;
+    }
+    const name = cellText(row.getCell(2));
+    const mobile = cellText(row.getCell(3)).replace(/\D/g, "");
+    const userId =
+      (mobile ? indexByMobile.get(mobile) : undefined) ??
+      (name ? indexByName.get(normalizedEmployeeName(name)) : undefined) ??
+      indexByIdentity.get(identity);
+    if (!userId) {
+      rejectedRows.push({
+        rowNumber,
+        reason: "Employee is not assigned to this project",
+      });
+      continue;
+    }
+    if (seenUsers.has(userId)) {
+      rejectedRows.push({
+        rowNumber,
+        reason: "Duplicate employee in Employees_DB",
+      });
+      continue;
+    }
+    const salaryText = cellText(row.getCell(9)).replace(/,/g, "");
+    const monthlySalary = Number(salaryText);
+    if (!salaryText || !Number.isFinite(monthlySalary) || monthlySalary <= 0) {
+      rejectedRows.push({
+        rowNumber,
+        reason: "Basic Salary must be a positive number",
+      });
+      continue;
+    }
+    seenUsers.add(userId);
+    employees.push({ userId, monthlySalary, rowNumber });
+  }
+  return { employees, rejectedRows };
 }
 
 function fillColor(cell: ExcelJS.Cell): string | undefined {

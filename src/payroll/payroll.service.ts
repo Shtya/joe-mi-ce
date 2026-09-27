@@ -52,8 +52,7 @@ import * as ExcelJS from "exceljs";
 import { DEFAULT_VIOLATION_RULES } from "./default-violation-policy";
 import {
   createOvertimeTimeSheet,
-  detectTimeSheetPeriod,
-  parseOvertimeTimeSheet,
+  parsePayrollEmployeeDirectory,
   timeSheetDates,
   TimeSheetEmployee,
   TimeSheetAttendance,
@@ -400,7 +399,7 @@ export class PayrollService {
   async importOvertimeTimeSheet(
     projectId: string,
     file: Pick<Express.Multer.File, "buffer">,
-    dto: PayrollTimeSheetImportDto,
+    _dto: PayrollTimeSheetImportDto,
     actor: User,
     throughDate = this.riyadhDate(),
   ) {
@@ -412,127 +411,72 @@ export class PayrollService {
     const project = await this.requireOvertimeProject(projectId);
     if (!file?.buffer?.length)
       throw new BadRequestException("An XLSX workbook is required");
-    let detected;
-    try {
-      detected = await detectTimeSheetPeriod(file.buffer);
-    } catch (error) {
-      throw new BadRequestException(
-        error instanceof Error
-          ? error.message
-          : "Invalid time sheet date range",
-      );
-    }
-    if (dto.month && dto.month !== detected.month)
-      throw new BadRequestException(
-        "The requested month does not match the workbook date range",
-      );
     const cutoffDay = project.payrollCutoffDay ?? 1;
-    const expected = resolvePayrollPeriod(detected.month, cutoffDay);
-    if (
-      expected.startDate !== detected.startDate ||
-      expected.endDate !== detected.endDate
-    )
-      throw new BadRequestException(
-        "The workbook date range does not match this project's cutoff period",
-      );
-    let period = await this.periodRepo.findOne({
-      where: { projectId, month: detected.month },
-    });
-    if (!period) {
-      await this.syncPeriod(
-        projectId,
-        detected.month,
-        actor,
-        new Date(`${detected.endDate}T23:59:59Z`),
-        detected.endDate,
-      );
-      period = await this.requireTimeSheetPeriod(projectId, detected.month);
-    }
-    this.assertPendingPeriod(period);
+    const currentDate = this.riyadhDate();
+    const targetDate = throughDate < currentDate ? throughDate : currentDate;
+    const month = activePayrollPeriodMonth(targetDate, cutoffDay);
+    const { startDate, endDate } = resolvePayrollPeriod(month, cutoffDay);
     const users = await this.userRepo.find({
       where: { project_id: projectId },
     });
-    const parsed = await parseOvertimeTimeSheet({
-      buffer: file.buffer,
-      projectId,
-      period,
-      throughDate,
-      employees: users.map((user) => ({
+    const parsed = await parsePayrollEmployeeDirectory(
+      file.buffer,
+      users.map((user) => ({
         userId: user.id,
         identity: user.national_id || user.username,
         name: user.name,
-        // The legacy Gatemea workbook can contain an old Iqama or a slightly
-        // different spelling of the name. Pass the stored mobile so the parser
-        // can safely resolve the existing project member by its stable value.
         mobile: user.mobile,
-        monthlySalary: 0,
-        attendance: [],
-        overtime: [],
       })),
-    });
-    if (parsed.rejectedRows.length)
-      return { acceptedRows: [], rejectedRows: parsed.rejectedRows };
+    );
+    if (!parsed.employees.length)
+      return {
+        month,
+        startDate,
+        endDate,
+        throughDate: targetDate,
+        acceptedRows: [],
+        rejectedRows: parsed.rejectedRows,
+      };
     await this.dataSource.transaction(async (manager) => {
-      const locked = await manager.findOne(PayrollPeriod, {
-        where: { id: period.id, projectId },
-        lock: { mode: "pessimistic_write" },
-      });
-      if (!locked) throw new NotFoundException("Payroll period not found");
-      this.assertPendingPeriod(locked);
-      if (
-        locked.startDate !== period.startDate ||
-        locked.endDate !== period.endDate
-      )
-        throw new ConflictException(
-          "Payroll period changed; download a new time sheet",
-        );
-      for (const employee of parsed.employees) {
-        await manager.upsert(
-          EmployeeSalary,
-          [
-            {
-              projectId,
-              userId: employee.userId,
-              monthlySalary: employee.monthlySalary.toFixed(2),
-              effectiveFrom: period.startDate,
-              effectiveTo: null,
-              importFileName: "legacy-timesheet.xlsx",
-              importSheetName: period.month,
-              importRowNumber: null,
-              updatedById: actor.id,
-            },
-          ],
-          ["projectId", "userId", "effectiveFrom"],
-        );
-      }
-      if (parsed.rows.length)
-        await manager.upsert(
-          PayrollTimeSheetOverride,
-          parsed.rows.map((row) => ({
-            ...row,
-            paidShiftUnits: row.paidShiftUnits.toFixed(2),
-            projectId,
-            periodId: period.id,
-            updatedById: actor.id,
-          })),
-          ["periodId", "userId", "workDate"],
-        );
-    });
-    if (detected.endDate < this.riyadhDate()) {
-      const next = new Date(`${detected.month}-01T00:00:00Z`);
-      next.setUTCMonth(next.getUTCMonth() + 1);
-      await this.createPendingPeriod(
-        projectId,
-        { month: next.toISOString().slice(0, 7) },
-        actor,
+      const period = await this.ensurePayrollPeriodForEffectiveDate(
+        manager,
+        project,
+        startDate,
+        actor.id,
       );
-    }
+      this.assertPendingPeriod(period);
+      if (period.startDate !== startDate || period.endDate !== endDate)
+        throw new ConflictException("Payroll cutoff period changed");
+      for (const employee of parsed.employees) {
+        const salary = await this.upsertSalaryFromLine(
+          manager,
+          projectId,
+          employee.userId,
+          startDate,
+          employee.monthlySalary,
+          actor.id,
+        );
+        salary.importFileName = "employee-directory.xlsx";
+        salary.importSheetName = "Employees_DB";
+        salary.importRowNumber = employee.rowNumber;
+        await manager.save(salary);
+      }
+    });
+    const period = await this.syncPeriod(
+      projectId,
+      month,
+      actor,
+      new Date(),
+      targetDate,
+    );
     return {
-      month: detected.month,
-      startDate: detected.startDate,
-      endDate: detected.endDate,
-      acceptedRows: parsed.rows,
-      rejectedRows: [],
+      month,
+      startDate,
+      endDate,
+      throughDate: targetDate,
+      period,
+      acceptedRows: parsed.employees,
+      rejectedRows: parsed.rejectedRows,
     };
   }
 
