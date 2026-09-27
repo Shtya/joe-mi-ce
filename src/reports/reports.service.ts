@@ -20,7 +20,7 @@ import { Project } from "entities/project.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
-import { addPayrollDetailsSheet } from "./payroll-details-sheet";
+import { getPayrollAttendanceColumns } from "./payroll-attendance-columns";
 
 type MonthlyReportTabOptions = {
   attendance?: boolean;
@@ -196,13 +196,31 @@ export class ReportsService {
       }
     }
 
+    const payrollAttendanceColumns = [
+      { header: "Gross Salary", key: "gross_salary", width: 16 },
+      { header: "Additions", key: "additions", width: 14 },
+      {
+        header: "Attendance Deduction",
+        key: "attendance_deduction",
+        width: 24,
+      },
+      { header: "Manual Deduction", key: "manual_deduction", width: 20 },
+      { header: "Net Pay", key: "net_pay", width: 16 },
+    ];
+
     attendanceSheet.columns = [
       ...baseColumns,
       ...dateColumnsForAttendance,
       { header: "TLL DAYS", key: "ttl_attendance", width: 15 },
       { header: "LATE", key: "ttl_late", width: 15 },
+      ...payrollAttendanceColumns,
     ];
-    mgAttendanceSheet.columns = attendanceSheet.columns;
+    mgAttendanceSheet.columns = [
+      ...baseColumns,
+      ...dateColumnsForAttendance,
+      { header: "TLL DAYS", key: "ttl_attendance", width: 15 },
+      { header: "LATE", key: "ttl_late", width: 15 },
+    ];
 
     tab2Sheet.columns = [
       ...baseColumns,
@@ -418,6 +436,9 @@ export class ReportsService {
       where: { projectId, month: currentMonthPrefix },
       relations: ["lines", "lines.user", "lines.violations"],
     });
+    const payrollLinesByUserId = new Map(
+      (payrollPeriod?.lines || []).map((line) => [line.userId, line]),
+    );
 
     const vacations = await this.vacationRepository.find({
       where: {
@@ -825,6 +846,10 @@ export class ReportsService {
 
       attRow["ttl_attendance"] = ttlAttendance;
       attRow["ttl_late"] = formatDuration(ttlLate * 60000); // Format total minutes as HH:mm
+      Object.assign(
+        attRow,
+        getPayrollAttendanceColumns(user.id, payrollLinesByUserId),
+      );
       t2Row["tll_days_tab2"] = totalSales > 0 ? `${totalSales}` : "";
       t3RowArr.push(ttlDays);
       t3RowArr.push(formatDuration(ttlLate * 60000)); // Format total minutes as HH:mm
@@ -946,6 +971,18 @@ export class ReportsService {
       return sum + (h * 60 + m);
     }, 0);
     totalsRowData["ttl_late"] = formatDuration(allTttLateMins * 60000);
+    [
+      "gross_salary",
+      "additions",
+      "attendance_deduction",
+      "manual_deduction",
+      "net_pay",
+    ].forEach((key) => {
+      totalsRowData[key] = attendanceRows.reduce(
+        (total, row) => total + Number(row[key] || 0),
+        0,
+      );
+    });
 
     mgTotalsRowData["ttl_attendance"] = mgTotalOfTotals;
     const mgAllTttLateMins = mgAttendanceRows.reduce((sum, row) => {
@@ -1361,12 +1398,6 @@ export class ReportsService {
       bottom: { style: "thick", color: { argb: "FF000000" } },
     };
 
-    const payrollSheet = addPayrollDetailsSheet(
-      workbook,
-      now.format("YYYY-MM-DD"),
-      payrollPeriod?.lines || [],
-    );
-
     [
       attendanceSheet,
       mgAttendanceSheet,
@@ -1378,7 +1409,6 @@ export class ReportsService {
       // branchPromoterSalesSheet,
       salesByModelSheet,
       salesDetailSheet,
-      payrollSheet,
     ].forEach((sheet) => {
       const isTab3 = sheet.name === "Check-in - Check-out";
       const isOvertime = sheet.name === "Overtime";
