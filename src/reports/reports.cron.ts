@@ -5,6 +5,8 @@ import { MailService } from "../mail/mail.service";
 import { PayrollService } from "../payroll/payroll.service";
 import { PayrollCalculationMode } from "../payroll/payroll.types";
 import * as path from "path";
+import { readFile } from "fs/promises";
+import { appendPayrollTimeSheet } from "./payroll-timesheet-worksheet";
 
 @Injectable()
 export class ReportsCron {
@@ -145,27 +147,23 @@ export class ReportsCron {
           );
       }
 
-      const filePath = overtimeTimeSheet
-        ? null
-        : await this.reportsService.generateGatemeaReport();
-      if (!overtimeTimeSheet && !filePath) {
+      const filePath = await this.reportsService.generateGatemeaReport();
+      if (!filePath) {
         this.logger.warn("Gatemea report generation skipped or failed.");
         return;
       }
-      if (filePath)
-        this.logger.log(
-          `Gatemea report generated successfully at: ${filePath}`,
-        );
+      this.logger.log(`Gatemea report generated successfully at: ${filePath}`);
 
-      const filename = overtimeTimeSheet
-        ? "gatemea_overtime_timesheet.xlsx"
-        : path.basename(filePath!);
+      const filename = path.basename(filePath);
       const recipient = "abdullah.almeri@gatemea.com";
       const subject = "Gatemea Report Six Seven";
       const ccRecipients =
         "mohamad.hamze@gatemea.com, Oussama.Barakat@gatemea.com";
 
-      const textBody = `Dear Team,\n\nPlease find attached the Gatemea SixSeven Daily Performance Report for yesterday.\n\nBest regards,\nSystem SixSeven Operations`;
+      const timeSheetMessage = overtimeTimeSheet
+        ? " The workbook also includes the current overtime payroll time sheet."
+        : "";
+      const textBody = `Dear Team,\n\nPlease find attached the Gatemea SixSeven Daily Performance Report for yesterday.${timeSheetMessage}\n\nBest regards,\nSystem SixSeven Operations`;
       const emailHtml = `
 <!DOCTYPE html>
 <html>
@@ -199,6 +197,11 @@ export class ReportsCron {
         <ul>
           <li>Sales performance grouped by product and chain</li>
           <li>Daily attendance records for all scheduled personnel</li>
+          ${
+            overtimeTimeSheet
+              ? "<li>Overtime payroll time sheet for the active cutoff period</li>"
+              : ""
+          }
         </ul>
       </div>
 
@@ -223,7 +226,10 @@ export class ReportsCron {
             attachments: [
               {
                 filename,
-                content: overtimeTimeSheet,
+                content: await appendPayrollTimeSheet(
+                  await readFile(filePath),
+                  overtimeTimeSheet,
+                ),
                 contentType:
                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               },
