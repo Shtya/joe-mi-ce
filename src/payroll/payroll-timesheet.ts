@@ -2,6 +2,14 @@ import * as ExcelJS from "exceljs";
 import { roundMoney } from "./payroll-calculator";
 
 export type TimeSheetSymbol = "1" | "0" | "V" | "R" | "N";
+export type TimeSheetAttendanceKind =
+  | "present"
+  | "weekly_off"
+  | "late"
+  | "absent"
+  | "vacation"
+  | "resigned"
+  | "new_promoter";
 export interface TimeSheetAttendance {
   workDate: string;
   present?: boolean;
@@ -24,7 +32,12 @@ export interface TimeSheetEmployee {
   sponsorship?: string;
   monthlySalary: number;
   attendance: TimeSheetAttendance[];
-  overrides?: Array<{ workDate: string; symbol: string }>;
+  overrides?: Array<{
+    workDate: string;
+    symbol: string;
+    paidShiftUnits?: number | string;
+    attendanceKind?: TimeSheetAttendanceKind;
+  }>;
   overtime: Array<{
     workDate: string;
     overtimeMinutes: number;
@@ -41,7 +54,13 @@ export interface OverTimeSheetInput {
   employees: TimeSheetEmployee[];
 }
 export interface ParsedTimeSheet {
-  rows: Array<{ userId: string; workDate: string; symbol: TimeSheetSymbol }>;
+  rows: Array<{
+    userId: string;
+    workDate: string;
+    symbol: TimeSheetSymbol;
+    paidShiftUnits: number;
+    attendanceKind: TimeSheetAttendanceKind;
+  }>;
   rejectedRows: Array<{ rowNumber: number; reason: string }>;
 }
 
@@ -97,7 +116,7 @@ const LEGEND = [
   ["V", "إجازة", "Vacation"],
   // The supplied workbook's English label is retained verbatim.
   ["R", "استقالة", "Vacation"],
-  ["N", "مروّج جديد", "New promoter"],
+  ["N", "مروّج جديد", ""],
 ];
 
 function isSymbol(value: unknown): value is TimeSheetSymbol {
@@ -108,6 +127,53 @@ function isSymbol(value: unknown): value is TimeSheetSymbol {
     value === "R" ||
     value === "N"
   );
+}
+
+function fillColor(cell: ExcelJS.Cell): string | undefined {
+  const fillValue = cell.fill;
+  if (fillValue?.type !== "pattern") return undefined;
+  return fillValue.fgColor?.argb?.toUpperCase();
+}
+
+function attendanceKind(
+  symbol: TimeSheetSymbol,
+  cell: ExcelJS.Cell,
+): TimeSheetAttendanceKind {
+  if (symbol === "0") return "absent";
+  if (symbol === "V") return "vacation";
+  if (symbol === "R") return "resigned";
+  if (symbol === "N") return "new_promoter";
+  if (fillColor(cell) === "FFFFFF00") return "weekly_off";
+  if (fillColor(cell) === "FFDDEBF7") return "late";
+  return "present";
+}
+
+function parseAttendanceCell(
+  value: ExcelJS.CellValue,
+  cell: ExcelJS.Cell,
+):
+  | {
+      symbol: TimeSheetSymbol;
+      paidShiftUnits: number;
+      attendanceKind: TimeSheetAttendanceKind;
+    }
+  | undefined {
+  if (value === null || value === "") return undefined;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0 || value > 2) return undefined;
+    const symbol: TimeSheetSymbol = value === 0 ? "0" : "1";
+    return {
+      symbol,
+      paidShiftUnits: value,
+      attendanceKind: attendanceKind(symbol, cell),
+    };
+  }
+  if (!isSymbol(value)) return undefined;
+  return {
+    symbol: value,
+    paidShiftUnits: value === "1" ? 1 : 0,
+    attendanceKind: attendanceKind(value, cell),
+  };
 }
 
 export function timeSheetDates(period: OverTimeSheetInput["period"]): string[] {
@@ -124,6 +190,57 @@ export function timeSheetDates(period: OverTimeSheetInput["period"]): string[] {
   }
   if (!dates.length) throw new RangeError("Invalid time sheet period");
   return dates;
+}
+
+function headerDate(value: ExcelJS.CellValue): string | undefined {
+  if (value instanceof Date && Number.isFinite(value.getTime()))
+    return value.toISOString().slice(0, 10);
+  if (typeof value !== "string") return undefined;
+  const match = value.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!match) return undefined;
+  const [, day, month, year] = match;
+  const date = new Date(`${year}-${month}-${day}T00:00:00Z`);
+  return Number.isFinite(date.getTime()) &&
+    date.getUTCFullYear() === Number(year) &&
+    date.getUTCMonth() + 1 === Number(month) &&
+    date.getUTCDate() === Number(day)
+    ? date.toISOString().slice(0, 10)
+    : undefined;
+}
+
+/** Reads the legacy workbook's date columns without relying on hidden metadata. */
+export async function detectTimeSheetPeriod(buffer: Buffer): Promise<{
+  month: string;
+  startDate: string;
+  endDate: string;
+}> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets.find(
+    (candidate) =>
+      candidate.name !== "Employees_DB" &&
+      candidate.name !== "_payroll_metadata" &&
+      candidate.getCell(1, 13).value !== null,
+  );
+  if (!sheet) throw new RangeError("Time sheet date columns are missing");
+  const dates: string[] = [];
+  for (let column = 13; column <= sheet.columnCount; column++) {
+    const value = sheet.getCell(1, column).value;
+    if (value === "Paid Days") break;
+    const date = headerDate(value);
+    if (!date) throw new RangeError("Invalid time sheet date header");
+    dates.push(date);
+  }
+  if (!dates.length || dates.length > 31)
+    throw new RangeError("Invalid time sheet date range");
+  const expected = new Date(`${dates[0]}T00:00:00Z`);
+  for (const date of dates) {
+    if (expected.toISOString().slice(0, 10) !== date)
+      throw new RangeError("Time sheet date columns must be consecutive");
+    expected.setUTCDate(expected.getUTCDate() + 1);
+  }
+  const endDate = dates[dates.length - 1];
+  return { month: endDate.slice(0, 7), startDate: dates[0], endDate };
 }
 
 function sheetName(month: string): string {
@@ -250,7 +367,7 @@ export async function createOvertimeTimeSheet(
       employee.attendance.map((day) => [day.workDate, day]),
     );
     const overrides = new Map(
-      employee.overrides?.map((day) => [day.workDate, day.symbol]),
+      employee.overrides?.map((day) => [day.workDate, day]),
     );
     let paidDays = 0;
     let lateness = 0;
@@ -258,24 +375,45 @@ export async function createOvertimeTimeSheet(
       if (date > input.throughDate) return;
       const day = attendance.get(date);
       const override = overrides.get(date);
-      const symbol = isSymbol(override)
-        ? override
+      const symbol = isSymbol(override?.symbol)
+        ? override.symbol
         : day?.vacation
           ? "V"
           : day?.present || day?.weeklyOff
             ? "1"
             : "0";
+      const paidShiftUnits = isSymbol(override?.symbol)
+        ? Number(override.paidShiftUnits ?? (symbol === "1" ? 1 : 0))
+        : symbol === "1"
+          ? 1
+          : 0;
+      const attendanceKind =
+        override?.attendanceKind ??
+        (symbol === "0"
+          ? "absent"
+          : symbol === "V"
+            ? "vacation"
+            : symbol === "R"
+              ? "resigned"
+              : symbol === "N"
+                ? "new_promoter"
+                : day?.weeklyOff
+                  ? "weekly_off"
+                  : (day?.lateMinutes ?? 0) > 15
+                    ? "late"
+                    : "present");
       const cell = row.getCell(index + 13);
-      cell.value = symbol;
-      if (symbol === "1") paidDays++;
-      if (symbol === "1" && day?.weeklyOff) cell.fill = fill("FFFFFF00");
-      else if (symbol === "1" && (day?.lateMinutes ?? 0) > 15) {
+      cell.value =
+        paidShiftUnits !== (symbol === "1" ? 1 : 0) ? paidShiftUnits : symbol;
+      paidDays += paidShiftUnits;
+      if (attendanceKind === "weekly_off") cell.fill = fill("FFFFFF00");
+      else if (attendanceKind === "late") {
         cell.fill = fill("FFDDEBF7");
         lateness++;
-      } else if (symbol === "0") cell.fill = fill("FFFF0000");
-      else if (symbol === "V") cell.fill = fill("FF4472C4");
-      else if (symbol === "R") cell.fill = fill("FF92D050");
-      else if (symbol === "N") cell.fill = fill("FF999999");
+      } else if (attendanceKind === "absent") cell.fill = fill("FFFF0000");
+      else if (attendanceKind === "vacation") cell.fill = fill("FF4472C4");
+      else if (attendanceKind === "resigned") cell.fill = fill("FF92D050");
+      else if (attendanceKind === "new_promoter") cell.fill = fill("FF999999");
       cell.dataValidation = {
         type: "list",
         allowBlank: true,
@@ -372,13 +510,14 @@ export async function parseOvertimeTimeSheet(
     input.period.startDate,
     input.period.endDate,
   ];
-  expectedMetadata.forEach((value, index) => {
-    if (metadata?.getCell(index + 1, 2).value !== value)
-      reject(
-        0,
-        `Invalid workbook metadata: ${["version", "project", "period", "start date", "end date"][index]}`,
-      );
-  });
+  if (metadata)
+    expectedMetadata.forEach((value, index) => {
+      if (metadata.getCell(index + 1, 2).value !== value)
+        reject(
+          0,
+          `Invalid workbook metadata: ${["version", "project", "period", "start date", "end date"][index]}`,
+        );
+    });
   const dates = timeSheetDates(input.period);
   const sheet = workbook.getWorksheet(sheetName(input.period.month));
   if (!sheet || !workbook.getWorksheet("Employees_DB")) {
@@ -425,7 +564,7 @@ export async function parseOvertimeTimeSheet(
       } else mappedIdentities.add(identity);
     }
   }
-  if (mappedIdentities.size !== members.size)
+  if (metadata && mappedIdentities.size !== members.size)
     reject(0, "Missing employee identity mapping in workbook metadata");
   const seen = new Set<string>();
   let legendRowNumber: number | undefined;
@@ -447,14 +586,14 @@ export async function parseOvertimeTimeSheet(
     if (seen.has(identity)) reject(rowNumber, "Duplicate employee identity");
     seen.add(identity);
     dates.forEach((workDate, index) => {
-      const value = row.getCell(13 + index).value;
-      if (value === null || value === "") return;
-      const symbol = value === 1 || value === 0 ? String(value) : value;
-      if (!isSymbol(symbol))
+      const cell = row.getCell(13 + index);
+      const parsed = parseAttendanceCell(cell.value, cell);
+      if (cell.value === null || cell.value === "") return;
+      if (!parsed)
         reject(rowNumber, `Invalid attendance symbol for ${workDate}`);
       else if (workDate > input.throughDate)
         reject(rowNumber, `Future attendance is not allowed for ${workDate}`);
-      else if (userId) rows.push({ userId, workDate, symbol });
+      else if (userId) rows.push({ userId, workDate, ...parsed });
     });
   }
   if (legendRowNumber === undefined)

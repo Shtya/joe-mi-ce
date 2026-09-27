@@ -26,6 +26,7 @@ import { ERole } from "enums/Role.enum";
 import { PayrollCalculationMode, PayrollPeriodStatus } from "./payroll.types";
 import {
   createOvertimeTimeSheet,
+  detectTimeSheetPeriod,
   parseOvertimeTimeSheet,
   OverTimeSheetInput,
 } from "./payroll-timesheet";
@@ -132,12 +133,96 @@ describe("overtime time sheet", () => {
     const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
     const result = await parse(workbook);
     expect(result.rejectedRows).toEqual([]);
-    expect(result.rows).toContainEqual({
-      userId: "user-1",
-      workDate: "2026-08-28",
-      symbol: "R",
-    });
+    expect(result.rows).toContainEqual(
+      expect.objectContaining({
+        userId: "user-1",
+        workDate: "2026-08-28",
+        symbol: "R",
+        paidShiftUnits: 0,
+        attendanceKind: "resigned",
+      }),
+    );
     expect(result.rows).toHaveLength(30);
+  });
+
+  it("imports the original metadata-free August workbook with fractional and double shifts", async () => {
+    const legacyFixture: OverTimeSheetInput = {
+      ...fixture,
+      period: {
+        id: "period-august",
+        month: "2026-08",
+        startDate: "2026-07-26",
+        endDate: "2026-08-25",
+      },
+      throughDate: "2026-08-25",
+    };
+    const workbook = await workbookFrom(
+      await createOvertimeTimeSheet(legacyFixture),
+    );
+    const metadata = workbook.getWorksheet("_payroll_metadata")!;
+    workbook.removeWorksheet(metadata.id);
+    const sheet = workbook.getWorksheet("August 26")!;
+    sheet.getCell("M2").value = 2;
+    sheet.getCell("N2").value = 1.75;
+    sheet.getCell("O2").value = 1;
+    sheet.getCell("O2").style = {
+      ...sheet.getCell("O2").style,
+      fill: {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFFFFF00" },
+      },
+    };
+    sheet.getCell("P2").value = 1;
+    sheet.getCell("P2").style = {
+      ...sheet.getCell("P2").style,
+      fill: {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFDDEBF7" },
+      },
+    };
+    sheet.getCell("C12").value = "";
+
+    const result = await parseOvertimeTimeSheet({
+      buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+      ...legacyFixture,
+    });
+
+    expect(result.rejectedRows).toEqual([]);
+    await expect(
+      detectTimeSheetPeriod(Buffer.from(await workbook.xlsx.writeBuffer())),
+    ).resolves.toEqual({
+      month: "2026-08",
+      startDate: "2026-07-26",
+      endDate: "2026-08-25",
+    });
+    expect(result.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          userId: "user-1",
+          workDate: "2026-07-26",
+          symbol: "1",
+          paidShiftUnits: 2,
+          attendanceKind: "present",
+        }),
+        expect.objectContaining({
+          workDate: "2026-07-27",
+          paidShiftUnits: 1.75,
+          attendanceKind: "present",
+        }),
+        expect.objectContaining({
+          workDate: "2026-07-28",
+          paidShiftUnits: 1,
+          attendanceKind: "weekly_off",
+        }),
+        expect.objectContaining({
+          workDate: "2026-07-29",
+          paidShiftUnits: 1,
+          attendanceKind: "late",
+        }),
+      ]),
+    );
   });
 
   it("accepts an unrecorded blank day on same-day import without creating an override", async () => {
@@ -179,28 +264,26 @@ describe("overtime time sheet", () => {
     expect(result.rows).toHaveLength(30);
   });
 
-  it.each(["missing", "version", "project", "period"])(
+  it.each(["version", "project", "period"])(
     "rejects %s metadata",
     async (kind) => {
       const workbook = await workbookFrom(
         await createOvertimeTimeSheet(fixture),
       );
       const metadata = workbook.getWorksheet("_payroll_metadata")!;
-      if (kind === "missing") workbook.removeWorksheet(metadata.id);
-      else
-        metadata.getCell(
-          { version: "B1", project: "B2", period: "B3" }[kind]!,
-        ).value = "wrong";
+      metadata.getCell(
+        { version: "B1", project: "B2", period: "B3" }[kind]!,
+      ).value = "wrong";
       const result = await parse(workbook);
       expect(result.rejectedRows.length).toBeGreaterThan(0);
       expect(result.rows).toEqual([]);
     },
   );
 
-  it("collects every invalid attendance cell and rejects formulas and fractional presence", async () => {
+  it("collects every invalid attendance cell and rejects formulas and more than two shifts", async () => {
     const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
     const sheet = workbook.getWorksheet("September 26")!;
-    sheet.getCell("M2").value = 1.75;
+    sheet.getCell("M2").value = 2.01;
     sheet.getCell("N2").value = "X";
     sheet.getCell("O2").value = { formula: "1", result: 1 };
     const result = await parse(workbook);
@@ -340,6 +423,7 @@ describe("overtime time sheet service boundaries", () => {
     const databaseRows = new Map<Function, unknown[]>([[User, [user]]]);
     const manager = {
       findOne: jest.fn().mockResolvedValue(period),
+      save: jest.fn(async (value) => value),
       upsert: jest.fn(async (_entity, values) => {
         written.push(...values);
       }),
@@ -377,6 +461,7 @@ describe("overtime time sheet service boundaries", () => {
                     id: "project-1",
                     payrollEnabled: true,
                     payrollCalculationMode: mode,
+                    payrollCutoffDay: 26,
                   }),
                 }
               : entity === PayrollPeriod
@@ -441,20 +526,29 @@ describe("overtime time sheet service boundaries", () => {
     const result = await service.importOvertimeTimeSheet(
       "project-1",
       { buffer: await createOvertimeTimeSheet(fixture) },
-      { month: "2026-09" },
+      {},
       actor,
       "2026-09-24",
     );
     expect(result.rejectedRows).toEqual([]);
-    expect(written).toHaveLength(30);
-    expect(written).toContainEqual({
-      projectId: "project-1",
-      periodId: "period-1",
-      userId: "user-1",
-      workDate: "2026-08-28",
-      symbol: "R",
-      updatedById: "admin-1",
+    expect(result).toMatchObject({
+      month: "2026-09",
+      startDate: "2026-08-26",
+      endDate: "2026-09-25",
     });
+    expect(written).toHaveLength(30);
+    expect(written).toContainEqual(
+      expect.objectContaining({
+        projectId: "project-1",
+        periodId: "period-1",
+        userId: "user-1",
+        workDate: "2026-08-28",
+        symbol: "R",
+        paidShiftUnits: "0.00",
+        attendanceKind: "resigned",
+        updatedById: "admin-1",
+      }),
+    );
   });
 
   it("rejects paid periods and project outsiders without persisting anything", async () => {
@@ -512,7 +606,13 @@ describe("overtime time sheet service boundaries", () => {
       { date: "2026-08-27", vacation: { user } },
     ]);
     databaseRows.set(PayrollTimeSheetOverride, [
-      { userId: user.id, workDate: "2026-08-28", symbol: "N" },
+      {
+        userId: user.id,
+        workDate: "2026-08-28",
+        symbol: "1",
+        paidShiftUnits: "1.75",
+        attendanceKind: "present",
+      },
     ]);
     databaseRows.set(PayrollOvertime, [
       {
@@ -536,7 +636,7 @@ describe("overtime time sheet service boundaries", () => {
       fgColor: { argb: "FFDDEBF7" },
     });
     expect(sheet.getCell("N2").value).toBe("V");
-    expect(sheet.getCell("O2").value).toBe("N");
+    expect(sheet.getCell("O2").value).toBe(1.75);
     expect(sheet.getCell("S2").fill).toMatchObject({
       fgColor: { argb: "FFFFFF00" },
     });

@@ -56,7 +56,11 @@ export class SalaryImportDto {
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) effectiveFrom?: string;
 }
 
-export class PayrollTimeSheetImportDto extends PayrollMonthQueryDto {}
+export class PayrollTimeSheetImportDto {
+  @IsOptional()
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/)
+  month?: string;
+}
 
 export class ViolationActionDto {
   @IsIn(["warning", "daily_wage_percentage", "daily_wage_days"])

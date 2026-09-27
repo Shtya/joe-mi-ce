@@ -52,6 +52,7 @@ import * as ExcelJS from "exceljs";
 import { DEFAULT_VIOLATION_RULES } from "./default-violation-policy";
 import {
   createOvertimeTimeSheet,
+  detectTimeSheetPeriod,
   parseOvertimeTimeSheet,
   timeSheetDates,
   TimeSheetEmployee,
@@ -405,11 +406,46 @@ export class PayrollService {
       projectId,
       EPermission.PAYROLL_MANAGE,
     );
-    await this.requireOvertimeProject(projectId);
-    const period = await this.requireTimeSheetPeriod(projectId, dto.month);
-    this.assertPendingPeriod(period);
+    const project = await this.requireOvertimeProject(projectId);
     if (!file?.buffer?.length)
       throw new BadRequestException("An XLSX workbook is required");
+    let detected;
+    try {
+      detected = await detectTimeSheetPeriod(file.buffer);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error
+          ? error.message
+          : "Invalid time sheet date range",
+      );
+    }
+    if (dto.month && dto.month !== detected.month)
+      throw new BadRequestException(
+        "The requested month does not match the workbook date range",
+      );
+    const cutoffDay = project.payrollCutoffDay ?? 1;
+    const expected = resolvePayrollPeriod(detected.month, cutoffDay);
+    if (
+      expected.startDate !== detected.startDate ||
+      expected.endDate !== detected.endDate
+    )
+      throw new BadRequestException(
+        "The workbook date range does not match this project's cutoff period",
+      );
+    let period = await this.periodRepo.findOne({
+      where: { projectId, month: detected.month },
+    });
+    if (!period) {
+      await this.syncPeriod(
+        projectId,
+        detected.month,
+        actor,
+        new Date(`${detected.endDate}T23:59:59Z`),
+        detected.endDate,
+      );
+      period = await this.requireTimeSheetPeriod(projectId, detected.month);
+    }
+    this.assertPendingPeriod(period);
     const users = await this.userRepo.find({
       where: { project_id: projectId },
     });
@@ -448,6 +484,7 @@ export class PayrollService {
           PayrollTimeSheetOverride,
           parsed.rows.map((row) => ({
             ...row,
+            paidShiftUnits: row.paidShiftUnits.toFixed(2),
             projectId,
             periodId: period.id,
             updatedById: actor.id,
@@ -455,7 +492,22 @@ export class PayrollService {
           ["periodId", "userId", "workDate"],
         );
     });
-    return { acceptedRows: parsed.rows, rejectedRows: [] };
+    if (detected.endDate < this.riyadhDate()) {
+      const next = new Date(`${detected.month}-01T00:00:00Z`);
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      await this.createPendingPeriod(
+        projectId,
+        { month: next.toISOString().slice(0, 7) },
+        actor,
+      );
+    }
+    return {
+      month: detected.month,
+      startDate: detected.startDate,
+      endDate: detected.endDate,
+      acceptedRows: parsed.rows,
+      rejectedRows: [],
+    };
   }
 
   private assertProjectPayrollAccess(

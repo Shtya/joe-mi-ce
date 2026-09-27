@@ -3,7 +3,10 @@ import { Project } from "entities/project.entity";
 import { User } from "entities/user.entity";
 import { Column, Entity, Index, JoinColumn, ManyToOne } from "typeorm";
 import { PayrollPeriod } from "./payroll-period.entity";
-import type { TimeSheetSymbol } from "src/payroll/payroll-timesheet";
+import type {
+  TimeSheetAttendanceKind,
+  TimeSheetSymbol,
+} from "src/payroll/payroll-timesheet";
 
 @Entity("payroll_timesheet_overrides")
 @Index(["periodId", "userId", "workDate"], { unique: true })
@@ -13,6 +16,10 @@ export class PayrollTimeSheetOverride extends CoreEntity {
   @Column({ type: "uuid" }) userId: string;
   @Column({ type: "date" }) workDate: string;
   @Column({ type: "varchar", length: 1 }) symbol: TimeSheetSymbol;
+  @Column({ type: "numeric", precision: 5, scale: 2, default: 0 })
+  paidShiftUnits: string;
+  @Column({ type: "varchar", length: 20, default: "present" })
+  attendanceKind: TimeSheetAttendanceKind;
   @Column({ type: "uuid" }) updatedById: string;
 
   @ManyToOne(() => Project, { onDelete: "CASCADE" })
