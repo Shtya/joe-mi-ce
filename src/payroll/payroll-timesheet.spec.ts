@@ -424,8 +424,8 @@ describe("overtime time sheet service boundaries", () => {
     const manager = {
       findOne: jest.fn().mockResolvedValue(period),
       save: jest.fn(async (value) => value),
-      upsert: jest.fn(async (_entity, values) => {
-        written.push(...values);
+      upsert: jest.fn(async (entity, values) => {
+        if (entity === PayrollTimeSheetOverride) written.push(...values);
       }),
     };
     const dataSource = {

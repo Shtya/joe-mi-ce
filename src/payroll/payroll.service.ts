@@ -449,6 +449,7 @@ export class PayrollService {
     const users = await this.userRepo.find({
       where: { project_id: projectId },
     });
+    const usersById = new Map(users.map((user) => [user.id, user]));
     const parsed = await parseOvertimeTimeSheet({
       buffer: file.buffer,
       projectId,
@@ -479,6 +480,33 @@ export class PayrollService {
         throw new ConflictException(
           "Payroll period changed; download a new time sheet",
         );
+      for (const employee of parsed.employees) {
+        const user = usersById.get(employee.userId)!;
+        user.name = employee.name || user.name;
+        user.mobile = employee.mobile || user.mobile;
+        user.nationality = employee.nationality || user.nationality;
+        user.iban = employee.bankAccount || user.iban;
+        user.bank_name = employee.bankName || user.bank_name;
+        user.sponsorship = employee.sponsorship || user.sponsorship;
+        await manager.save(user);
+        await manager.upsert(
+          EmployeeSalary,
+          [
+            {
+              projectId,
+              userId: user.id,
+              monthlySalary: employee.monthlySalary.toFixed(2),
+              effectiveFrom: period.startDate,
+              effectiveTo: null,
+              importFileName: "legacy-timesheet.xlsx",
+              importSheetName: period.month,
+              importRowNumber: null,
+              updatedById: actor.id,
+            },
+          ],
+          ["projectId", "userId", "effectiveFrom"],
+        );
+      }
       if (parsed.rows.length)
         await manager.upsert(
           PayrollTimeSheetOverride,

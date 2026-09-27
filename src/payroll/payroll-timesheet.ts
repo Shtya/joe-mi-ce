@@ -61,6 +61,16 @@ export interface ParsedTimeSheet {
     paidShiftUnits: number;
     attendanceKind: TimeSheetAttendanceKind;
   }>;
+  employees: Array<{
+    userId: string;
+    name: string;
+    mobile: string;
+    nationality: string;
+    monthlySalary: number;
+    bankAccount: string;
+    bankName: string;
+    sponsorship: string;
+  }>;
   rejectedRows: Array<{ rowNumber: number; reason: string }>;
 }
 
@@ -489,6 +499,7 @@ export async function parseOvertimeTimeSheet(
 ): Promise<ParsedTimeSheet> {
   const rejectedRows: ParsedTimeSheet["rejectedRows"] = [];
   const rows: ParsedTimeSheet["rows"] = [];
+  const employees: ParsedTimeSheet["employees"] = [];
   const reject = (rowNumber: number, reason: string) =>
     rejectedRows.push({ rowNumber, reason });
   const workbook = new ExcelJS.Workbook();
@@ -497,6 +508,7 @@ export async function parseOvertimeTimeSheet(
   } catch {
     return {
       rows: [],
+      employees: [],
       rejectedRows: [
         { rowNumber: 0, reason: "The XLSX workbook could not be read" },
       ],
@@ -522,7 +534,7 @@ export async function parseOvertimeTimeSheet(
   const sheet = workbook.getWorksheet(sheetName(input.period.month));
   if (!sheet || !workbook.getWorksheet("Employees_DB")) {
     reject(0, "Required worksheets are missing");
-    return { rows: [], rejectedRows };
+    return { rows: [], employees: [], rejectedRows };
   }
   const directory = workbook.getWorksheet("Employees_DB")!;
   const directoryHeaders = [...IDENTITY_HEADERS];
@@ -585,6 +597,24 @@ export async function parseOvertimeTimeSheet(
       reject(rowNumber, "Employee identity is not assigned to this project");
     if (seen.has(identity)) reject(rowNumber, "Duplicate employee identity");
     seen.add(identity);
+    if (userId) {
+      const text = (column: number) =>
+        String(row.getCell(column).value ?? "").trim();
+      const monthlySalary = Number(row.getCell(9).value ?? 0);
+      if (!Number.isFinite(monthlySalary) || monthlySalary < 0)
+        reject(rowNumber, "Invalid Basic Salary");
+      else
+        employees.push({
+          userId,
+          name: text(2),
+          mobile: text(3),
+          nationality: text(4),
+          monthlySalary,
+          bankAccount: text(10),
+          bankName: text(11),
+          sponsorship: text(12),
+        });
+    }
     dates.forEach((workDate, index) => {
       const cell = row.getCell(13 + index);
       const parsed = parseAttendanceCell(cell.value, cell);
@@ -628,5 +658,9 @@ export async function parseOvertimeTimeSheet(
   for (const identity of members.keys())
     if (!seen.has(identity))
       reject(0, `Missing employee identity: ${identity}`);
-  return { rows: rejectedRows.length ? [] : rows, rejectedRows };
+  return {
+    rows: rejectedRows.length ? [] : rows,
+    employees: rejectedRows.length ? [] : employees,
+    rejectedRows,
+  };
 }
