@@ -564,10 +564,17 @@ export async function parseOvertimeTimeSheet(
     input.employees.map((employee) => [employee.identity, employee.userId]),
   );
   const membersByName = new Map<string, string | null>();
+  const membersByMobile = new Map<string, string | null>();
   for (const employee of input.employees) {
     const name = normalizedEmployeeName(employee.name ?? "");
     if (!name) continue;
     membersByName.set(name, membersByName.has(name) ? null : employee.userId);
+    const mobile = String(employee.mobile ?? "").replace(/\D/g, "");
+    if (mobile)
+      membersByMobile.set(
+        mobile,
+        membersByMobile.has(mobile) ? null : employee.userId,
+      );
   }
   if (members.size !== input.employees.length)
     reject(0, "Project employee identities are not unique");
@@ -603,11 +610,14 @@ export async function parseOvertimeTimeSheet(
         ? String(identityValue)
         : "";
     const name = String(row.getCell(2).value ?? "").trim();
+    const mobile = String(row.getCell(3).value ?? "").replace(/\D/g, "");
     // Legacy August rosters contain Iqamas that may not yet exist on the
     // Gatemea user record. Resolve the existing promoter by their displayed
     // name first, then use Iqama only when name data is unavailable.
     const userId =
-      membersByName.get(normalizedEmployeeName(name)) ?? members.get(identity);
+      membersByMobile.get(mobile) ??
+      membersByName.get(normalizedEmployeeName(name)) ??
+      members.get(identity);
     if (!userId)
       reject(rowNumber, "Employee identity is not assigned to this project");
     if (seen.has(identity)) reject(rowNumber, "Duplicate employee identity");
