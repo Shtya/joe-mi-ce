@@ -17,6 +17,6 @@ export function getPayrollAttendanceColumns(
     additions: Number(payrollLine?.totalAddition || 0),
     attendance_deduction: Number(payrollLine?.attendanceDeduction || 0),
     manual_deduction: Number(payrollLine?.manualDeduction || 0),
-    net_pay: Number(payrollLine?.netPay || 0),
+    net_pay: Math.max(0, Number(payrollLine?.netPay || 0)),
   };
 }

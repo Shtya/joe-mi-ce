@@ -132,6 +132,23 @@ describe("PayrollService employee adjustments", () => {
     expect(line.netPay).toBe("4830.00");
   });
 
+  it("caps net pay at zero when deductions exceed gross salary", async () => {
+    const { service, line } = createService();
+
+    await service.addAdjustment(
+      lineId,
+      {
+        type: PayrollAdjustmentType.DEDUCTION,
+        amount: 5000,
+        reason: "Advance",
+      },
+      actor as any,
+    );
+
+    expect(line.totalDeduction).toBe("5000.00");
+    expect(line.netPay).toBe("0.00");
+  });
+
   it("does not allow adjustments after payroll is paid", async () => {
     const { service } = createService(PayrollPeriodStatus.PAID);
 

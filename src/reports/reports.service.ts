@@ -21,6 +21,11 @@ import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
 import { getPayrollAttendanceColumns } from "./payroll-attendance-columns";
+import {
+  formatAttendanceCell,
+  formatVacationCell,
+  getDailyAttendanceDeductions,
+} from "./attendance-cell";
 
 type MonthlyReportTabOptions = {
   attendance?: boolean;
@@ -472,12 +477,14 @@ export class ReportsService {
       }
     });
 
-    const vacationsByUser: Record<string, Set<string>> = {};
+    const vacationsByUser: Record<string, Map<string, string>> = {};
     vacations.forEach((v) => {
       const uid = v.user?.id;
       if (uid) {
-        if (!vacationsByUser[uid]) vacationsByUser[uid] = new Set();
-        v.vacationDates.forEach((vd) => vacationsByUser[uid].add(vd.date));
+        if (!vacationsByUser[uid]) vacationsByUser[uid] = new Map();
+        v.vacationDates.forEach((vd) =>
+          vacationsByUser[uid].set(vd.date, v.reason),
+        );
       }
     });
 
@@ -619,7 +626,12 @@ export class ReportsService {
 
       const userJourneys = journeysByUser[user.id] || [];
       const userSales = salesByUser[user.id] || [];
-      const userVacationDates = vacationsByUser[user.id] || new Set<string>();
+      const userVacationDates =
+        vacationsByUser[user.id] || new Map<string, string>();
+      const dailyDeductions = getDailyAttendanceDeductions(
+        user.id,
+        payrollLinesByUserId,
+      );
 
       let effectiveBranch: any = null;
       if (userJourneys.length > 0) {
@@ -702,12 +714,14 @@ export class ReportsService {
           "day",
         );
 
-        if (userVacationDates.has(currentDateStr)) {
-          attRow[dayKey] = "Vacation";
-          t3RowArr.push("Vacation");
-          t3RowArr.push("Vacation");
-          durationRow[`duration_${i}`] = "Vacation";
-          durationRow[`shift_count_${i}`] = "Vacation";
+        const vacationReason = userVacationDates.get(currentDateStr);
+        if (vacationReason !== undefined) {
+          const vacationCell = formatVacationCell(vacationReason);
+          attRow[dayKey] = vacationCell;
+          t3RowArr.push(vacationCell);
+          t3RowArr.push(vacationCell);
+          durationRow[`duration_${i}`] = vacationCell;
+          durationRow[`shift_count_${i}`] = vacationCell;
           if (i <= daysInMonthForSales) t2Row[dayKey] = "";
           continue;
         }
@@ -748,6 +762,11 @@ export class ReportsService {
         } else {
           attRow[dayKey] = isPastReportingPeriod ? "" : user.is_active ? 0 : "";
         }
+
+        attRow[dayKey] = formatAttendanceCell(
+          attRow[dayKey],
+          dailyDeductions.get(currentDateStr) || 0,
+        );
 
         if (dayJourneys.length > 0) {
           const inTimes = dayJourneys

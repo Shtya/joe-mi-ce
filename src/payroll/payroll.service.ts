@@ -987,8 +987,9 @@ export class PayrollService {
     const totalDeduction = roundMoney(
       roundedAttendanceDeduction + manualDeduction,
     );
-    const netPay = roundMoney(
-      Number(line.grossSalary) + totalAddition - totalDeduction,
+    const netPay = Math.max(
+      0,
+      roundMoney(Number(line.grossSalary) + totalAddition - totalDeduction),
     );
 
     line.attendanceDeduction = roundedAttendanceDeduction.toFixed(2);
