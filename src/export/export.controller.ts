@@ -13,8 +13,10 @@ import {
   Req,
   Headers,
   BadRequestException,
+  UseGuards,
 } from "@nestjs/common";
 import { ExportService, ModuleName } from "./export.service";
+import { AuthGuard } from "src/auth/auth.guard";
 import * as qs from "qs";
 @Controller("export")
 export class ExportController {
@@ -37,6 +39,7 @@ export class ExportController {
   }
 
   @Get("by-url")
+  @UseGuards(AuthGuard)
   async exportByUrl(
     @Query() query: any,
     @Res() res: Response,

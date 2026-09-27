@@ -15,6 +15,8 @@ describe("ExportService", () => {
   };
 
   beforeEach(async () => {
+    mockDataSource.getRepository.mockReset();
+    mockHttpService.get.mockReset();
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExportService,
@@ -24,6 +26,44 @@ describe("ExportService", () => {
     }).compile();
 
     service = module.get<ExportService>(ExportService);
+  });
+
+  describe("GATMEA project scoping", () => {
+    it("recognizes the project filter used by the sales export URL", async () => {
+      const findOne = jest.fn().mockResolvedValue({ name: "GATMEA" });
+      mockDataSource.getRepository.mockReturnValue({ findOne });
+
+      expect(
+        (service as any).extractProjectIdFromExportUrl(
+          "/api/v1/sales?filters[project][id]=c9f7df79-b342-4b8d-aa71-0de112f47254",
+        ),
+      ).toBe("c9f7df79-b342-4b8d-aa71-0de112f47254");
+
+      const result = await (service as any).isGatemeaProjectExport(
+        "/api/v1/sales?filters[project][id]=c9f7df79-b342-4b8d-aa71-0de112f47254",
+        [],
+      );
+
+      expect(findOne).toHaveBeenCalledWith({
+        where: { id: "c9f7df79-b342-4b8d-aa71-0de112f47254" },
+        select: { id: true, name: true },
+      });
+      expect(await findOne.mock.results[0].value).toEqual({ name: "GATMEA" });
+      expect(result).toBe(true);
+    });
+
+    it("fails closed for a project other than GATMEA", async () => {
+      mockDataSource.getRepository.mockReturnValue({
+        findOne: jest.fn().mockResolvedValue({ name: "Another project" }),
+      });
+
+      const result = await (service as any).isGatemeaProjectExport(
+        "/api/v1/stock/project/c9f7df79-b342-4b8d-aa71-0de112f47254",
+        [],
+      );
+
+      expect(result).toBe(false);
+    });
   });
 
   describe("cleanDataForExport - Unplanned Module", () => {
@@ -104,7 +144,7 @@ describe("ExportService", () => {
   });
 
   describe("cleanDataForExport - General Journey and Sale Cleanup", () => {
-    it("exports stock with explicit branch code and chain-specific SKU columns", () => {
+    it("exports GATMEA stock with explicit branch code and chain-specific SKU columns", () => {
       const result = (service as any).cleanDataForExport(
         [
           {
@@ -124,6 +164,7 @@ describe("ExportService", () => {
           },
         ],
         "stock",
+        true,
       );
 
       expect(result[0]).toEqual({
@@ -136,6 +177,29 @@ describe("ExportService", () => {
         "extra sku": "100523090",
         quantity: 4,
       });
+    });
+
+    it("keeps non-GATMEA stock exports on the existing generic layout", () => {
+      const result = (service as any).cleanDataForExport(
+        [
+          {
+            quantity: 4,
+            branch: { name: "Other branch", code: "9999" },
+            product: {
+              name: "Other product",
+              model: "OTHER-1",
+              sacoSku: "SACO-1",
+              extraSku: "EXTRA-1",
+            },
+          },
+        ],
+        "stock",
+        false,
+      );
+
+      expect(result[0]["branch code"]).toBeUndefined();
+      expect(result[0]["saco sku"]).toBeUndefined();
+      expect(result[0]["extra sku"]).toBeUndefined();
     });
 
     it("should aggressively clean metadata fields for journeys", () => {
@@ -205,6 +269,7 @@ describe("ExportService", () => {
       const result = (service as any).cleanDataForExport(
         sampleSaleData,
         "sale",
+        true,
       );
       const cleaned = result[0];
 
@@ -232,6 +297,30 @@ describe("ExportService", () => {
       expect(cleaned["price"]).toBe(150);
       expect(cleaned["total amount"]).toBe(300);
       expect(cleaned["quantity"]).toBe(2);
+    });
+
+    it("does not add GATMEA-only sale columns to other projects", () => {
+      const result = (service as any).cleanDataForExport(
+        [
+          {
+            sale_date: "2026-03-05T10:00:00",
+            branch: { name: "Other branch", code: "9999" },
+            product: {
+              name: "Other product",
+              model: "OTHER-1",
+              sacoSku: "SACO-1",
+              extraSku: "EXTRA-1",
+            },
+          },
+        ],
+        "sale",
+        false,
+      );
+
+      expect(result[0]["branch code"]).toBeUndefined();
+      expect(result[0]["saco sku"]).toBeUndefined();
+      expect(result[0]["extra sku"]).toBeUndefined();
+      expect(result[0]["product model"]).toBe("OTHER-1");
     });
   });
 

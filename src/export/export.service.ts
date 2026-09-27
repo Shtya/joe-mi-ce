@@ -23,6 +23,7 @@ import { Role } from "entities/role.entity";
 import { SurveyFeedback } from "entities/survey-feedback.entity";
 import { Survey } from "entities/survey.entity";
 import { CheckIn, Journey, JourneyPlan } from "entities/all_plans.entity";
+import { Project } from "entities/project.entity";
 import { HttpService } from "@nestjs/axios";
 import { firstValueFrom } from "rxjs";
 
@@ -501,7 +502,11 @@ export class ExportService {
   /**
    * Clean and organize data with main entity first
    */
-  private cleanDataForExport(data: any[], mainEntity: string): any[] {
+  private cleanDataForExport(
+    data: any[],
+    mainEntity: string,
+    isGatemeaProject = false,
+  ): any[] {
     const baseUrl = "https://ce-api.joe-mi.com";
     const mainEntityLower = mainEntity.toLowerCase();
 
@@ -782,7 +787,9 @@ export class ExportService {
         // Explicitly extract Branch, Chain, City
         if (item.branch) {
           flattened["branch"] = item.branch.name || "-";
-          flattened["branch code"] = item.branch.code || "-";
+          if (isGatemeaProject) {
+            flattened["branch code"] = item.branch.code || "-";
+          }
           if (item.branch.chain) {
             flattened["chain"] = item.branch.chain.name || "-";
           }
@@ -806,8 +813,10 @@ export class ExportService {
           flattened["product model"] =
             item.product.model || item.product.name || "-";
           flattened["product name"] = item.product.name || "-";
-          flattened["saco sku"] = item.product.sacoSku || "-";
-          flattened["extra sku"] = item.product.extraSku || "-";
+          if (isGatemeaProject) {
+            flattened["saco sku"] = item.product.sacoSku || "-";
+            flattened["extra sku"] = item.product.extraSku || "-";
+          }
         }
 
         // Price comes from the Sale itself, not from the Product
@@ -914,13 +923,12 @@ export class ExportService {
           "city name",
           "chain",
           "branch",
-          "branch code",
+          ...(isGatemeaProject ? ["branch code"] : []),
           "brand",
           "categories",
           "product name",
           "product model",
-          "saco sku",
-          "extra sku",
+          ...(isGatemeaProject ? ["saco sku", "extra sku"] : []),
           "price",
           "total amount",
           "quantity",
@@ -948,7 +956,7 @@ export class ExportService {
         Object.assign(flattened, saleOrdered);
       }
 
-      if (mainEntityLower === "stock") {
+      if (mainEntityLower === "stock" && isGatemeaProject) {
         const stockOrdered = {
           branch: item.branch?.name || "-",
           "branch code": item.branch?.code || "-",
@@ -962,6 +970,21 @@ export class ExportService {
 
         Object.keys(flattened).forEach((key) => delete flattened[key]);
         Object.assign(flattened, stockOrdered);
+      } else if (mainEntityLower === "stock") {
+        // These mappings are part of GATMEA's export contract only. The
+        // generic flattener may otherwise expose the newly imported fields.
+        Object.keys(flattened).forEach((key) => {
+          const normalizedKey = key.toLowerCase().replace(/[ _-]/g, "");
+          if (
+            normalizedKey === "branchcode" ||
+            normalizedKey === "sacosku" ||
+            normalizedKey === "extrasku" ||
+            normalizedKey === "productsacosku" ||
+            normalizedKey === "productextrasku"
+          ) {
+            delete flattened[key];
+          }
+        });
       }
 
       // Also ensure ANY field that is a date string is formatted correctly
@@ -1421,13 +1444,18 @@ export class ExportService {
     options: {
       sheetName?: string;
       fileName?: string;
+      isGatemeaProject?: boolean;
     } = {},
   ) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet(options.sheetName || "Report");
 
     // Clean and process data
-    const cleanedData = this.cleanDataForExport(rows, mainEntity);
+    const cleanedData = this.cleanDataForExport(
+      rows,
+      mainEntity,
+      options.isGatemeaProject,
+    );
     const finalData = this.convertRecordsColumnsToRows(cleanedData);
 
     // For Journey/Unplanned, use the exact order from cleanDataForExport
@@ -1674,6 +1702,7 @@ export class ExportService {
 
       const rawData = await this.fetchDataFromUrl(url, authHeader);
       const data = this.extractDataFromResponse(rawData);
+      const isGatemeaProject = await this.isGatemeaProjectExport(url, data);
 
       // Extract main entity from URL, allowing override from query param
       const mainEntity = moduleOverride || this.extractMainEntityFromUrl(url);
@@ -1703,6 +1732,7 @@ export class ExportService {
         sheetName:
           (finalFileName || mainEntity || "Report").charAt(0).toUpperCase() +
           (finalFileName || mainEntity || "Report").slice(1),
+        isGatemeaProject,
       });
     } catch (error) {
       console.error("Export error:", error);
@@ -1808,6 +1838,65 @@ export class ExportService {
 
       throw new Error(errorMessage);
     }
+  }
+
+  /**
+   * GATMEA has a chain-specific reporting contract.  Keep it isolated from
+   * other projects so their existing exports do not gain Saco-only columns.
+   */
+  private async isGatemeaProjectExport(
+    url: string,
+    data: any[],
+  ): Promise<boolean> {
+    const projectNameInResponse = data.some((item) => {
+      const projectName =
+        item?.project?.name ||
+        item?.branch?.project?.name ||
+        item?.product?.project?.name;
+
+      return this.isGatemeaProjectName(projectName);
+    });
+
+    if (projectNameInResponse) return true;
+
+    const projectId = this.extractProjectIdFromExportUrl(url);
+    if (!projectId) return false;
+
+    try {
+      const project = await this.dataSource.getRepository(Project).findOne({
+        where: { id: projectId },
+        select: { id: true, name: true },
+      });
+      return this.isGatemeaProjectName(project?.name);
+    } catch (error) {
+      // The source endpoint already provides the export data. If the optional
+      // project lookup is unavailable, fail closed and preserve the generic
+      // export contract rather than adding GATMEA-specific columns broadly.
+      console.warn(
+        `[ExportService] Could not resolve project ${projectId} for export scoping: ${error.message}`,
+      );
+      return false;
+    }
+  }
+
+  private extractProjectIdFromExportUrl(url: string): string | undefined {
+    const stockProjectMatch = url.match(
+      /\/stock\/project\/([a-f\d-]{36})(?:[/?]|$)/i,
+    );
+    if (stockProjectMatch?.[1]) return stockProjectMatch[1];
+
+    const queryString = url.includes("?") ? url.split("?", 2)[1] : "";
+    const params = new URLSearchParams(queryString);
+    return (
+      params.get("filters[project][id]") || params.get("projectId") || undefined
+    );
+  }
+
+  private isGatemeaProjectName(value: unknown): boolean {
+    const normalizedName = String(value ?? "")
+      .trim()
+      .toLowerCase();
+    return normalizedName === "gatmea" || normalizedName === "gatemea";
   }
 
   /**
