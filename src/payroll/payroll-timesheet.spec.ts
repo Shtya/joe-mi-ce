@@ -528,6 +528,7 @@ describe("overtime time sheet service boundaries", () => {
       service: module.get(PayrollService),
       written,
       dataSource,
+      manager,
       period,
       databaseRows,
       user,
@@ -603,6 +604,36 @@ describe("overtime time sheet service boundaries", () => {
         updatedById: "admin-1",
       }),
     );
+  });
+
+  it("does not overwrite a mobile already owned by another user", async () => {
+    const { service, manager, period, user } = await createService();
+    const otherUser = Object.assign(new User(), {
+      id: "user-2",
+      mobile: "570588298",
+    });
+    manager.findOne.mockImplementation(async (entity, options) => {
+      if (entity === PayrollPeriod) return period;
+      if (entity === User && options?.where?.mobile === otherUser.mobile)
+        return otherUser;
+      return null;
+    });
+    const workbook = await createOvertimeTimeSheet({
+      ...fixture,
+      employees: [{ ...fixture.employees[0], mobile: otherUser.mobile }],
+    });
+
+    const result = await service.importOvertimeTimeSheet(
+      "project-1",
+      { buffer: workbook },
+      { month: "2026-09" },
+      actor,
+      "2026-09-24",
+    );
+
+    expect(result.rejectedRows).toEqual([]);
+    expect(user.mobile).toBeUndefined();
+    expect(user.name).toBe("Employee");
   });
 
   it("resolves a direct legacy row by the assigned member mobile", async () => {
