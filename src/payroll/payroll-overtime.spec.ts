@@ -12,6 +12,56 @@ import { PayrollService } from "./payroll.service";
 import { PayrollCalculationMode, PayrollPeriodStatus } from "./payroll.types";
 
 describe("PayrollService overtime synchronization", () => {
+  it("refreshes the period containing the requested report date", async () => {
+    const service = new PayrollService(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    jest.spyOn(service as any, "requireOvertimeProject").mockResolvedValue({
+      id: "gatemea-project",
+      payrollEnabled: true,
+      payrollCalculationMode: PayrollCalculationMode.OVERTIME,
+      payrollCutoffDay: 25,
+    });
+    const expectedWorkbook = Buffer.from("time-sheet");
+    jest.spyOn(service, "syncPeriod").mockResolvedValue({} as any);
+    jest
+      .spyOn(service, "getOvertimeTimeSheet")
+      .mockResolvedValue(expectedWorkbook);
+
+    const result = await service.refreshOvertimeTimeSheetThroughDate(
+      "gatemea-project",
+      "2026-09-27",
+    );
+
+    expect(result).toBe(expectedWorkbook);
+    expect(service.syncPeriod).toHaveBeenCalledWith(
+      "gatemea-project",
+      "2026-10",
+      undefined,
+      expect.any(Date),
+      "2026-09-27",
+    );
+    expect(service.getOvertimeTimeSheet).toHaveBeenCalledWith(
+      "gatemea-project",
+      "2026-10",
+      undefined,
+      "2026-09-27",
+    );
+  });
+
   it("refreshes the newly active cutoff period on cutoff day with an empty source range", async () => {
     const projectId = "gatemea-project";
     const manager = {

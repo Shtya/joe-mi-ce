@@ -396,6 +396,42 @@ export class PayrollService {
     return this.getOvertimeTimeSheet(projectId, month, undefined, throughDate);
   }
 
+  /** Synchronizes and exports the overtime period through a report's business date. */
+  async refreshOvertimeTimeSheetThroughDate(
+    projectId: string,
+    throughDate: string,
+  ) {
+    const parsedDate = new Date(`${throughDate}T00:00:00.000Z`);
+    if (
+      !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(throughDate) ||
+      Number.isNaN(parsedDate.getTime()) ||
+      parsedDate.toISOString().slice(0, 10) !== throughDate
+    ) {
+      throw new BadRequestException(
+        "throughDate must be a valid YYYY-MM-DD date",
+      );
+    }
+
+    const project = await this.requireOvertimeProject(projectId);
+    const month = activePayrollPeriodMonth(
+      throughDate,
+      project.payrollCutoffDay ?? 1,
+    );
+    try {
+      await this.syncPeriod(
+        projectId,
+        month,
+        undefined,
+        new Date(),
+        throughDate,
+      );
+    } catch (error) {
+      if (!(error instanceof ConflictException)) throw error;
+    }
+
+    return this.getOvertimeTimeSheet(projectId, month, undefined, throughDate);
+  }
+
   async importOvertimeTimeSheet(
     projectId: string,
     file: Pick<Express.Multer.File, "buffer">,

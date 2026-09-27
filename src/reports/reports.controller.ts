@@ -14,8 +14,12 @@ import { ReportsService } from "./reports.service";
 import { Response } from "express";
 import { AuthGuard } from "../auth/auth.guard";
 import { MailService } from "../mail/mail.service";
+import { PayrollService } from "../payroll/payroll.service";
+import { PayrollCalculationMode } from "../payroll/payroll.types";
 import * as path from "path";
+import { readFile } from "fs/promises";
 import { ReportsCron } from "./reports.cron";
+import { appendPayrollTimeSheet } from "./payroll-timesheet-worksheet";
 import * as XLSX from "xlsx";
 
 @Controller("reports")
@@ -25,6 +29,7 @@ export class ReportsController {
     private readonly reportsService: ReportsService,
     private readonly mailService: MailService,
     private readonly reportsCron: ReportsCron,
+    private readonly payrollService: PayrollService,
   ) {}
 
   private parseYesNo(value: any): boolean | undefined {
@@ -105,8 +110,9 @@ export class ReportsController {
       for (let index = 0; index < maxColumns; index++) {
         const count = rows
           .slice(1)
-          .filter((row) => /^AEC-\d+$/i.test(String(row[index] || "").trim()))
-          .length;
+          .filter((row) =>
+            /^AEC-\d+$/i.test(String(row[index] || "").trim()),
+          ).length;
 
         if (count > bestCount) {
           bestColumn = index;
@@ -264,7 +270,8 @@ export class ReportsController {
       await this.reportsCron.handleDreameMonthlyReportCron();
       return res.status(200).json({
         success: true,
-        message: "Dreame monthly report generated and sent immediately to designated TO and CC recipients",
+        message:
+          "Dreame monthly report generated and sent immediately to designated TO and CC recipients",
       });
     } catch (error) {
       return res.status(500).json({
@@ -309,7 +316,8 @@ export class ReportsController {
     @Res() res: Response,
   ) {
     try {
-      const filePath = await this.reportsService.generateDreameMonthlyReport(date);
+      const filePath =
+        await this.reportsService.generateDreameMonthlyReport(date);
       if (!filePath) {
         return res.status(404).json({
           success: false,
@@ -370,7 +378,8 @@ export class ReportsController {
       } else {
         return res.status(500).json({
           success: false,
-          message: "Failed to send Dreame monthly report email. Check server logs.",
+          message:
+            "Failed to send Dreame monthly report email. Check server logs.",
         });
       }
     } catch (error) {
@@ -450,7 +459,8 @@ export class ReportsController {
       } else {
         return res.status(500).json({
           success: false,
-          message: "Failed to send Dreame monthly report email. Check server logs.",
+          message:
+            "Failed to send Dreame monthly report email. Check server logs.",
         });
       }
     } catch (error) {
@@ -478,8 +488,20 @@ export class ReportsController {
       }
 
       const filename = path.basename(filePath);
+      const project = await this.reportsService.getGatemeaProject();
+      const overtimeTimeSheet =
+        project?.payrollEnabled &&
+        project.payrollCalculationMode === PayrollCalculationMode.OVERTIME
+          ? await this.payrollService.refreshOvertimeTimeSheetThroughDate(
+              project.id,
+              date,
+            )
+          : undefined;
       const subject = `Gatemea Report Six Seven (Test) - ${date}`;
-      const textBody = `Dear Team,\n\nPlease find attached the test Gatemea SixSeven Daily Performance Report for ${date}.\n\nBest regards,\nSystem SixSeven Operations`;
+      const overtimeMessage = overtimeTimeSheet
+        ? " The workbook also includes the overtime payroll time sheet through the report date."
+        : "";
+      const textBody = `Dear Team,\n\nPlease find attached the test Gatemea SixSeven Daily Performance Report for ${date}.${overtimeMessage}\n\nBest regards,\nSystem SixSeven Operations`;
       const emailHtml = `
 <!DOCTYPE html>
 <html>
@@ -513,6 +535,11 @@ export class ReportsController {
         <ul>
           <li>Sales performance grouped by product and chain</li>
           <li>Daily attendance records for all scheduled personnel</li>
+          ${
+            overtimeTimeSheet
+              ? "<li>Overtime payroll time sheet through the report date</li>"
+              : ""
+          }
         </ul>
       </div>
 
@@ -527,14 +554,32 @@ export class ReportsController {
 </body>
 </html>`;
 
-      const emailSent = await this.mailService.sendReportEmail(
-        filePath,
-        filename,
-        email,
-        subject,
-        textBody,
-        emailHtml,
-      );
+      const emailSent = overtimeTimeSheet
+        ? await this.mailService.sendEmail({
+            toEmail: email,
+            subject,
+            text: textBody,
+            html: emailHtml,
+            attachments: [
+              {
+                filename,
+                content: await appendPayrollTimeSheet(
+                  await readFile(filePath),
+                  overtimeTimeSheet,
+                ),
+                contentType:
+                  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              },
+            ],
+          })
+        : await this.mailService.sendReportEmail(
+            filePath,
+            filename,
+            email,
+            subject,
+            textBody,
+            emailHtml,
+          );
 
       if (emailSent) {
         return res.status(200).json({
