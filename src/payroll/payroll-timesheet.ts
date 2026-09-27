@@ -603,8 +603,11 @@ export async function parseOvertimeTimeSheet(
         ? String(identityValue)
         : "";
     const name = String(row.getCell(2).value ?? "").trim();
+    // Legacy August rosters contain Iqamas that may not yet exist on the
+    // Gatemea user record. Resolve the existing promoter by their displayed
+    // name first, then use Iqama only when name data is unavailable.
     const userId =
-      members.get(identity) ?? membersByName.get(normalizedEmployeeName(name));
+      membersByName.get(normalizedEmployeeName(name)) ?? members.get(identity);
     if (!userId)
       reject(rowNumber, "Employee identity is not assigned to this project");
     if (seen.has(identity)) reject(rowNumber, "Duplicate employee identity");
