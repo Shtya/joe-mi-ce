@@ -126,7 +126,7 @@ const LEGEND = [
   ["V", "إجازة", "Vacation"],
   // The supplied workbook's English label is retained verbatim.
   ["R", "استقالة", "Vacation"],
-  ["N", "مروّج جديد", ""],
+  ["N", "مروّج جديد", "x"],
 ];
 
 function isSymbol(value: unknown): value is TimeSheetSymbol {
@@ -141,6 +141,35 @@ function isSymbol(value: unknown): value is TimeSheetSymbol {
 
 function normalizedEmployeeName(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function cellText(cell: ExcelJS.Cell): string {
+  const value = cell.value;
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" || typeof value === "number")
+    return String(value).trim();
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value !== "object") return "";
+  if ("richText" in value)
+    return value.richText
+      .map((part) => part.text)
+      .join("")
+      .trim();
+  if ("result" in value) {
+    const result = value.result;
+    if (result === null || result === undefined) return "";
+    if (typeof result === "string" || typeof result === "number")
+      return String(result).trim();
+    if (result instanceof Date) return result.toISOString();
+  }
+  return "";
+}
+
+function rowHasValues(row: ExcelJS.Row): boolean {
+  for (let column = 1; column <= row.cellCount; column++) {
+    if (cellText(row.getCell(column)) !== "") return true;
+  }
+  return false;
 }
 
 function fillColor(cell: ExcelJS.Cell): string | undefined {
@@ -550,6 +579,18 @@ export async function parseOvertimeTimeSheet(
   });
   if (directory.getRow(1).actualCellCount !== directoryHeaders.length)
     reject(1, "Unexpected employee directory header columns");
+  const directoryEmployees = new Map<string, string[]>();
+  for (let rowNumber = 2; rowNumber <= directory.rowCount; rowNumber++) {
+    const row = directory.getRow(rowNumber);
+    const identity = cellText(row.getCell(1));
+    if (!identity) continue;
+    directoryEmployees.set(
+      identity,
+      Array.from({ length: IDENTITY_HEADERS.length }, (_, index) =>
+        cellText(row.getCell(index + 1)),
+      ),
+    );
+  }
   const headers = [...IDENTITY_HEADERS, ...dates, ...SUMMARY_HEADERS];
   headers.forEach((expected, index) => {
     const value = sheet.getCell(1, index + 1).value;
@@ -567,14 +608,14 @@ export async function parseOvertimeTimeSheet(
   const membersByMobile = new Map<string, string | null>();
   for (const employee of input.employees) {
     const name = normalizedEmployeeName(employee.name ?? "");
-    if (!name) continue;
-    membersByName.set(name, membersByName.has(name) ? null : employee.userId);
     const mobile = String(employee.mobile ?? "").replace(/\D/g, "");
     if (mobile)
       membersByMobile.set(
         mobile,
         membersByMobile.has(mobile) ? null : employee.userId,
       );
+    if (!name) continue;
+    membersByName.set(name, membersByName.has(name) ? null : employee.userId);
   }
   if (members.size !== input.employees.length)
     reject(0, "Project employee identities are not unique");
@@ -599,21 +640,21 @@ export async function parseOvertimeTimeSheet(
   let legendRowNumber: number | undefined;
   for (let rowNumber = 2; rowNumber <= sheet.rowCount; rowNumber++) {
     const row = sheet.getRow(rowNumber);
-    if (row.getCell(1).value === "فهرس الرموز / Legend") {
+    if (cellText(row.getCell(1)) === "فهرس الرموز / Legend") {
       legendRowNumber = rowNumber;
       break;
     }
-    if (row.actualCellCount === 0) continue;
-    const identityValue = row.getCell(1).value;
-    const identity =
-      typeof identityValue === "string" || typeof identityValue === "number"
-        ? String(identityValue)
-        : "";
-    const name = String(row.getCell(2).value ?? "").trim();
-    const mobile = String(row.getCell(3).value ?? "").replace(/\D/g, "");
+    if (!rowHasValues(row)) continue;
+    const identity = cellText(row.getCell(1));
+    const directoryValues = directoryEmployees.get(identity);
+    const name = directoryValues?.[1] || cellText(row.getCell(2));
+    const mobile = (directoryValues?.[2] || cellText(row.getCell(3))).replace(
+      /\D/g,
+      "",
+    );
     // Legacy August rosters contain Iqamas that may not yet exist on the
-    // Gatemea user record. Resolve the existing promoter by their displayed
-    // name first, then use Iqama only when name data is unavailable.
+    // Gatemea user record. Resolve the existing promoter by mobile, then by
+    // displayed name, and use Iqama only when those values are unavailable.
     const userId =
       membersByMobile.get(mobile) ??
       membersByName.get(normalizedEmployeeName(name)) ??
@@ -624,8 +665,8 @@ export async function parseOvertimeTimeSheet(
     seen.add(identity);
     if (userId) {
       const text = (column: number) =>
-        String(row.getCell(column).value ?? "").trim();
-      const monthlySalary = Number(row.getCell(9).value ?? 0);
+        directoryValues?.[column - 1] || cellText(row.getCell(column));
+      const monthlySalary = Number(text(9) || 0);
       if (!Number.isFinite(monthlySalary) || monthlySalary < 0)
         reject(rowNumber, "Invalid Basic Salary");
       else
@@ -664,10 +705,9 @@ export async function parseOvertimeTimeSheet(
       const matches =
         row.actualCellCount === expected.length &&
         expected.every((value, column) => {
-          const actual = row.getCell(column + 1).value;
-          return (
-            (actual === 1 || actual === 0 ? String(actual) : actual) === value
-          );
+          const raw = row.getCell(column + 1).value;
+          const actual = cellText(row.getCell(column + 1));
+          return (raw === 1 || raw === 0 ? String(raw) : actual) === value;
         });
       if (!matches) reject(rowNumber, "Invalid workbook legend row");
     });
@@ -676,7 +716,7 @@ export async function parseOvertimeTimeSheet(
       rowNumber <= sheet.rowCount;
       rowNumber++
     ) {
-      if (sheet.getRow(rowNumber).actualCellCount > 0)
+      if (rowHasValues(sheet.getRow(rowNumber)))
         reject(rowNumber, "Unexpected populated row after the workbook legend");
     }
   }

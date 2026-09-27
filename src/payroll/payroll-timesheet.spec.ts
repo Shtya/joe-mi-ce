@@ -182,8 +182,6 @@ describe("overtime time sheet", () => {
         fgColor: { argb: "FFDDEBF7" },
       },
     };
-    sheet.getCell("C12").value = "";
-
     const result = await parseOvertimeTimeSheet({
       buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
       ...legacyFixture,
@@ -222,6 +220,62 @@ describe("overtime time sheet", () => {
           attendanceKind: "late",
         }),
       ]),
+    );
+  });
+
+  it("reads source-style formulas and rich-text legend values from the employee directory", async () => {
+    const sourceFixture: OverTimeSheetInput = {
+      ...fixture,
+      employees: [
+        {
+          ...fixture.employees[0],
+          identity: "gate-010",
+          name: "Different stored display name",
+          mobile: "570588298",
+        },
+      ],
+    };
+    const workbook = await workbookFrom(
+      await createOvertimeTimeSheet(sourceFixture),
+    );
+    const metadata = workbook.getWorksheet("_payroll_metadata")!;
+    workbook.removeWorksheet(metadata.id);
+    const directory = workbook.getWorksheet("Employees_DB")!;
+    directory.getCell("A2").value = 3952706582;
+    directory.getCell("B2").value = "Abd-ALLAH Zaher";
+    directory.getCell("C2").value = 570588298;
+    const sheet = workbook.getWorksheet("September 26")!;
+    sheet.getCell("A2").value = 3952706582;
+    sheet.getCell("B2").value = {
+      formula: 'IFERROR(VLOOKUP($A2,Employees_DB!$A:$L,2,FALSE()),"")',
+      result: undefined,
+    };
+    sheet.getCell("C2").value = {
+      formula: 'IFERROR(VLOOKUP($A2,Employees_DB!$A:$L,3,FALSE()),"")',
+      result: undefined,
+    };
+    sheet.getCell("B3").value = { formula: 'IF($A3="","",$A3)', result: "" };
+    const legendTitle = {
+      richText: [{ text: "فهرس الرموز " }, { text: "/ Legend" }],
+    };
+    sheet.getCell("A4").value = legendTitle;
+    sheet.getCell("A5").value = {
+      richText: [{ text: "الرمز " }, { text: "/ Symbol" }],
+    };
+    sheet.getCell("C12").value = "x";
+
+    const result = await parseOvertimeTimeSheet({
+      buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+      ...sourceFixture,
+    });
+
+    expect(result.rejectedRows).toEqual([]);
+    expect(result.employees).toContainEqual(
+      expect.objectContaining({
+        userId: "user-1",
+        name: "Abd-ALLAH Zaher",
+        mobile: "570588298",
+      }),
     );
   });
 
