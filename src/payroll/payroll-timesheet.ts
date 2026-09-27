@@ -105,6 +105,11 @@ const IDENTITY_HEADERS = [
   "Bank Name",
   "Sponsership ",
 ];
+const EMPLOYEE_DIRECTORY_HEADER_ALIASES: Record<number, string[]> = {
+  0: ["-+", "iqama"],
+  9: ["bank acount", "bank account"],
+  11: ["sponsership", "sponsorship"],
+};
 const SUMMARY_HEADERS = [
   "Paid Days",
   "Daily Rate",
@@ -214,18 +219,24 @@ export async function parsePayrollEmployeeDirectory(
     };
 
   const headers = [...IDENTITY_HEADERS];
-  headers[0] = "-+";
   headers[10] = "Bank name";
-  const headerErrors = headers.flatMap((header, index) =>
-    cellText(sheet.getCell(1, index + 1)) === header
+  const normalizeHeader = (value: string) =>
+    value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+  const headerErrors = headers.flatMap((header, index) => {
+    const actual = normalizeHeader(cellText(sheet.getCell(1, index + 1)));
+    const expected = [
+      header,
+      ...(EMPLOYEE_DIRECTORY_HEADER_ALIASES[index] ?? []),
+    ].map(normalizeHeader);
+    return expected.includes(actual)
       ? []
       : [
           {
             rowNumber: 1,
             reason: `Invalid employee directory header in column ${index + 1}`,
           },
-        ],
-  );
+        ];
+  });
   if (sheet.getRow(1).actualCellCount !== headers.length)
     headerErrors.push({
       rowNumber: 1,
