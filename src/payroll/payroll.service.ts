@@ -319,6 +319,9 @@ export class PayrollService {
         chain: user.branch?.chain?.name,
         store: user.branch?.name,
         bankAccount: user.iban,
+        bankName: user.bank_name,
+        nationality: user.nationality,
+        sponsorship: user.sponsorship,
         monthlySalary: Number(
           line?.grossSalary ?? salariesByUser.get(user.id)?.monthlySalary ?? 0,
         ),
@@ -449,7 +452,6 @@ export class PayrollService {
     const users = await this.userRepo.find({
       where: { project_id: projectId },
     });
-    const usersById = new Map(users.map((user) => [user.id, user]));
     const parsed = await parseOvertimeTimeSheet({
       buffer: file.buffer,
       projectId,
@@ -485,21 +487,12 @@ export class PayrollService {
           "Payroll period changed; download a new time sheet",
         );
       for (const employee of parsed.employees) {
-        const user = usersById.get(employee.userId)!;
-        user.name = employee.name || user.name;
-        // Mobile is a globally unique Gatemea account field. The spreadsheet
-        // value is used to find an employee but never changes their account.
-        user.nationality = employee.nationality || user.nationality;
-        user.iban = employee.bankAccount || user.iban;
-        user.bank_name = employee.bankName || user.bank_name;
-        user.sponsorship = employee.sponsorship || user.sponsorship;
-        await manager.save(user);
         await manager.upsert(
           EmployeeSalary,
           [
             {
               projectId,
-              userId: user.id,
+              userId: employee.userId,
               monthlySalary: employee.monthlySalary.toFixed(2),
               effectiveFrom: period.startDate,
               effectiveTo: null,

@@ -606,6 +606,59 @@ describe("overtime time sheet service boundaries", () => {
     );
   });
 
+  it("uses directory salary without updating the employee profile", async () => {
+    const { service, manager, user } = await createService();
+    Object.assign(user, {
+      name: "Saved name",
+      mobile: "500000001",
+      nationality: "Saved nationality",
+      iban: "SA0000000000000000000000",
+      bank_name: "Saved bank",
+      sponsorship: "Saved sponsorship",
+    });
+    const workbook = await createOvertimeTimeSheet({
+      ...fixture,
+      employees: [
+        {
+          ...fixture.employees[0],
+          name: "Excel name",
+          mobile: "570588298",
+          nationality: "Excel nationality",
+          bankAccount: "SA1111111111111111111111",
+          bankName: "Excel bank",
+          sponsorship: "Excel sponsorship",
+          monthlySalary: 4200,
+        },
+      ],
+    });
+
+    const result = await service.importOvertimeTimeSheet(
+      "project-1",
+      { buffer: workbook },
+      { month: "2026-09" },
+      actor,
+      "2026-09-24",
+    );
+
+    expect(result.rejectedRows).toEqual([]);
+    expect(user).toMatchObject({
+      name: "Saved name",
+      mobile: "500000001",
+      nationality: "Saved nationality",
+      iban: "SA0000000000000000000000",
+      bank_name: "Saved bank",
+      sponsorship: "Saved sponsorship",
+    });
+    expect(manager.save).not.toHaveBeenCalledWith(user);
+    expect(manager.upsert).toHaveBeenCalledWith(
+      EmployeeSalary,
+      expect.arrayContaining([
+        expect.objectContaining({ monthlySalary: "4200.00" }),
+      ]),
+      ["projectId", "userId", "effectiveFrom"],
+    );
+  });
+
   it("does not overwrite a mobile already owned by another user", async () => {
     const { service, manager, period, user } = await createService();
     const otherUser = Object.assign(new User(), {
@@ -633,7 +686,7 @@ describe("overtime time sheet service boundaries", () => {
 
     expect(result.rejectedRows).toEqual([]);
     expect(user.mobile).toBeUndefined();
-    expect(user.name).toBe("Employee");
+    expect(user.name).toBeUndefined();
   });
 
   it("does not replace an existing mobile with the employee directory value", async () => {
