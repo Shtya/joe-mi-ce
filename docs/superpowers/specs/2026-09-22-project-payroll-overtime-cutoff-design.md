@@ -87,9 +87,20 @@ The supplied `AUG Time Sheet 2026 for 67.xlsx` is the required workbook format, 
 - summary columns for paid days, daily rate, calculated salary, deductions, bonus, final salary, and lateness;
 - read-only overtime-hours and overtime-amount values derived from stored overtime records.
 
-The time-sheet creator derives attendance symbols from the authoritative journey and approved-vacation data. It does not infer hours from a present marker. In particular, existing values such as `1.75` or `2` are not treated as overtime hours. Any new overtime detail required for calculation is stored in hidden/metadata fields or a compatible continuation area so that the visible August workbook format remains unchanged.
+The time-sheet creator derives attendance symbols from the authoritative journey and approved-vacation data, then overlays approved imported attendance units. The visible source workbook remains the contract: the generated sheet retains its original worksheet names, employee columns, date columns, colors, summary columns, and bilingual legend. In particular, the English description for `R` remains `Vacation` and the English description for `N` remains blank, exactly as supplied.
 
-The importer accepts only the generated time-sheet structure (including an explicit version marker). It validates period boundaries, project membership, unique employee identity, date columns, and allowed symbols before it writes any attendance overrides. It returns every rejected worksheet row with a reason and performs no partial write on invalid input. Importing an older August-style workbook without the marker is supported only as a preview/validation result until its employee identifiers and period are explicitly mapped; it cannot silently alter payroll.
+The importer accepts both the system-generated workbook and the supplied legacy August workbook directly. A legacy import does not require hidden metadata or a copied template. It discovers a contiguous date range between the twelve employee-identity columns and the `Paid Days` summary column, derives the payroll period from those header dates, and validates that the range matches the project's resolved cutoff period. For example, headers from 26 July through 25 August resolve to payroll month `2026-08` for cutoff day 26.
+
+The importer matches employees by Iqama and saves the authoritative imported row data transactionally. It reads the attendance symbol, the cell fill, and numeric shift units:
+
+- a positive numeric value is a paid-shift quantity (`2` is two shifts and `1.75` is 1.75 shifts);
+- yellow `1` is a paid weekly-off shift;
+- light-blue `1` is a paid shift and increments lateness;
+- `0`, `V`, `R`, and `N` retain their supplied legend meanings and contribute no paid-shift units unless an explicit future policy changes that rule.
+
+The importer recalculates paid days, daily rate, calculated salary, lateness deduction, bonus, and final salary from imported units and stored payroll additions; it does not trust the legacy workbook's summary cells. Overtime remains based on completed journeys and scheduled shift hours because an attendance unit alone cannot establish exact overtime minutes.
+
+After importing a completed historical period, the service also creates the immediately following contiguous pending period when it does not exist. Thus importing the August 26 July–25 August workbook creates the September 26 August–25 September period; the normal Gatemea daily cron then opens and generates October at the next cutoff. It never changes a paid period.
 
 ## Gatemea scheduled workflow
 
@@ -97,7 +108,7 @@ The Gatemea daily report already has access to attendance journeys. For a payrol
 
 The job does not parse a temporary Excel file back into payroll. It records the source journey and calculation snapshot directly in the database, then produces the Excel time sheet/report from those stored records. This makes the process repeatable, prevents duplicate overtime from rerunning a cron job, and leaves an audit trail for every amount in the final cut-off payroll.
 
-Every daily Gatemea run produces the complete overtime time-sheet workbook for the active cutoff period, in the same August format. It includes the full employee list, every date column in that period, the bilingual legend, attendance colours, summaries, and overtime values. The run refreshes all completed days through the prior Riyadh business day; future dates remain blank. It is not a separate one-day worksheet and it does not replace the visual structure with a Gatemea-specific report.
+Every daily Gatemea run produces the complete overtime time-sheet workbook for the active cutoff period, in the same August format. It includes the full employee list, every date column in that period, the bilingual legend, attendance colours, imported paid-shift units where available, recalculated summaries, and overtime values. The run refreshes all completed days through the prior Riyadh business day; future dates remain blank. It is not a separate one-day worksheet and it does not replace the visual structure with a Gatemea-specific report.
 
 At the cutoff, the normal payroll sync completes the period, totals the overtime additions, and produces the final workbook for the closed date range. If the daily job was missed, a manual or scheduled period sync rebuilds the same result from journeys and generates the same complete workbook.
 
@@ -115,7 +126,7 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 - `GET /payroll/my-project/settings` returns enabled status, calculation mode, and cutoff day.
 - `PATCH /payroll/my-project/settings` accepts `enabled`, `calculationMode`, and/or `cutoffDay` and applies authorization and validation.
 - `GET /payroll/my-project/time-sheet-template?month=YYYY-MM` downloads the cutoff-aware August-format workbook only for an overtime-mode project; it rejects violation mode with an explanatory error.
-- `POST /payroll/my-project/time-sheet-import` validates and imports an overtime-mode August-format workbook for a requested period, returning accepted and rejected rows.
+- `POST /payroll/my-project/time-sheet-import` validates and imports an overtime-mode August-format workbook. `month` is optional for direct legacy imports because the importer derives it from the date headers; it returns the resolved month plus accepted and rejected rows.
 - Existing period sync/list/detail endpoints expose resolved dates, mode snapshot, and itemized overtime additions.
 
 ## Testing and verification
@@ -123,7 +134,7 @@ At the cutoff, the normal payroll sync completes the period, totals the overtime
 - Unit tests for cutoff boundaries, 30-day months, non-leap February, leap February, and contiguous periods.
 - Unit tests for normal and overnight overtime, no overtime, missing clock-out, shift-length hourly-rate calculation, and money rounding.
 - Service tests for default settings, mode update authorization/validation, a cutoff-aware sync, paid-period locking, and duplicate-safe daily sync.
-- Workbook tests that verify the supplied symbols, bilingual legend, yellow weekly-off fill, light-blue lateness fill, resolved date headers, numeric calculation cells, and import validation/rollback.
+- Workbook tests that verify the supplied symbols, bilingual legend (including blank `N` English text), yellow weekly-off fill, light-blue lateness fill, resolved date headers, numeric calculation cells, direct legacy August import, `2` and `1.75` shift-unit parsing, automatic period derivation, subsequent-period creation, and import rollback.
 - Gatemea report tests that prove the overtime-mode daily job records source data exactly once, regenerates the complete cutoff-aware August-format workbook through the completed day, and includes its addition in the cutoff payroll.
 - Run the repository's Jest tests, lint script, and production build after implementation.
 
@@ -144,7 +155,7 @@ Production runs with TypeORM schema synchronization disabled (`synchronize: fals
    - Unique index on `(sourceJourneyId)` to prevent duplicate overtime insertions.
    - Indexes on `(periodId)`, `(lineId)`, and `(userId)`.
 5. **Payroll timesheet overrides table**:
-   - `payroll_timesheet_overrides` audit table with columns: `id`, `projectId`, `periodId`, `userId`, `workDate`, `symbol`, `reason`, `createdById`, and timestamps.
+   - `payroll_timesheet_overrides` audit table with columns: `id`, `projectId`, `periodId`, `userId`, `workDate`, `symbol`, `paidShiftUnits`, `attendanceKind`, `reason`, `createdById`, and timestamps.
    - Foreign keys to `projects(id)`, `payroll_periods(id)`, `users(id)`, and `users(id)` (`createdById`).
    - Unique index on `(periodId, userId, workDate)`.
 6. **Paid-period immutability requirements**:
@@ -156,7 +167,7 @@ Apply and verify those schema changes and invariants before the application roll
 
 ## Non-goals
 
-- Changing salaries from a time-sheet import.
-- Inferring overtime from attendance values such as `1`, `1.75`, or `2`.
+- Changing employee salary records from a time-sheet import.
+- Inferring exact overtime minutes from attendance values such as `1`, `1.75`, or `2` without journey timestamps.
 - Reopening or recalculating a paid payroll period.
 - Replacing the existing Gatemea operational report for projects that are not in overtime mode.
