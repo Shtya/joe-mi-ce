@@ -139,6 +139,10 @@ function isSymbol(value: unknown): value is TimeSheetSymbol {
   );
 }
 
+function normalizedEmployeeName(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
 function fillColor(cell: ExcelJS.Cell): string | undefined {
   const fillValue = cell.fill;
   if (fillValue?.type !== "pattern") return undefined;
@@ -559,6 +563,12 @@ export async function parseOvertimeTimeSheet(
   const members = new Map(
     input.employees.map((employee) => [employee.identity, employee.userId]),
   );
+  const membersByName = new Map<string, string | null>();
+  for (const employee of input.employees) {
+    const name = normalizedEmployeeName(employee.name ?? "");
+    if (!name) continue;
+    membersByName.set(name, membersByName.has(name) ? null : employee.userId);
+  }
   if (members.size !== input.employees.length)
     reject(0, "Project employee identities are not unique");
   const mappedIdentities = new Set<string>();
@@ -592,7 +602,9 @@ export async function parseOvertimeTimeSheet(
       typeof identityValue === "string" || typeof identityValue === "number"
         ? String(identityValue)
         : "";
-    const userId = members.get(identity);
+    const name = String(row.getCell(2).value ?? "").trim();
+    const userId =
+      members.get(identity) ?? membersByName.get(normalizedEmployeeName(name));
     if (!userId)
       reject(rowNumber, "Employee identity is not assigned to this project");
     if (seen.has(identity)) reject(rowNumber, "Duplicate employee identity");
@@ -606,7 +618,7 @@ export async function parseOvertimeTimeSheet(
       else
         employees.push({
           userId,
-          name: text(2),
+          name,
           mobile: text(3),
           nationality: text(4),
           monthlySalary,
