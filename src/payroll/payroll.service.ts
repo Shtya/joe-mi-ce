@@ -459,6 +459,10 @@ export class PayrollService {
         userId: user.id,
         identity: user.national_id || user.username,
         name: user.name,
+        // The legacy Gatemea workbook can contain an old Iqama or a slightly
+        // different spelling of the name. Pass the stored mobile so the parser
+        // can safely resolve the existing project member by its stable value.
+        mobile: user.mobile,
         monthlySalary: 0,
         attendance: [],
         overtime: [],

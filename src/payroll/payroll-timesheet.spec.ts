@@ -551,6 +551,34 @@ describe("overtime time sheet service boundaries", () => {
     );
   });
 
+  it("resolves a direct legacy row by the assigned member mobile", async () => {
+    const { service, written, user } = await createService();
+    user.national_id = null;
+    user.username = "gate-010";
+    user.name = "Different stored display name";
+    user.mobile = "570588298";
+    const workbook = await workbookFrom(await createOvertimeTimeSheet(fixture));
+    const metadata = workbook.getWorksheet("_payroll_metadata")!;
+    workbook.removeWorksheet(metadata.id);
+    const sheet = workbook.getWorksheet("September 26")!;
+    sheet.getCell("A2").value = 3952706582;
+    sheet.getCell("B2").value = "Abd-ALLAH Zaher";
+    sheet.getCell("C2").value = 570588298;
+
+    const result = await service.importOvertimeTimeSheet(
+      "project-1",
+      { buffer: Buffer.from(await workbook.xlsx.writeBuffer()) },
+      { month: "2026-09" },
+      actor,
+      "2026-09-24",
+    );
+
+    expect(result.rejectedRows).toEqual([]);
+    expect(written).toContainEqual(
+      expect.objectContaining({ userId: "user-1" }),
+    );
+  });
+
   it("rejects paid periods and project outsiders without persisting anything", async () => {
     const { service, written, period } = await createService();
     period.status = PayrollPeriodStatus.PAID;

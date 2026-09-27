@@ -680,9 +680,17 @@ export async function parseOvertimeTimeSheet(
         reject(rowNumber, "Unexpected populated row after the workbook legend");
     }
   }
-  for (const identity of members.keys())
-    if (!seen.has(identity))
-      reject(0, `Missing employee identity: ${identity}`);
+  // Gatemea-generated workbooks carry hidden metadata and are validated above
+  // against every project member. A supplied legacy workbook has no trusted
+  // member mapping: its Iqamas may predate the Gatemea account and it may list
+  // only a subset of the project. Its rows are authorized individually by the
+  // current project's mobile/name/Iqama lookup, so do not reject a successful
+  // fallback match merely because the historical Iqama differs.
+  if (metadata) {
+    for (const identity of members.keys())
+      if (!seen.has(identity))
+        reject(0, `Missing employee identity: ${identity}`);
+  }
   return {
     rows: rejectedRows.length ? [] : rows,
     employees: rejectedRows.length ? [] : employees,
