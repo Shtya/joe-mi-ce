@@ -20,6 +20,7 @@ import { Project } from "entities/project.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { PayrollPeriod } from "entities/payroll/payroll-period.entity";
+import { addPayrollDetailsSheet } from "./payroll-details-sheet";
 
 type MonthlyReportTabOptions = {
   attendance?: boolean;
@@ -412,6 +413,11 @@ export class ReportsService {
     ).filter(
       (sale) => !requestedUsernames.size || reportUserIds.has(sale.user?.id),
     );
+
+    const payrollPeriod = await this.payrollPeriodRepository.findOne({
+      where: { projectId, month: currentMonthPrefix },
+      relations: ["lines", "lines.user", "lines.violations"],
+    });
 
     const vacations = await this.vacationRepository.find({
       where: {
@@ -1355,6 +1361,12 @@ export class ReportsService {
       bottom: { style: "thick", color: { argb: "FF000000" } },
     };
 
+    const payrollSheet = addPayrollDetailsSheet(
+      workbook,
+      now.format("YYYY-MM-DD"),
+      payrollPeriod?.lines || [],
+    );
+
     [
       attendanceSheet,
       mgAttendanceSheet,
@@ -1366,6 +1378,7 @@ export class ReportsService {
       // branchPromoterSalesSheet,
       salesByModelSheet,
       salesDetailSheet,
+      payrollSheet,
     ].forEach((sheet) => {
       const isTab3 = sheet.name === "Check-in - Check-out";
       const isOvertime = sheet.name === "Overtime";
@@ -1529,91 +1542,83 @@ export class ReportsService {
     } as const;
 
     // 1. Fetch Sales, Products & Journeys for Custom Period
-    const [sales, products, journeys, stocks, payrollPeriod] =
-      await Promise.all([
-        this.saleRepository
-          .createQueryBuilder("sale")
-          .leftJoinAndSelect("sale.product", "product")
-          .leftJoinAndSelect("sale.branch", "branch")
-          .leftJoinAndSelect("branch.chain", "chain")
-          .leftJoinAndSelect("sale.user", "user")
-          .leftJoinAndSelect("user.role", "role")
-          .where("sale.projectId = :projectId", { projectId })
-          .andWhere("sale.sale_date BETWEEN :start AND :end", {
-            start: salesStart.toDate(),
-            end: salesEnd.toDate(),
-          })
-          .select([
-            "sale.id",
-            "sale.quantity",
-            "sale.sale_date",
-            "product.id",
-            "product.name",
-            "product.model",
-            "branch.id",
-            "branch.name",
-            "chain.id",
-            "chain.name",
-            "user.id",
-            "role.name",
-          ])
-          .getMany(),
-        this.productRepository.find({
-          where: { project_id: projectId, is_active: true },
-          select: ["id", "name", "model"],
-        }),
-        this.journeyRepository
-          .createQueryBuilder("journey")
-          .leftJoinAndSelect("journey.user", "user")
-          .leftJoinAndSelect("user.role", "role")
-          .leftJoinAndSelect("journey.branch", "branch")
-          .leftJoinAndSelect("branch.chain", "chain")
-          .leftJoinAndSelect("journey.checkin", "checkin")
-          .where("journey.projectId = :projectId", { projectId })
-          .andWhere("journey.date IN (:...dates)", {
-            dates: [yesterday.format("YYYY-MM-DD"), now.format("YYYY-MM-DD")],
-          })
-          .select([
-            "journey.id",
-            "journey.date",
-            "journey.status",
-            "user.id",
-            "role.name",
-            "branch.id",
-            "branch.name",
-            "chain.id",
-            "chain.name",
-            "checkin.id",
-            "checkin.checkInTime",
-          ])
-          .getMany(),
-        this.stockRepository
-          .createQueryBuilder("stock")
-          .leftJoinAndSelect("stock.branch", "branch")
-          .leftJoinAndSelect("branch.chain", "chain")
-          .leftJoinAndSelect("stock.product", "product")
-          .where("product.project_id = :projectId", { projectId })
-          .andWhere("product.is_active = :isActive", { isActive: true })
-          .select([
-            "stock.id",
-            "stock.quantity",
-            "branch.id",
-            "branch.name",
-            "chain.id",
-            "chain.name",
-            "product.id",
-            "product.name",
-            "product.model",
-          ])
-          .getMany(),
-        this.payrollPeriodRepository.findOne({
-          where: {
-            projectId,
-            month: yesterday.format("YYYY-MM"),
-          },
-          relations: ["lines", "lines.user", "lines.violations"],
-        }),
-      ]);
+    const [sales, products, journeys, stocks] = await Promise.all([
+      this.saleRepository
+        .createQueryBuilder("sale")
+        .leftJoinAndSelect("sale.product", "product")
+        .leftJoinAndSelect("sale.branch", "branch")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("sale.user", "user")
+        .leftJoinAndSelect("user.role", "role")
+        .where("sale.projectId = :projectId", { projectId })
+        .andWhere("sale.sale_date BETWEEN :start AND :end", {
+          start: salesStart.toDate(),
+          end: salesEnd.toDate(),
+        })
+        .select([
+          "sale.id",
+          "sale.quantity",
+          "sale.sale_date",
+          "product.id",
+          "product.name",
+          "product.model",
+          "branch.id",
+          "branch.name",
+          "chain.id",
+          "chain.name",
+          "user.id",
+          "role.name",
+        ])
+        .getMany(),
+      this.productRepository.find({
+        where: { project_id: projectId, is_active: true },
+        select: ["id", "name", "model"],
+      }),
+      this.journeyRepository
+        .createQueryBuilder("journey")
+        .leftJoinAndSelect("journey.user", "user")
+        .leftJoinAndSelect("user.role", "role")
+        .leftJoinAndSelect("journey.branch", "branch")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("journey.checkin", "checkin")
+        .where("journey.projectId = :projectId", { projectId })
+        .andWhere("journey.date IN (:...dates)", {
+          dates: [yesterday.format("YYYY-MM-DD"), now.format("YYYY-MM-DD")],
+        })
+        .select([
+          "journey.id",
+          "journey.date",
+          "journey.status",
+          "user.id",
+          "role.name",
+          "branch.id",
+          "branch.name",
+          "chain.id",
+          "chain.name",
+          "checkin.id",
+          "checkin.checkInTime",
+        ])
+        .getMany(),
+      this.stockRepository
+        .createQueryBuilder("stock")
+        .leftJoinAndSelect("stock.branch", "branch")
+        .leftJoinAndSelect("branch.chain", "chain")
+        .leftJoinAndSelect("stock.product", "product")
+        .where("product.project_id = :projectId", { projectId })
+        .andWhere("product.is_active = :isActive", { isActive: true })
+        .select([
+          "stock.id",
+          "stock.quantity",
+          "branch.id",
+          "branch.name",
+          "chain.id",
+          "chain.name",
+          "product.id",
+          "product.name",
+          "product.model",
+        ])
+        .getMany(),
+    ]);
 
     this.logger.log(
       `Fetched Data: ${sales.length} sales, ${products.length} products, ${journeys.length} journeys, ${stocks.length} stock records for Project ID ${projectId}`,
@@ -1922,60 +1927,6 @@ export class ReportsService {
         row.getCell(idx + 2).alignment = { horizontal: "center" };
       });
       row.getCell(1).border = borderObj;
-    });
-
-    const payrollSheet = workbook.addWorksheet("Payroll Details");
-    payrollSheet.columns = [
-      { header: "Date", key: "date", width: 14 },
-      { header: "Employee", key: "employee", width: 28 },
-      { header: "Username", key: "username", width: 20 },
-      { header: "Gross Salary", key: "grossSalary", width: 20 },
-      { header: "Additions", key: "additions", width: 18 },
-      {
-        header: "Attendance Deduction",
-        key: "attendanceDeduction",
-        width: 24,
-      },
-      { header: "Manual Deduction", key: "manualDeduction", width: 20 },
-      { header: "Net Pay", key: "netPay", width: 18 },
-    ];
-    payrollSheet.getRow(1).font = { bold: true };
-    payrollSheet.getRow(1).fill = headerPattern;
-
-    const reportDate = yesterday.format("YYYY-MM-DD");
-    (payrollPeriod?.lines || [])
-      .slice()
-      .sort((first, second) =>
-        (first.user?.name || first.user?.username || "").localeCompare(
-          second.user?.name || second.user?.username || "",
-        ),
-      )
-      .forEach((line) => {
-        const dailyAttendanceDeduction = (line.violations || [])
-          .filter((violation) => violation.eventDate === reportDate)
-          .reduce(
-            (total, violation) =>
-              total + Number(violation.deductionAmount || 0),
-            0,
-          );
-
-        payrollSheet.addRow({
-          date: reportDate,
-          employee: line.user?.name || "-",
-          username: line.user?.username || "-",
-          grossSalary: Number(line.grossSalary || 0),
-          additions: Number(line.totalAddition || 0),
-          attendanceDeduction: dailyAttendanceDeduction,
-          manualDeduction: Number(line.manualDeduction || 0),
-          netPay: Number(line.netPay || 0),
-        });
-      });
-
-    payrollSheet.eachRow((row) => {
-      row.eachCell((cell) => {
-        cell.border = borderObj;
-        cell.alignment = { horizontal: "center" };
-      });
     });
 
     const executionDateStr = now.format("YYYY_MM_DD_HHmmss_SSS");
