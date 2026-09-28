@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { IsNull, Repository } from "typeorm";
 import * as argon2 from "argon2";
 import { ERole } from "enums/Role.enum";
 import { User } from "entities/user.entity";
@@ -280,7 +280,7 @@ export class AuthService {
         "name",
         "password",
         "is_active",
-        "device_id",
+        "mac_id",
         "role",
         "national_id",
       ],
@@ -294,22 +294,68 @@ export class AuthService {
       throw new ForbiddenException("Your account is inactive");
     }
 
-    if ([ERole.PROMOTER, ERole.SUPERVISOR].includes(user.role.name as ERole)) {
-      if (!dto.device_id) {
-        throw new ForbiddenException("Device ID is required for your role");
+    if (!user.mac_id) {
+      const bindingResult = await this.userRepository.update(
+        { id: user.id, mac_id: IsNull() },
+        { mac_id: dto.mac_id },
+      );
+
+      if (bindingResult.affected === 0) {
+        const boundUser = await this.userRepository.findOne({
+          where: { id: user.id },
+          select: ["id", "mac_id"],
+        });
+
+        if (!boundUser || boundUser.mac_id !== dto.mac_id) {
+          throw new ForbiddenException(
+            "This account is registered to another MAC ID",
+          );
+        }
       }
 
-      if (!user.device_id) {
-        await this.userRepository.update(user.id, { device_id: dto.device_id });
-        user.device_id = dto.device_id;
-      } else if (user.device_id !== dto.device_id) {
-        throw new ForbiddenException(
-          "This account is registered to another device",
-        );
-      }
+      user.mac_id = dto.mac_id;
+    } else if (user.mac_id !== dto.mac_id) {
+      throw new ForbiddenException(
+        "This account is registered to another MAC ID",
+      );
     }
 
     return this.generateAuthResponse(user);
+  }
+
+  async resetMacId(userId: string, requester: User) {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      relations: ["project"],
+    });
+
+    if (!user) {
+      throw new NotFoundException("User not found");
+    }
+
+    const requesterRole = requester.role?.name;
+    if (requesterRole === ERole.SUPER_ADMIN) {
+      await this.userRepository.update(user.id, { mac_id: null });
+      return { success: true };
+    }
+
+    if (requesterRole !== ERole.PROJECT_ADMIN) {
+      throw new ForbiddenException("Only administrators can reset MAC IDs");
+    }
+
+    const requesterProjectId = await this.userService.resolveProjectIdFromUser(
+      requester.id,
+    );
+    const userProjectId = user.project?.id ?? user.project_id;
+
+    if (!requesterProjectId || requesterProjectId !== userProjectId) {
+      throw new ForbiddenException(
+        "You can only reset MAC IDs for users in your own project",
+      );
+    }
+
+    await this.userRepository.update(user.id, { mac_id: null });
+    return { success: true };
   }
 
   async refreshToken(refreshToken: string) {
@@ -384,7 +430,9 @@ export class AuthService {
   async getUsersCreatedByOrAll(requester: User) {
     const relations = ["role", "project", "branch", "created_by"];
     if (requester.role.name === ERole.SUPER_ADMIN) {
-      return this.userRepository.find({ relations: [...relations, "assignedBrands"] });
+      return this.userRepository.find({
+        relations: [...relations, "assignedBrands"],
+      });
     } else {
       return this.userRepository.find({
         where: { created_by: { id: requester.id } },
@@ -573,7 +621,8 @@ export class AuthService {
         national_id: user.national_id,
         account_name: user.account_name,
         iban: user.iban,
-        brandAssignmentMode: user.brandAssignmentMode || BrandAssignmentMode.ALL,
+        brandAssignmentMode:
+          user.brandAssignmentMode || BrandAssignmentMode.ALL,
       },
       access_token: await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_SECRET,

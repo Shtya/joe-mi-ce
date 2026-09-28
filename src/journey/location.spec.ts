@@ -99,8 +99,14 @@ describe("Location Tracking System Tests", () => {
         { provide: AuthService, useValue: mockAuthService },
         { provide: MailService, useValue: mockMailService },
         { provide: LocationCacheService, useValue: mockLocationCacheService },
-        { provide: getRepositoryToken(PromoterLocation), useValue: mockLocationRepo },
-        { provide: getRepositoryToken(LocationLog), useValue: mockLocationLogRepo },
+        {
+          provide: getRepositoryToken(PromoterLocation),
+          useValue: mockLocationRepo,
+        },
+        {
+          provide: getRepositoryToken(LocationLog),
+          useValue: mockLocationLogRepo,
+        },
         { provide: getRepositoryToken(User), useValue: mockUserRepo },
         { provide: getRepositoryToken(CheckIn), useValue: mockCheckInRepo },
         { provide: getRepositoryToken(Journey), useValue: mockJourneyRepo },
@@ -108,16 +114,19 @@ describe("Location Tracking System Tests", () => {
         { provide: getRepositoryToken(JourneyPlan), useValue: mockGeneralRepo },
         { provide: getRepositoryToken(Branch), useValue: mockGeneralRepo },
         { provide: getRepositoryToken(Shift), useValue: mockGeneralRepo },
-        { provide: getRepositoryToken(VacationDate), useValue: mockGeneralRepo },
+        {
+          provide: getRepositoryToken(VacationDate),
+          useValue: mockGeneralRepo,
+        },
         { provide: getRepositoryToken(Sale), useValue: mockGeneralRepo },
         { provide: JwtService, useValue: mockJwtService },
         { provide: Reflector, useValue: {} },
         { provide: "I18nService", useValue: {} },
       ],
     })
-    .overrideGuard(AuthGuard)
-    .useValue({ canActivate: () => true })
-    .compile();
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
 
     gateway = module.get<LocationGateway>(LocationGateway);
     service = module.get<JourneyService>(JourneyService);
@@ -142,9 +151,19 @@ describe("Location Tracking System Tests", () => {
 
   describe("upsertPromoterLocation (Service Level)", () => {
     it("should save location logs as live when there is no gap > 20 minutes", async () => {
-      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
-      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
-      mockJourneyRepo.findOne.mockResolvedValue({ projectId: "p1", branch: null });
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
+      mockCheckInRepo.findOne.mockResolvedValue({
+        id: "c1",
+        journey: { id: "j1" },
+      });
+      mockJourneyRepo.findOne.mockResolvedValue({
+        projectId: "p1",
+        branch: null,
+      });
       mockLocationLogRepo.findOne.mockResolvedValue({
         recordedAt: new Date(Date.now() - 5 * 60_000), // 5 mins ago
       });
@@ -161,10 +180,43 @@ describe("Location Tracking System Tests", () => {
       );
     });
 
+    it("should automatically record a missing timestamp in Saudi Arabia time", async () => {
+      jest.useFakeTimers().setSystemTime(new Date("2026-09-28T09:30:00.000Z"));
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
+      mockCheckInRepo.findOne.mockResolvedValue(null);
+      mockLocationLogRepo.findOne.mockResolvedValue(null);
+
+      const result = await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.1234,
+        lng: 46.5678,
+      });
+
+      expect(result.recordedAt).toBe("2026-09-28T12:30:00.000+03:00");
+      expect(mockLocationLogRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recordedAt: new Date("2026-09-28T09:30:00.000Z"),
+        }),
+      );
+
+      jest.useRealTimers();
+    });
+
     it("should automatically trigger offlineSince when gap is > 20 minutes", async () => {
       const lastRecordedTime = new Date(Date.now() - 25 * 60_000); // 25 mins ago
-      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
-      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
+      mockCheckInRepo.findOne.mockResolvedValue({
+        id: "c1",
+        journey: { id: "j1" },
+      });
       mockLocationLogRepo.findOne.mockResolvedValue({
         recordedAt: lastRecordedTime,
       });
@@ -192,8 +244,15 @@ describe("Location Tracking System Tests", () => {
     });
 
     it("should classify locations as inside, outside, and too_far", async () => {
-      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
-      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
+      mockCheckInRepo.findOne.mockResolvedValue({
+        id: "c1",
+        journey: { id: "j1" },
+      });
       mockLocationLogRepo.findOne.mockResolvedValue(null);
       mockJourneyRepo.findOne.mockResolvedValue({
         projectId: "p1",
@@ -227,7 +286,11 @@ describe("Location Tracking System Tests", () => {
 
     it("should append older offline pings without replacing latest location cache", async () => {
       const oldRecordedAt = "2026-06-26T09:00:00.000Z";
-      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
       mockCheckInRepo.findOne.mockRejectedValue(new Error("No active journey"));
       mockLocationLogRepo.findOne.mockResolvedValue({
         userId: "u1",
@@ -242,7 +305,7 @@ describe("Location Tracking System Tests", () => {
         projectId: "p1",
       });
 
-      expect(result.recordedAt).toBe(oldRecordedAt);
+      expect(result.recordedAt).toBe("2026-06-26T12:00:00.000+03:00");
       expect(mockLocationLogRepo.save).toHaveBeenCalled();
       expect(mockLocationRepo.upsert).not.toHaveBeenCalled();
       expect(mockLocationCacheService.setLatestLocation).not.toHaveBeenCalled();
@@ -298,8 +361,14 @@ describe("Location Tracking System Tests", () => {
         limit: 10,
       });
 
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith("log.userId = :userId", { userId: "u1" });
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith("log.projectId = :projectId", { projectId: "p1" });
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        "log.userId = :userId",
+        { userId: "u1" },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        "log.projectId = :projectId",
+        { projectId: "p1" },
+      );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         "log.recordedAt BETWEEN :start AND :end",
         expect.any(Object),
@@ -318,11 +387,15 @@ describe("Location Tracking System Tests", () => {
       const req = { user: { id: "u1" } };
       const payload = { lat: 24.1, lng: 46.2 };
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
-      jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({ success: true } as any);
+      jest
+        .spyOn(service, "upsertPromoterLocation")
+        .mockResolvedValue({ success: true } as any);
 
       const res = await gateway.createLocation(req, payload);
 
-      expect(mockUsersService.resolveProjectIdFromUser).toHaveBeenCalledWith("u1");
+      expect(mockUsersService.resolveProjectIdFromUser).toHaveBeenCalledWith(
+        "u1",
+      );
       expect(service.upsertPromoterLocation).toHaveBeenCalledWith(
         expect.objectContaining({
           userId: "u1",
@@ -373,7 +446,9 @@ describe("Location Tracking System Tests", () => {
       };
       const payload = { lat: 24.1, lng: 46.2 };
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
-      jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({ success: true } as any);
+      jest
+        .spyOn(service, "upsertPromoterLocation")
+        .mockResolvedValue({ success: true } as any);
 
       const res = await gateway.handleLocationUpdate(client, payload);
 
@@ -401,9 +476,20 @@ describe("Location Tracking System Tests", () => {
         updatedAt: new Date().toISOString(),
       };
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
-      jest.spyOn(service, "getActivePromoterLocations").mockResolvedValue([cachedItem as any]);
+      jest
+        .spyOn(service, "getActivePromoterLocations")
+        .mockResolvedValue([cachedItem as any]);
 
-      const res = await gateway.getLocations(req, undefined, undefined, undefined, undefined, "1", "50", "30");
+      const res = await gateway.getLocations(
+        req,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "1",
+        "50",
+        "30",
+      );
 
       expect(service.getActivePromoterLocations).toHaveBeenCalledWith("p1", 30);
       expect(res.items).toEqual([cachedItem]);
@@ -413,11 +499,29 @@ describe("Location Tracking System Tests", () => {
     it("should GET paginated logs filtered by resolved requesting user's project ID", async () => {
       const req = { user: { id: "u1" } };
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
-      jest.spyOn(service, "getLocationLog").mockResolvedValue({ items: [], total: 0, page: 1, limit: 50, totalPages: 0 });
+      jest
+        .spyOn(service, "getLocationLog")
+        .mockResolvedValue({
+          items: [],
+          total: 0,
+          page: 1,
+          limit: 50,
+          totalPages: 0,
+        });
 
-      const res = await gateway.getLocations(req, "2026-06-20", "2026-06-24", "10:00", "18:00", "1", "50");
+      const res = await gateway.getLocations(
+        req,
+        "2026-06-20",
+        "2026-06-24",
+        "10:00",
+        "18:00",
+        "1",
+        "50",
+      );
 
-      expect(mockUsersService.resolveProjectIdFromUser).toHaveBeenCalledWith("u1");
+      expect(mockUsersService.resolveProjectIdFromUser).toHaveBeenCalledWith(
+        "u1",
+      );
       expect(service.getLocationLog).toHaveBeenCalledWith({
         projectId: "p1",
         fromDate: "2026-06-20",

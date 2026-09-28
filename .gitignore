@@ -80,3 +80,6 @@ config.bat
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+
+# Database backups contain production data; keep them local.
+/backups/*.dump

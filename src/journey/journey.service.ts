@@ -731,7 +731,7 @@ export class JourneyService {
       checkInId: params.checkInId,
       lat: Number(params.lat),
       lng: Number(params.lng),
-      recordedAt: params.recordedAt.toISOString(),
+      recordedAt: this.toSaudiISOString(params.recordedAt),
       distanceMeters: params.distanceMeters,
       locationStatus: params.locationStatus,
       isOutside: params.isOutside,
@@ -762,6 +762,18 @@ export class JourneyService {
     };
 
     return messages[lang][status];
+  }
+
+  /**
+   * Saudi Arabia uses Asia/Riyadh (UTC+03:00) throughout the year and does
+   * not observe daylight saving time. PostgreSQL stores the same instant in
+   * its timestamptz column; this method only formats API/socket responses.
+   */
+  private toSaudiISOString(date: Date): string {
+    const saudiOffsetMilliseconds = 3 * 60 * 60 * 1000;
+    return new Date(date.getTime() + saudiOffsetMilliseconds)
+      .toISOString()
+      .replace("Z", "+03:00");
   }
 
   private cacheItemFromLocation(

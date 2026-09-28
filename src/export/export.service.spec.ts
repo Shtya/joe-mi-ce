@@ -36,17 +36,17 @@ describe("ExportService", () => {
 
       expect(
         (service as any).extractProjectIdFromExportUrl(
-          "/api/v1/sales?filters[project][id]=c9f7df79-b342-4b8d-aa71-0de112f47254",
+          "/api/v1/sales?filters[project][id]=86419039-94f6-42f3-a629-0f83a26a0140",
         ),
-      ).toBe("c9f7df79-b342-4b8d-aa71-0de112f47254");
+      ).toBe("86419039-94f6-42f3-a629-0f83a26a0140");
 
       const result = await (service as any).isGatemeaProjectExport(
-        "/api/v1/sales?filters[project][id]=c9f7df79-b342-4b8d-aa71-0de112f47254",
+        "/api/v1/sales?filters[project][id]=86419039-94f6-42f3-a629-0f83a26a0140",
         [],
       );
 
       expect(findOne).toHaveBeenCalledWith({
-        where: { id: "c9f7df79-b342-4b8d-aa71-0de112f47254" },
+        where: { id: "86419039-94f6-42f3-a629-0f83a26a0140" },
         select: { id: true, name: true },
       });
       expect(await findOne.mock.results[0].value).toEqual({ name: "GATMEA" });
@@ -229,6 +229,30 @@ describe("ExportService", () => {
         "extra sku": "100523090",
         quantity: 4,
       });
+    });
+
+    it("excludes archived product and branch rows from GATMEA stock exports", () => {
+      const result = (service as any).cleanDataForExport(
+        [
+          {
+            quantity: 1,
+            branch: { name: "Saco" },
+            product: { name: "T90", model: "DEX95" },
+          },
+          { quantity: 1, branch: { name: "Saco" }, product: null },
+          { quantity: 1, branch: null, product: { name: "T90" } },
+          {
+            quantity: 1,
+            branch: { name: "Saco", deleted_at: "2026-09-28" },
+            product: { name: "T90" },
+          },
+        ],
+        "stock",
+        true,
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]["product name"]).toBe("T90");
     });
 
     it("keeps non-GATMEA stock exports on the existing generic layout", () => {

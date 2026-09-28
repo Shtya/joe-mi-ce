@@ -556,7 +556,21 @@ export class ExportService {
       });
     }
 
-    return data.map((item) => {
+    const exportRows =
+      isGatemeaProject &&
+      (mainEntityLower === "stock" ||
+        mainEntityLower === "sale" ||
+        mainEntityLower === "sales")
+        ? data.filter(
+            (item) =>
+              item.branch &&
+              !item.branch.deleted_at &&
+              item.product &&
+              !item.product.deleted_at,
+          )
+        : data;
+
+    return exportRows.map((item) => {
       const flattened = this.flattenObjectWithEntityPrefixes(item, mainEntity);
 
       const isActuallyUnplanned =

@@ -27,6 +27,7 @@ export interface RecoveryRowResult {
   key?: string; // human-readable natural key, e.g. "user=ibrahim.y@... | branch=Extra Granada RS2 | date=2026-07-26"
   ids?: Record<string, string>; // resolved database ids (userId, branchId, journeyId, ...)
   changes?: Record<string, { from: string | null; to: string | null }>;
+  affected?: Record<string, number>; // linked rows that a cleanup action moves or archives
 }
 
 export interface RecoverySummary {

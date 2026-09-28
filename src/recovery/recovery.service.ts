@@ -176,7 +176,7 @@ export class RecoveryService {
           push,
         );
       } else if (type === "cleanup") {
-        await this.cleanupGatemeaDuplicates(wb, manager, project, dryRun, push);
+        await this.cleanupGatemeaDuplicates(wb, manager, project, push);
       } else {
         const ctx = new RecoveryContext(manager, project, push);
         await ctx.init();
@@ -271,14 +271,18 @@ export class RecoveryService {
     const branches = await branchRepo.find({
       where: { project: { id: project.id } } as any,
     });
-    const productsByName = new Map(
-      products.map((product) => [mappingKey(product.name), product]),
+    const productsByName = mappingIndex(products, (product) =>
+      mappingKey(product.name),
     );
-    const branchesByName = new Map(
-      branches.map((branch) => [mappingKey(branch.name), branch]),
+    const productsByLooseName = mappingIndex(products, (product) =>
+      mappingLooseKey(product.name),
+    );
+    const branchesByName = mappingIndex(branches, (branch) =>
+      mappingKey(branch.name),
     );
     const seenProducts = new Set<string>();
     const seenBranches = new Set<string>();
+    const mappedProductsByCodes = new Map<string, Product>();
 
     for (
       let index = itemColumns.headerRow + 1;
@@ -303,8 +307,44 @@ export class RecoveryService {
       }
       seenProducts.add(key);
 
-      const product = productsByName.get(key);
+      const model = norm(row?.[itemColumns.columns.model]);
+      const sacoSku = norm(row?.[itemColumns.columns.sacoSku]);
+      const extraSku = norm(row?.[itemColumns.columns.extraSku]);
+      const codeKey = [model, sacoSku, extraSku].every(Boolean)
+        ? [model, sacoSku, extraSku].map(mappingKey).join("|")
+        : null;
+      const exactMatches = productsByName.get(key) ?? [];
+      const looseMatches = productsByLooseName.get(mappingLooseKey(name)) ?? [];
+      const matches = exactMatches.length ? exactMatches : looseMatches;
+      if (matches.length > 1) {
+        push({
+          row: index + 1,
+          sheet: "Sheet1",
+          entity: "products",
+          action: "UNRESOLVED",
+          confidence: "UNRESOLVED",
+          reason: "multiple active products match this workbook item name",
+          key: `product=${name}`,
+        });
+        continue;
+      }
+      const product = matches[0];
       if (!product) {
+        const mappedProduct = codeKey && mappedProductsByCodes.get(codeKey);
+        if (mappedProduct) {
+          push({
+            row: index + 1,
+            sheet: "Sheet1",
+            entity: "products",
+            action: "DUPLICATE",
+            confidence: "CONFIRMED",
+            reason:
+              "same model, Saco SKU, and Extra SKU as an earlier mapped workbook row",
+            key: `product=${name}`,
+            ids: { productId: mappedProduct.id },
+          });
+          continue;
+        }
         push({
           row: index + 1,
           sheet: "Sheet1",
@@ -317,9 +357,7 @@ export class RecoveryService {
         continue;
       }
 
-      const model = norm(row?.[itemColumns.columns.model]);
-      const sacoSku = norm(row?.[itemColumns.columns.sacoSku]);
-      const extraSku = norm(row?.[itemColumns.columns.extraSku]);
+      if (codeKey) mappedProductsByCodes.set(codeKey, product);
       const changes = mappingChanges(product, { model, sacoSku, extraSku });
       const changed = Object.keys(changes).length > 0;
       if (changed && !dryRun) {
@@ -367,7 +405,20 @@ export class RecoveryService {
       }
       seenBranches.add(key);
 
-      const branch = branchesByName.get(key);
+      const branchMatches = branchesByName.get(key) ?? [];
+      if (branchMatches.length > 1) {
+        push({
+          row: index + 1,
+          sheet: "Store Name ",
+          entity: "branches",
+          action: "UNRESOLVED",
+          confidence: "UNRESOLVED",
+          reason: "multiple active branches match this workbook branch name",
+          key: `branch=${name}`,
+        });
+        continue;
+      }
+      const branch = branchMatches[0];
       if (!branch) {
         push({
           row: index + 1,
@@ -405,9 +456,13 @@ export class RecoveryService {
     wb: XLSX.WorkBook,
     manager: EntityManager,
     project: Project,
-    dryRun: boolean,
     push: (row: RecoveryRowResult) => void,
   ) {
+    if (!/^gat(?:e)?mea$/i.test(project.name.trim())) {
+      throw new BadRequestException(
+        "This cleanup is limited to the GATMEA project.",
+      );
+    }
     const storeSheet = wb.Sheets["Store Name "];
     if (!storeSheet) {
       throw new BadRequestException(
@@ -419,11 +474,19 @@ export class RecoveryService {
       defval: null,
       raw: true,
     });
+    const storeColumns = resolveMappingColumns(storeRows, {
+      name: ["branch name", "branch"],
+      code: ["store code", "branch code", "code"],
+    });
     const canonicalByCode = new Map<string, string>();
     const branchNamesByCode = new Map<string, string[]>();
-    for (let index = 1; index < storeRows.length; index++) {
-      const name = norm(storeRows[index]?.[1]);
-      const code = norm(storeRows[index]?.[5]);
+    for (
+      let index = storeColumns.headerRow + 1;
+      index < storeRows.length;
+      index++
+    ) {
+      const name = norm(storeRows[index]?.[storeColumns.columns.name]);
+      const code = norm(storeRows[index]?.[storeColumns.columns.code]);
       if (!name || !code) continue;
       if (!canonicalByCode.has(code)) canonicalByCode.set(code, name);
       branchNamesByCode.set(code, [
@@ -439,6 +502,7 @@ export class RecoveryService {
     });
     const products = await productRepo.find({
       where: { project_id: project.id },
+      withDeleted: true,
     });
     const branchesByName = new Map(
       branches.map((branch) => [mappingKey(branch.name), branch]),
@@ -446,67 +510,88 @@ export class RecoveryService {
 
     for (const [code, canonicalName] of canonicalByCode) {
       const canonical = branchesByName.get(mappingKey(canonicalName));
-      if (!canonical) continue;
+      if (!canonical || canonical.code !== code) continue;
       const duplicateNames = new Set(
         (branchNamesByCode.get(code) ?? []).map(mappingKey),
       );
       const duplicates = branches.filter(
         (branch) =>
           branch.id !== canonical.id &&
-          duplicateNames.has(mappingKey(branch.name)),
+          duplicateNames.has(mappingKey(branch.name)) &&
+          branch.code === code &&
+          branch.chain?.id === canonical.chain?.id,
       );
       for (const duplicate of duplicates) {
-        if (!dryRun)
-          await this.mergeBranchInto(manager, canonical.id, duplicate.id);
+        const affected = await this.countBranchReferences(
+          manager,
+          duplicate.id,
+        );
+        await this.mergeBranchInto(manager, canonical.id, duplicate.id);
         push({
           row: 0,
           sheet: "Store Name ",
           entity: "branches",
           action: "UPDATED",
           confidence: "CONFIRMED",
-          reason: `merged duplicate branch into ${canonical.name}; stock quantities are summed`,
+          reason: `merged duplicate branch into ${canonical.name}; overlapping stock quantities are summed`,
           key: `branch=${duplicate.name} -> ${canonical.name}`,
-          ids: { branchId: canonical.id },
+          ids: { branchId: canonical.id, mergedBranchId: duplicate.id },
+          affected,
         });
       }
     }
 
-    const productsByName = new Map<string, Product[]>();
-    for (const product of products) {
-      const key = mappingKey(product.name);
-      productsByName.set(key, [...(productsByName.get(key) ?? []), product]);
-    }
-    for (const duplicates of productsByName.values()) {
-      if (duplicates.length < 2) continue;
-      const [canonical, ...others] = duplicates;
-      for (const duplicate of others) {
-        if (!dryRun)
-          await this.mergeProductInto(manager, canonical.id, duplicate.id);
-        push({
-          row: 0,
-          sheet: "Sheet1",
-          entity: "products",
-          action: "UPDATED",
-          confidence: "CONFIRMED",
-          reason: `merged duplicate product into ${canonical.name}; stock quantities are summed`,
-          key: `product=${duplicate.name} -> ${canonical.name}`,
-          ids: { productId: canonical.id },
-        });
-      }
+    const activeProducts = products.filter((product) => !product.deleted_at);
+    for (const duplicate of products.filter((product) => product.deleted_at)) {
+      const exact = activeProducts.filter(
+        (product) => mappingKey(product.name) === mappingKey(duplicate.name),
+      );
+      const loose = activeProducts.filter(
+        (product) =>
+          mappingLooseKey(product.name) === mappingLooseKey(duplicate.name),
+      );
+      const model = activeProducts.filter(
+        (product) =>
+          duplicate.model &&
+          mappingKey(product.model) === mappingKey(duplicate.model),
+      );
+      const candidates = exact.length ? exact : loose.length ? loose : model;
+      if (candidates.length !== 1) continue;
+
+      const canonical = candidates[0];
+      const affected = await this.countProductReferences(manager, duplicate.id);
+      await this.mergeProductInto(manager, canonical.id, duplicate.id);
+      push({
+        row: 0,
+        sheet: "Sheet1",
+        entity: "products",
+        action: "UPDATED",
+        confidence: "CONFIRMED",
+        reason: `merged archived duplicate product into ${canonical.name}; overlapping stock quantities are summed`,
+        key: `product=${duplicate.name} -> ${canonical.name}`,
+        ids: { productId: canonical.id, mergedProductId: duplicate.id },
+        affected,
+      });
     }
 
-    for (const branch of branches.filter((item) =>
-      /test|roaming/i.test(item.name),
+    for (const branch of branches.filter(
+      (item) =>
+        /test|roaming/i.test(item.name) ||
+        /roaming/i.test(item.chain?.name ?? ""),
     )) {
-      if (!dryRun) await this.deleteTestBranch(manager, branch.id);
+      const affected = await this.countBranchReferences(manager, branch.id);
+      await this.archiveTestBranch(manager, branch.id);
       push({
         row: 0,
         sheet: "Store Name ",
         entity: "branches",
         action: "UPDATED",
         confidence: "CONFIRMED",
-        reason: "removed test or roaming branch and its dependent test data",
+        reason:
+          "archived test or roaming branch and excluded its stock and sales from exports",
         key: `branch=${branch.name}`,
+        ids: { branchId: branch.id },
+        affected,
       });
     }
   }
@@ -517,7 +602,7 @@ export class RecoveryService {
     sourceId: string,
   ) {
     await manager.query(
-      "UPDATE stocks t SET quantity = t.quantity + s.quantity FROM stocks s WHERE s.branch_id = $2 AND t.branch_id = $1 AND t.product_id = s.product_id",
+      "UPDATE stocks t SET quantity = (CASE WHEN t.deleted_at IS NULL THEN t.quantity ELSE 0 END) + s.quantity, deleted_at = NULL FROM stocks s WHERE s.branch_id = $2 AND s.deleted_at IS NULL AND t.branch_id = $1 AND t.product_id = s.product_id",
       [targetId, sourceId],
     );
     await manager.query(
@@ -528,9 +613,24 @@ export class RecoveryService {
       "UPDATE stocks SET branch_id = $1 WHERE branch_id = $2",
       [targetId, sourceId],
     );
-    for (const table of ["journeys", "journey_plans", "sale", "users"]) {
+    for (const table of [
+      "audits",
+      "journeys",
+      "journey_plans",
+      "notifications",
+      "sale",
+      "sales_targets",
+      "survey_feedback",
+      "users",
+    ]) {
       await manager.query(
         `UPDATE ${table} SET "branchId" = $1 WHERE "branchId" = $2`,
+        [targetId, sourceId],
+      );
+    }
+    for (const table of ["entrance_letters", "vacations"]) {
+      await manager.query(
+        `UPDATE ${table} SET branch_id = $1 WHERE branch_id = $2`,
         [targetId, sourceId],
       );
     }
@@ -541,6 +641,14 @@ export class RecoveryService {
     await manager.query("DELETE FROM product_branches WHERE branch_id = $1", [
       sourceId,
     ]);
+    await manager.query(
+      'INSERT INTO branch_supervisors ("branchesId", "usersId") SELECT $1, "usersId" FROM branch_supervisors WHERE "branchesId" = $2 ON CONFLICT DO NOTHING',
+      [targetId, sourceId],
+    );
+    await manager.query(
+      'DELETE FROM branch_supervisors WHERE "branchesId" = $1',
+      [sourceId],
+    );
     await manager.getRepository(Branch).softDelete(sourceId);
   }
 
@@ -550,7 +658,7 @@ export class RecoveryService {
     sourceId: string,
   ) {
     await manager.query(
-      "UPDATE stocks t SET quantity = t.quantity + s.quantity FROM stocks s WHERE s.product_id = $2 AND t.product_id = $1 AND t.branch_id = s.branch_id",
+      "UPDATE stocks t SET quantity = (CASE WHEN t.deleted_at IS NULL THEN t.quantity ELSE 0 END) + s.quantity, deleted_at = NULL FROM stocks s WHERE s.product_id = $2 AND s.deleted_at IS NULL AND t.product_id = $1 AND t.branch_id = s.branch_id",
       [targetId, sourceId],
     );
     await manager.query(
@@ -566,6 +674,10 @@ export class RecoveryService {
       [targetId, sourceId],
     );
     await manager.query(
+      'UPDATE audits SET "productId" = $1 WHERE "productId" = $2',
+      [targetId, sourceId],
+    );
+    await manager.query(
       "INSERT INTO product_branches (product_id, branch_id) SELECT $1, branch_id FROM product_branches WHERE product_id = $2 ON CONFLICT DO NOTHING",
       [targetId, sourceId],
     );
@@ -575,19 +687,58 @@ export class RecoveryService {
     await manager.getRepository(Product).softDelete(sourceId);
   }
 
-  private async deleteTestBranch(manager: EntityManager, branchId: string) {
-    await manager.query("DELETE FROM stocks WHERE branch_id = $1", [branchId]);
-    await manager.query('DELETE FROM sale WHERE "branchId" = $1', [branchId]);
-    await manager.query('DELETE FROM journeys WHERE "branchId" = $1', [
-      branchId,
-    ]);
-    await manager.query('DELETE FROM journey_plans WHERE "branchId" = $1', [
-      branchId,
-    ]);
-    await manager.query("DELETE FROM product_branches WHERE branch_id = $1", [
-      branchId,
-    ]);
+  private async archiveTestBranch(manager: EntityManager, branchId: string) {
+    await manager.query(
+      "UPDATE stocks SET deleted_at = NOW() WHERE branch_id = $1 AND deleted_at IS NULL",
+      [branchId],
+    );
+    await manager.query(
+      'UPDATE sale SET deleted_at = NOW() WHERE "branchId" = $1 AND deleted_at IS NULL',
+      [branchId],
+    );
     await manager.getRepository(Branch).softDelete(branchId);
+  }
+
+  private async countBranchReferences(
+    manager: EntityManager,
+    branchId: string,
+  ): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const [table, column] of [
+      ["stocks", "branch_id"],
+      ["sale", '"branchId"'],
+      ["journeys", '"branchId"'],
+      ["journey_plans", '"branchId"'],
+      ["audits", '"branchId"'],
+      ["users", '"branchId"'],
+    ]) {
+      const rows = await manager.query(
+        `SELECT COUNT(*)::int AS count FROM ${table} WHERE ${column} = $1`,
+        [branchId],
+      );
+      counts[table] = Number(rows[0]?.count ?? 0);
+    }
+    return counts;
+  }
+
+  private async countProductReferences(
+    manager: EntityManager,
+    productId: string,
+  ): Promise<Record<string, number>> {
+    const counts: Record<string, number> = {};
+    for (const [table, column] of [
+      ["stocks", "product_id"],
+      ["sale", '"productId"'],
+      ["audits", '"productId"'],
+      ["product_branches", "product_id"],
+    ]) {
+      const rows = await manager.query(
+        `SELECT COUNT(*)::int AS count FROM ${table} WHERE ${column} = $1`,
+        [productId],
+      );
+      counts[table] = Number(rows[0]?.count ?? 0);
+    }
+    return counts;
   }
 
   // ---------------------------------------------------------- attendance
@@ -2833,6 +2984,22 @@ function mappingHeaderKey(value: unknown): string {
   return String(value ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9]/g, "");
+}
+
+function mappingIndex<T>(
+  values: T[],
+  keyFor: (value: T) => string,
+): Map<string, T[]> {
+  const index = new Map<string, T[]>();
+  for (const value of values) {
+    const key = keyFor(value);
+    index.set(key, [...(index.get(key) ?? []), value]);
+  }
+  return index;
+}
+
+function mappingLooseKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
 function mappingChanges(

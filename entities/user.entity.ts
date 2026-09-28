@@ -47,6 +47,9 @@ export class User extends CoreEntity {
   @Column({ length: 100, nullable: true })
   device_id: string;
 
+  @Column({ length: 100, nullable: true })
+  mac_id: string | null;
+
   @Column({ length: 255, nullable: true })
   fcm_token: string;
 

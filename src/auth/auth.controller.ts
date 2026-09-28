@@ -139,6 +139,13 @@ export class AuthController {
   ) {
     return this.authService.updateUserRole(id, dto.role_id, req.user);
   }
+
+  @UseGuards(AuthGuard)
+  @Post("users/:id/reset-mac-id")
+  async resetMacId(@Param("id") id: string, @Req() req: { user: User }) {
+    return this.authService.resetMacId(id, req.user);
+  }
+
   @UseGuards(AuthGuard)
   @Post("import/promoters")
   @Permissions(EPermission.USER_CREATE)

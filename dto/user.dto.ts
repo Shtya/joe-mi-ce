@@ -1,6 +1,13 @@
-import { IsArray, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
-import { ERole } from '../enums/Role.enum';
-import { BrandAssignmentMode } from 'enums/BrandAssignmentMode.enum';
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from "class-validator";
+import { ERole } from "../enums/Role.enum";
+import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
 
 export class RegisterDto {
   @IsString()
@@ -11,7 +18,7 @@ export class RegisterDto {
   @IsNotEmpty()
   password: string;
 
-  @IsString() 
+  @IsString()
   @IsOptional()
   role?: string;
 
@@ -53,13 +60,13 @@ export class RegisterDto {
   brandAssignmentMode?: BrandAssignmentMode;
 
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID("4", { each: true })
   @IsOptional()
   brandIds?: string[];
 
   @IsString()
   @IsOptional()
-  salesTargetType?: 'monthly' | 'quarterly';
+  salesTargetType?: "monthly" | "quarterly";
 
   @IsString()
   @IsOptional()
@@ -100,7 +107,7 @@ export class UpdateUserDto {
   brandAssignmentMode?: BrandAssignmentMode;
 
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID("4", { each: true })
   @IsOptional()
   brandIds?: string[];
 
@@ -140,8 +147,8 @@ export class LoginDto {
   password: string;
 
   @IsString()
-  @IsOptional()
-  device_id?: string;
+  @IsNotEmpty()
+  mac_id: string;
 }
 
 export class RefreshTokenDto {
