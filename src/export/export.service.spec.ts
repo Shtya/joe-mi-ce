@@ -2,6 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { ExportService } from "./export.service";
 import { DataSource } from "typeorm";
 import { HttpService } from "@nestjs/axios";
+import { of } from "rxjs";
 
 describe("ExportService", () => {
   let service: ExportService;
@@ -63,6 +64,57 @@ describe("ExportService", () => {
       );
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe("bounded export pagination", () => {
+    it("merges every stock page instead of sending an oversized limit to PostgreSQL", async () => {
+      mockHttpService.get.mockImplementation((url: string) => {
+        if (url.includes("page=1")) {
+          return of({
+            data: {
+              total_records: 3,
+              current_page: 1,
+              per_page: 2,
+              records: [{ id: "stock-1" }, { id: "stock-2" }],
+            },
+          });
+        }
+
+        return of({
+          data: {
+            total_records: 3,
+            current_page: 2,
+            per_page: 2,
+            records: [{ id: "stock-3" }],
+          },
+        });
+      });
+
+      const records = await (service as any).fetchAllRecordsFromUrl(
+        "/api/v1/stock/project/project-id?limit=100000",
+        "Bearer test-token",
+      );
+
+      expect(records).toEqual([
+        { id: "stock-1" },
+        { id: "stock-2" },
+        { id: "stock-3" },
+      ]);
+      expect(mockHttpService.get).toHaveBeenNthCalledWith(
+        1,
+        "http://localhost:3030/api/v1/stock/project/project-id?limit=1000&page=1",
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: "Bearer test-token",
+          }),
+        }),
+      );
+      expect(mockHttpService.get).toHaveBeenNthCalledWith(
+        2,
+        "http://localhost:3030/api/v1/stock/project/project-id?limit=1000&page=2",
+        expect.anything(),
+      );
     });
   });
 

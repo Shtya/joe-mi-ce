@@ -5,27 +5,41 @@ describe("RecoveryService GATMEA report mappings", () => {
   it("previews the matched product and store mappings without saving in dry-run mode", async () => {
     const workbook = XLSX.utils.book_new();
     const items = XLSX.utils.aoa_to_sheet([
-      ["", "", "", "Actual"],
       [
-        "",
-        "system item name",
-        "brand",
-        "product name",
-        "product model",
+        "system item name ",
+        "brand ",
+        "Proudect Name ",
+        "Proudect Model Number  ",
         "Saco SKU",
         "Extra SKU",
+        "Category",
       ],
-      ["", "T90", "TINECO", "Deebot T90", "DEX95", "Not ACTV", "100523090"],
+      [
+        "T90",
+        "TINECO",
+        "Deebot T90",
+        "DEX95",
+        "Not ACTV",
+        "100523090",
+        "Robovacume",
+      ],
     ]);
     const stores = XLSX.utils.aoa_to_sheet([
-      ["", "Branch", "Branch Name", "Chain", "Store Name", "Store Code"],
       [
-        "",
+        "Branch",
+        "Branch Name",
+        "Chain ",
+        "Store Name ",
+        "Store Code ",
+        "Notes ",
+      ],
+      [
         "Saco Takhassusi",
         "Saco Takhassusi",
         "SACO",
         "Saco Takhassusi",
         "1103",
+        null,
       ],
     ]);
     XLSX.utils.book_append_sheet(workbook, items, "Sheet1");
@@ -37,17 +51,15 @@ describe("RecoveryService GATMEA report mappings", () => {
 
     const project = { id: "gatemea-project", name: "gatemea" };
     const productRepo = {
-      find: jest
-        .fn()
-        .mockResolvedValue([
-          {
-            id: "product-1",
-            name: "T90",
-            model: null,
-            sacoSku: null,
-            extraSku: null,
-          },
-        ]),
+      find: jest.fn().mockResolvedValue([
+        {
+          id: "product-1",
+          name: "T90",
+          model: null,
+          sacoSku: null,
+          extraSku: null,
+        },
+      ]),
       save: jest.fn(),
     };
     const branchRepo = {
@@ -106,11 +118,17 @@ describe("RecoveryService GATMEA report mappings", () => {
         entity: "products",
         action: "UPDATED",
         key: "product=T90",
+        changes: {
+          model: { from: null, to: "DEX95" },
+          sacoSku: { from: null, to: "Not ACTV" },
+          extraSku: { from: null, to: "100523090" },
+        },
       }),
       expect.objectContaining({
         entity: "branches",
         action: "UPDATED",
         key: "branch=Saco Takhassusi",
+        changes: { code: { from: null, to: "1103" } },
       }),
     ]);
     expect(productRepo.save).not.toHaveBeenCalled();

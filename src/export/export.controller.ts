@@ -109,11 +109,6 @@ export class ExportController {
       });
     }
 
-    // Default limit if not provided
-    if (!finalParams.limit) {
-      finalParams.limit = 100000;
-    }
-
     // Build the final URL
     const newQueryString =
       Object.keys(finalParams).length > 0

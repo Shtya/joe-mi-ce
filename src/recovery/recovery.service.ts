@@ -248,6 +248,21 @@ export class RecoveryService {
       defval: null,
       raw: true,
     });
+    const itemColumns = resolveMappingColumns(itemRows, {
+      name: ["system item name", "item name"],
+      model: [
+        "product model number",
+        "proudect model number",
+        "product model",
+        "model",
+      ],
+      sacoSku: ["saco sku"],
+      extraSku: ["extra sku"],
+    });
+    const storeColumns = resolveMappingColumns(storeRows, {
+      name: ["branch name", "branch"],
+      code: ["store code", "branch code", "code"],
+    });
     const productRepo = manager.getRepository(Product);
     const branchRepo = manager.getRepository(Branch);
     const products = await productRepo.find({
@@ -265,9 +280,13 @@ export class RecoveryService {
     const seenProducts = new Set<string>();
     const seenBranches = new Set<string>();
 
-    for (let index = 2; index < itemRows.length; index++) {
+    for (
+      let index = itemColumns.headerRow + 1;
+      index < itemRows.length;
+      index++
+    ) {
       const row = itemRows[index];
-      const name = norm(row?.[1]);
+      const name = norm(row?.[itemColumns.columns.name]);
       if (!name) continue;
       const key = mappingKey(name);
       if (seenProducts.has(key)) {
@@ -298,17 +317,15 @@ export class RecoveryService {
         continue;
       }
 
-      const model = norm(row?.[4]);
-      const sacoSku = norm(row?.[5]);
-      const extraSku = norm(row?.[6]);
-      const changed =
-        product.model !== model ||
-        product.sacoSku !== sacoSku ||
-        product.extraSku !== extraSku;
+      const model = norm(row?.[itemColumns.columns.model]);
+      const sacoSku = norm(row?.[itemColumns.columns.sacoSku]);
+      const extraSku = norm(row?.[itemColumns.columns.extraSku]);
+      const changes = mappingChanges(product, { model, sacoSku, extraSku });
+      const changed = Object.keys(changes).length > 0;
       if (changed && !dryRun) {
-        product.model = model;
-        product.sacoSku = sacoSku;
-        product.extraSku = extraSku;
+        if (model !== null) product.model = model;
+        if (sacoSku !== null) product.sacoSku = sacoSku;
+        if (extraSku !== null) product.extraSku = extraSku;
         await productRepo.save(product);
       }
       push({
@@ -322,13 +339,18 @@ export class RecoveryService {
           : undefined,
         key: `product=${name}`,
         ids: { productId: product.id },
+        changes,
       });
     }
 
-    for (let index = 1; index < storeRows.length; index++) {
+    for (
+      let index = storeColumns.headerRow + 1;
+      index < storeRows.length;
+      index++
+    ) {
       const row = storeRows[index];
-      const name = norm(row?.[1]);
-      const code = norm(row?.[5]);
+      const name = norm(row?.[storeColumns.columns.name]);
+      const code = norm(row?.[storeColumns.columns.code]);
       if (!name || !code) continue;
       const key = mappingKey(name);
       if (seenBranches.has(key)) {
@@ -359,9 +381,10 @@ export class RecoveryService {
         continue;
       }
 
-      const changed = branch.code !== code;
+      const changes = mappingChanges(branch, { code });
+      const changed = Object.keys(changes).length > 0;
       if (changed && !dryRun) {
-        branch.code = code;
+        if (code !== null) branch.code = code;
         await branchRepo.save(branch);
       }
       push({
@@ -373,6 +396,7 @@ export class RecoveryService {
         reason: changed ? "branch code differs from the workbook" : undefined,
         key: `branch=${name}`,
         ids: { branchId: branch.id },
+        changes,
       });
     }
   }
@@ -2771,6 +2795,62 @@ class RecoveryContext {
 }
 
 // ------------------------------------------------------------------ helpers
+
+function resolveMappingColumns(
+  rows: any[][],
+  required: Record<string, string[]>,
+): { headerRow: number; columns: Record<string, number> } {
+  for (let headerRow = 0; headerRow < rows.length; headerRow++) {
+    const headerIndex = new Map<string, number>();
+    rows[headerRow].forEach((value, index) => {
+      const key = mappingHeaderKey(value);
+      if (key) headerIndex.set(key, index);
+    });
+
+    const columns: Record<string, number> = {};
+    let complete = true;
+    for (const [field, aliases] of Object.entries(required)) {
+      const column = aliases
+        .map(mappingHeaderKey)
+        .map((alias) => headerIndex.get(alias))
+        .find((index) => index !== undefined);
+      if (column === undefined) {
+        complete = false;
+        break;
+      }
+      columns[field] = column;
+    }
+
+    if (complete) return { headerRow, columns };
+  }
+
+  throw new BadRequestException(
+    `Workbook is missing required mapping columns: ${Object.keys(required).join(", ")}.`,
+  );
+}
+
+function mappingHeaderKey(value: unknown): string {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function mappingChanges(
+  entity: object,
+  values: Record<string, string | null>,
+): Record<string, { from: string | null; to: string | null }> {
+  const changes: Record<string, { from: string | null; to: string | null }> =
+    {};
+
+  for (const [field, to] of Object.entries(values)) {
+    const from = norm((entity as Record<string, unknown>)[field]);
+    if (to !== null && from !== to) {
+      changes[field] = { from, to };
+    }
+  }
+
+  return changes;
+}
 
 function norm(v: any): string | null {
   if (v == null) return null;

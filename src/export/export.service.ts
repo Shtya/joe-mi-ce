@@ -1700,8 +1700,7 @@ export class ExportService {
         throw new BadRequestException("URL parameter is required");
       }
 
-      const rawData = await this.fetchDataFromUrl(url, authHeader);
-      const data = this.extractDataFromResponse(rawData);
+      const data = await this.fetchAllRecordsFromUrl(url, authHeader);
       const isGatemeaProject = await this.isGatemeaProjectExport(url, data);
 
       // Extract main entity from URL, allowing override from query param
@@ -1838,6 +1837,51 @@ export class ExportService {
 
       throw new Error(errorMessage);
     }
+  }
+
+  /**
+   * Relation-heavy TypeORM queries cannot safely use one very large `take`
+   * value: Postgres expands it to one bind parameter per row. Fetch bounded
+   * pages instead and combine the records before creating the workbook.
+   */
+  private async fetchAllRecordsFromUrl(
+    url: string,
+    authorization?: string,
+  ): Promise<any[]> {
+    const firstUrl = this.withExportPage(url, 1);
+    const firstResponse = await this.fetchDataFromUrl(firstUrl, authorization);
+    const records = this.extractDataFromResponse(firstResponse);
+    const totalRecords = Number(firstResponse?.total_records);
+    const perPage = Number(firstResponse?.per_page);
+
+    if (
+      !Number.isFinite(totalRecords) ||
+      !Number.isFinite(perPage) ||
+      totalRecords <= records.length ||
+      perPage < 1
+    ) {
+      return records;
+    }
+
+    const pages = Math.ceil(totalRecords / perPage);
+    const allRecords = [...records];
+    for (let page = 2; page <= pages; page++) {
+      const response = await this.fetchDataFromUrl(
+        this.withExportPage(url, page),
+        authorization,
+      );
+      allRecords.push(...this.extractDataFromResponse(response));
+    }
+
+    return allRecords;
+  }
+
+  private withExportPage(url: string, page: number): string {
+    const [path, queryString = ""] = url.split("?", 2);
+    const params = new URLSearchParams(queryString);
+    params.set("limit", "1000");
+    params.set("page", String(page));
+    return `${path}?${params.toString()}`;
   }
 
   /**
