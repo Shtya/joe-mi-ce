@@ -295,6 +295,16 @@ export class AuthService {
       throw new ForbiddenException("Your account is inactive");
     }
 
+    const requiresDeviceIdentifier = [
+      ERole.PROMOTER,
+      ERole.SUPERVISOR,
+    ].includes(user.role.name as ERole);
+    if (requiresDeviceIdentifier && !dto.mac_id && !dto.device_id) {
+      throw new ForbiddenException(
+        "Device ID or MAC ID is required for your role",
+      );
+    }
+
     if (dto.mac_id && !user.mac_id) {
       const bindingResult = await this.userRepository.update(
         { id: user.id, mac_id: IsNull() },
