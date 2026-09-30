@@ -294,6 +294,10 @@ export class AuthService {
       throw new ForbiddenException("Your account is inactive");
     }
 
+    if (!dto.mac_id) {
+      return this.generateAuthResponse(user);
+    }
+
     if (!user.mac_id) {
       const bindingResult = await this.userRepository.update(
         { id: user.id, mac_id: IsNull() },

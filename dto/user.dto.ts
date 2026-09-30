@@ -147,8 +147,9 @@ export class LoginDto {
   password: string;
 
   @IsString()
+  @IsOptional()
   @IsNotEmpty()
-  mac_id: string;
+  mac_id?: string;
 }
 
 export class RefreshTokenDto {
