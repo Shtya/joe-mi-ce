@@ -150,6 +150,23 @@ describe("Location Tracking System Tests", () => {
   });
 
   describe("upsertPromoterLocation (Service Level)", () => {
+    it("should reject a tracking ping when the user has no active check-in", async () => {
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
+      mockCheckInRepo.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.upsertPromoterLocation({
+          userId: "u1",
+          lat: 24.1234,
+          lng: 46.5678,
+        }),
+      ).rejects.toThrow("Active check-in is required for location tracking");
+    });
+
     it("should save location logs as live when there is no gap > 20 minutes", async () => {
       mockUserRepo.findOne.mockResolvedValue({
         id: "u1",
@@ -187,7 +204,10 @@ describe("Location Tracking System Tests", () => {
         name: "Promoter 1",
         avatar_url: "",
       });
-      mockCheckInRepo.findOne.mockResolvedValue(null);
+      mockCheckInRepo.findOne.mockResolvedValue({
+        id: "c1",
+        journey: { id: "j1" },
+      });
       mockLocationLogRepo.findOne.mockResolvedValue(null);
 
       const result = await service.upsertPromoterLocation({
@@ -291,7 +311,7 @@ describe("Location Tracking System Tests", () => {
         name: "Promoter 1",
         avatar_url: "",
       });
-      mockCheckInRepo.findOne.mockRejectedValue(new Error("No active journey"));
+      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
       mockLocationLogRepo.findOne.mockResolvedValue({
         userId: "u1",
         recordedAt: new Date("2026-06-26T10:00:00.000Z"),

@@ -5,6 +5,7 @@ import {
   ConflictException,
   BadRequestException,
   ForbiddenException,
+  Optional,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
@@ -52,6 +53,11 @@ import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Sale } from "entities/products/sale.entity";
 import { PromoterLocation } from "entities/promoter-location.entity";
 import { LocationLog } from "entities/location-log.entity";
+import {
+  TrackingEvent,
+  TrackingEventType,
+  TrackingLocationStatus,
+} from "entities/tracking-event.entity";
 import { getDistance } from "geolib";
 import { CRUD } from "common/crud.service";
 import { NotificationService } from "src/notification/notification.service";
@@ -139,6 +145,10 @@ export class JourneyService {
     private readonly authService: AuthService,
     private readonly mailService: MailService,
     private readonly locationCacheService: LocationCacheService,
+
+    @Optional()
+    @InjectRepository(TrackingEvent)
+    private readonly trackingEventRepo?: Repository<TrackingEvent>,
   ) {}
 
   async exportAttendanceOvertimeExcel(
@@ -386,6 +396,12 @@ export class JourneyService {
     const projectId = context.projectId;
     const branch = context.branch;
 
+    if (!checkInId) {
+      throw new ConflictException(
+        "Active check-in is required for location tracking",
+      );
+    }
+
     let lastLog: LocationLog | null = null;
     try {
       lastLog = await this.locationLogRepo.findOne({
@@ -458,6 +474,46 @@ export class JourneyService {
       isOutside,
       lang,
     });
+
+    const previousStatus: TrackingLocationStatus | null = lastLog
+      ? lastLog.isOutside
+        ? "outside"
+        : "inside"
+      : null;
+
+    if (previousStatus === "inside" && locationStatus !== "inside") {
+      await this.recordTrackingEvent({
+        userId,
+        projectId,
+        journeyId,
+        checkInId,
+        branchId: branch?.id || null,
+        type: TrackingEventType.LEFT_GEOFENCE,
+        occurredAt: recordedAt,
+        lat,
+        lng,
+        distanceMeters,
+        previousStatus,
+        currentStatus: locationStatus,
+      });
+    }
+
+    if (previousStatus !== null && previousStatus !== "inside" && locationStatus === "inside") {
+      await this.recordTrackingEvent({
+        userId,
+        projectId,
+        journeyId,
+        checkInId,
+        branchId: branch?.id || null,
+        type: TrackingEventType.RETURNED_TO_GEOFENCE,
+        occurredAt: recordedAt,
+        lat,
+        lng,
+        distanceMeters,
+        previousStatus,
+        currentStatus: locationStatus,
+      });
+    }
 
     // 5. Update latest position only if this ping is newer than the stored latest row.
     const shouldUpdateLatest =
@@ -594,6 +650,45 @@ export class JourneyService {
     };
   }
 
+  async getTrackingHistory(params: {
+    userId: string;
+    page?: number;
+    limit?: number;
+    fromDate?: string;
+    toDate?: string;
+  }) {
+    const page = Math.max(1, Math.floor(params.page || 1));
+    const limit = Math.min(100, Math.max(1, Math.floor(params.limit || 50)));
+    const skip = (page - 1) * limit;
+    const where: any = { userId: params.userId };
+
+    if (params.fromDate || params.toDate) {
+      const from = params.fromDate ? dayjs(params.fromDate) : dayjs(0);
+      const to = params.toDate ? dayjs(params.toDate) : dayjs();
+      if (!from.isValid() || !to.isValid() || from.isAfter(to)) {
+        throw new BadRequestException("Invalid tracking date range");
+      }
+      where.recordedAt = Between(from.startOf("day").toDate(), to.endOf("day").toDate());
+    }
+
+    const [items, total] = await this.locationLogRepo.findAndCount({
+      where,
+      order: { recordedAt: "DESC" },
+      skip,
+      take: limit,
+    });
+
+    const events = this.trackingEventRepo
+      ? await this.trackingEventRepo.find({
+          where: { userId: params.userId },
+          order: { occurredAt: "DESC" },
+          take: limit,
+        })
+      : [];
+
+    return { items, events, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
   /** Exposed for the gateway – same geofence logic but public */
   isWithinGeofencePublic(branch: Branch, geo: any): boolean {
     return this.isWithinGeofence(branch, geo);
@@ -707,6 +802,38 @@ export class JourneyService {
     }
 
     return date;
+  }
+
+  private async recordTrackingEvent(params: {
+    userId: string;
+    projectId: string | null;
+    journeyId: string | null;
+    checkInId: string;
+    branchId: string | null;
+    type: TrackingEventType;
+    occurredAt: Date;
+    lat?: number | null;
+    lng?: number | null;
+    distanceMeters?: number | null;
+    previousStatus?: TrackingLocationStatus | null;
+    currentStatus?: TrackingLocationStatus | null;
+    offlineSince?: Date | null;
+    offlineDurationMinutes?: number | null;
+  }) {
+    if (!this.trackingEventRepo) return;
+
+    await this.trackingEventRepo.save(
+      this.trackingEventRepo.create({
+        ...params,
+        lat: params.lat ?? null,
+        lng: params.lng ?? null,
+        distanceMeters: params.distanceMeters ?? null,
+        previousStatus: params.previousStatus ?? null,
+        currentStatus: params.currentStatus ?? null,
+        offlineSince: params.offlineSince ?? null,
+        offlineDurationMinutes: params.offlineDurationMinutes ?? null,
+      }),
+    );
   }
 
   private buildLocationResponse(params: {

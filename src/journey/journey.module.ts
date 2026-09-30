@@ -21,6 +21,7 @@ import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Sale } from "entities/products/sale.entity";
 import { PromoterLocation } from "entities/promoter-location.entity";
 import { LocationLog } from "entities/location-log.entity";
+import { TrackingEvent } from "entities/tracking-event.entity";
 import { LocationGateway } from "./location.gateway";
 import { AuthModule } from "src/auth/auth.module";
 import { MailModule } from "src/mail/mail.module";
@@ -45,6 +46,7 @@ import { LocationCacheService } from "./location-cache.service";
       Sale,
       PromoterLocation,
       LocationLog,
+      TrackingEvent,
     ]),
     ScheduleModule.forRoot(),
     JwtModule.register({

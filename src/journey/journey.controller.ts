@@ -15,6 +15,7 @@ import {
   UploadedFile,
   UseInterceptors,
   NotFoundException,
+  ForbiddenException,
   Res,
   UsePipes,
   ValidationPipe,
@@ -147,6 +148,34 @@ export class JourneyController {
     if (!dto.userId) dto.userId = req.user.id;
 
     return this.journeyService.checkInOut(dto, lang);
+  }
+
+  @Get("tracking/:userId")
+  @Permissions(EPermission.JOURNEY_UPDATE)
+  async getTrackingHistory(
+    @Req() req: any,
+    @Param("userId") userId: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+    @Query("fromDate") fromDate?: string,
+    @Query("toDate") toDate?: string,
+  ) {
+    const [requesterProjectId, targetProjectId] = await Promise.all([
+      this.usersService.resolveProjectIdFromUser(req.user.id),
+      this.usersService.resolveProjectIdFromUser(userId),
+    ]);
+
+    if (!requesterProjectId || requesterProjectId !== targetProjectId) {
+      throw new ForbiddenException("You cannot view this user's tracking history");
+    }
+
+    return this.journeyService.getTrackingHistory({
+      userId,
+      page: page ? Number(page) : 1,
+      limit: limit ? Number(limit) : 50,
+      fromDate,
+      toDate,
+    });
   }
 
   @Post("admin/check-in")
