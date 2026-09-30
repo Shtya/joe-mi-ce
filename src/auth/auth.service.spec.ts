@@ -1,4 +1,5 @@
 import { ForbiddenException } from "@nestjs/common";
+import { IsNull } from "typeorm";
 import * as argon2 from "argon2";
 import { ERole } from "enums/Role.enum";
 import { AuthService } from "./auth.service";
@@ -56,6 +57,50 @@ describe("AuthService MAC binding", () => {
       expect.objectContaining({ id: "user-1" }),
       { mac_id: "AA:BB:CC:DD:EE:FF" },
     );
+  });
+
+  it("binds an unbound account to the device ID when no MAC ID is supplied", async () => {
+    userRepository.findOne.mockResolvedValue({
+      id: "user-1",
+      username: "promoter",
+      password: "hashed-password",
+      is_active: true,
+      device_id: null,
+      mac_id: null,
+      role: { name: ERole.PROMOTER },
+    });
+    userRepository.update.mockResolvedValue({ affected: 1 });
+
+    await service.login({
+      username: "promoter",
+      password: "password",
+      device_id: "device-123",
+    } as any);
+
+    expect(userRepository.update).toHaveBeenCalledWith(
+      { id: "user-1", device_id: IsNull() },
+      { device_id: "device-123" },
+    );
+  });
+
+  it("rejects a device ID that differs from the account binding", async () => {
+    userRepository.findOne.mockResolvedValue({
+      id: "user-1",
+      username: "promoter",
+      password: "hashed-password",
+      is_active: true,
+      device_id: "device-123",
+      mac_id: null,
+      role: { name: ERole.PROMOTER },
+    });
+
+    await expect(
+      service.login({
+        username: "promoter",
+        password: "password",
+        device_id: "device-other",
+      } as any),
+    ).rejects.toThrow("This account is registered to another device");
   });
 
   it("rejects a login whose MAC ID does not match the bound account", async () => {

@@ -281,6 +281,7 @@ export class AuthService {
         "password",
         "is_active",
         "mac_id",
+        "device_id",
         "role",
         "national_id",
       ],
@@ -294,11 +295,7 @@ export class AuthService {
       throw new ForbiddenException("Your account is inactive");
     }
 
-    if (!dto.mac_id) {
-      return this.generateAuthResponse(user);
-    }
-
-    if (!user.mac_id) {
+    if (dto.mac_id && !user.mac_id) {
       const bindingResult = await this.userRepository.update(
         { id: user.id, mac_id: IsNull() },
         { mac_id: dto.mac_id },
@@ -318,9 +315,37 @@ export class AuthService {
       }
 
       user.mac_id = dto.mac_id;
-    } else if (user.mac_id !== dto.mac_id) {
+    } else if (dto.mac_id && user.mac_id !== dto.mac_id) {
       throw new ForbiddenException(
         "This account is registered to another MAC ID",
+      );
+    } else if (!dto.mac_id && dto.device_id && !user.device_id) {
+      const bindingResult = await this.userRepository.update(
+        { id: user.id, device_id: IsNull() },
+        { device_id: dto.device_id },
+      );
+
+      if (bindingResult.affected === 0) {
+        const boundUser = await this.userRepository.findOne({
+          where: { id: user.id },
+          select: ["id", "device_id"],
+        });
+
+        if (!boundUser || boundUser.device_id !== dto.device_id) {
+          throw new ForbiddenException(
+            "This account is registered to another device",
+          );
+        }
+      }
+
+      user.device_id = dto.device_id;
+    } else if (
+      !dto.mac_id &&
+      dto.device_id &&
+      user.device_id !== dto.device_id
+    ) {
+      throw new ForbiddenException(
+        "This account is registered to another device",
       );
     }
 

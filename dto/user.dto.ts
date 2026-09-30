@@ -150,6 +150,11 @@ export class LoginDto {
   @IsOptional()
   @IsNotEmpty()
   mac_id?: string;
+
+  @IsString()
+  @IsOptional()
+  @IsNotEmpty()
+  device_id?: string;
 }
 
 export class RefreshTokenDto {
