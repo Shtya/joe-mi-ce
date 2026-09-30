@@ -59,48 +59,21 @@ describe("AuthService MAC binding", () => {
     );
   });
 
-  it("binds an unbound account to the device ID when no MAC ID is supplied", async () => {
+  it("allows an unbound account to log in without a MAC ID", async () => {
     userRepository.findOne.mockResolvedValue({
       id: "user-1",
       username: "promoter",
       password: "hashed-password",
       is_active: true,
-      device_id: null,
-      mac_id: null,
-      role: { name: ERole.PROMOTER },
-    });
-    userRepository.update.mockResolvedValue({ affected: 1 });
-
-    await service.login({
-      username: "promoter",
-      password: "password",
-      device_id: "device-123",
-    } as any);
-
-    expect(userRepository.update).toHaveBeenCalledWith(
-      { id: "user-1", device_id: IsNull() },
-      { device_id: "device-123" },
-    );
-  });
-
-  it("rejects a device ID that differs from the account binding", async () => {
-    userRepository.findOne.mockResolvedValue({
-      id: "user-1",
-      username: "promoter",
-      password: "hashed-password",
-      is_active: true,
-      device_id: "device-123",
       mac_id: null,
       role: { name: ERole.PROMOTER },
     });
 
     await expect(
-      service.login({
-        username: "promoter",
-        password: "password",
-        device_id: "device-other",
-      } as any),
-    ).rejects.toThrow("This account is registered to another device");
+      service.login({ username: "promoter", password: "password" } as any),
+    ).resolves.toEqual(expect.objectContaining({ access_token: "token" }));
+
+    expect(userRepository.update).not.toHaveBeenCalled();
   });
 
   it("rejects a login whose MAC ID does not match the bound account", async () => {
@@ -124,7 +97,7 @@ describe("AuthService MAC binding", () => {
     expect(userRepository.update).not.toHaveBeenCalled();
   });
 
-  it("rejects promoter login when neither MAC ID nor device ID is provided", async () => {
+  it("rejects a bound account login when no MAC ID is provided", async () => {
     userRepository.findOne.mockResolvedValue({
       id: "user-1",
       username: "promoter",
@@ -139,29 +112,7 @@ describe("AuthService MAC binding", () => {
         username: "promoter",
         password: "password",
       } as any),
-    ).rejects.toThrow("Device ID or MAC ID is required for your role");
-
-    expect(userRepository.update).not.toHaveBeenCalled();
-  });
-
-  it("allows a bound account to log in using its matching device ID", async () => {
-    userRepository.findOne.mockResolvedValue({
-      id: "user-1",
-      username: "promoter",
-      password: "hashed-password",
-      is_active: true,
-      device_id: "device-123",
-      mac_id: "AA:BB:CC:DD:EE:FF",
-      role: { name: ERole.PROMOTER },
-    });
-
-    await expect(
-      service.login({
-        username: "promoter",
-        password: "password",
-        device_id: "device-123",
-      } as any),
-    ).resolves.toEqual(expect.objectContaining({ access_token: "token" }));
+    ).rejects.toThrow("MAC ID is required for this account");
 
     expect(userRepository.update).not.toHaveBeenCalled();
   });
