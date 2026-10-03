@@ -192,19 +192,6 @@ export class ProjectService extends BaseService<Project> {
 
     if (!user) throw new NotFoundException("Employee not found");
 
-    // Block reassignment only when the current project is still active
-    if (user.project_id) {
-      const currentProject = await this.projectRepo.findOne({
-        where: { id: user.project_id },
-      });
-      if (currentProject) {
-        throw new BadRequestException(
-          "Employee is already assigned to an active project",
-        );
-      }
-      // Current project_id points to a deleted/non-existent project — allow reassignment
-    }
-
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
     });
