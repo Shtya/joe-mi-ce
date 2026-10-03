@@ -144,12 +144,30 @@ export class ProjectService extends BaseService<Project> {
 
     const excludedRoles = [ERole.SUPER_ADMIN, ERole.PROJECT_ADMIN];
 
+    /*
+     * An employee is considered "without project" when either:
+     *  1. project_id IS NULL — never assigned
+     *  2. project_id references a project that has been soft-deleted — orphaned
+     *
+     * We LEFT JOIN the project table on project_id (NOT the OneToOne owner
+     * relation) so we can detect case 2.
+     *
+     * We also exclude super_admin and admin roles because they intentionally
+     * have no project_id.
+     */
     const qb = this.userRepo
       .createQueryBuilder("user")
       .leftJoinAndSelect("user.role", "role")
-      .where("user.project_id IS NULL")
-      .andWhere("user.deleted_at IS NULL")
-      .andWhere("role.name NOT IN (:...excludedRoles)", { excludedRoles });
+      .leftJoin(
+        "project",
+        "p",
+        "p.id = user.project_id AND p.deleted_at IS NULL",
+      )
+      .where("user.deleted_at IS NULL")
+      .andWhere("(user.project_id IS NULL OR p.id IS NULL)")
+      .andWhere("COALESCE(role.name, '') NOT IN (:...excludedRoles)", {
+        excludedRoles,
+      });
 
     if (search) {
       qb.andWhere(
@@ -174,10 +192,17 @@ export class ProjectService extends BaseService<Project> {
 
     if (!user) throw new NotFoundException("Employee not found");
 
+    // Block reassignment only when the current project is still active
     if (user.project_id) {
-      throw new BadRequestException(
-        "Employee is already assigned to a project",
-      );
+      const currentProject = await this.projectRepo.findOne({
+        where: { id: user.project_id },
+      });
+      if (currentProject) {
+        throw new BadRequestException(
+          "Employee is already assigned to an active project",
+        );
+      }
+      // Current project_id points to a deleted/non-existent project — allow reassignment
     }
 
     const project = await this.projectRepo.findOne({
