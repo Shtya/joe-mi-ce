@@ -12,6 +12,8 @@ import {
   Patch,
   ForbiddenException,
   BadRequestException,
+  ParseIntPipe,
+  DefaultValuePipe,
 } from "@nestjs/common";
 import { ProjectService } from "./project.service";
 import { AuthGuard } from "../auth/auth.guard";
@@ -171,6 +173,47 @@ export class ProjectController {
 
     return this.projectService.inactivate(id);
   }
+  // 🔹 Get all employees not assigned to any project (super admin only)
+  @Get("employees/without-project")
+  @Permissions(EPermission.PROJECT_READ)
+  async getEmployeesWithoutProject(
+    @Req() req: any,
+    @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @Query("search") search?: string,
+  ) {
+    if (req.user.role?.name !== "super_admin") {
+      throw new ForbiddenException(
+        "Only super admin can view employees without a project",
+      );
+    }
+
+    return this.projectService.getEmployeesWithoutProject(page, limit, search);
+  }
+
+  // 🔹 Assign a project to an employee who has no project (super admin only)
+  @Patch("employees/:userId/assign-project")
+  @Permissions(EPermission.PROJECT_UPDATE)
+  async assignProjectToEmployee(
+    @Param("userId") userId: string,
+    @Body("project_id") projectId: string,
+    @Req() req: any,
+  ) {
+    if (req.user.role?.name !== "super_admin") {
+      throw new ForbiddenException(
+        "Only super admin can assign a project to an employee",
+      );
+    }
+
+    if (!projectId) {
+      throw new BadRequestException(
+        "project_id is required in the request body",
+      );
+    }
+
+    return this.projectService.assignProjectToEmployee(userId, projectId);
+  }
+
   @Get(":projectId")
   @Permissions(EPermission.PROJECT_READ)
   async findById(@Param("projectId") projectId: string, @Req() req: any) {

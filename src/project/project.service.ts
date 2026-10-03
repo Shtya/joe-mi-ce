@@ -134,6 +134,58 @@ export class ProjectService extends BaseService<Project> {
     project.is_active = false;
     return this.projectRepo.save(project);
   }
+
+  async getEmployeesWithoutProject(
+    page: number = 1,
+    limit: number = 20,
+    search?: string,
+  ): Promise<{ data: User[]; total: number; page: number; limit: number }> {
+    const skip = (page - 1) * limit;
+
+    const qb = this.userRepo
+      .createQueryBuilder("user")
+      .leftJoinAndSelect("user.role", "role")
+      .where("user.project_id IS NULL")
+      .andWhere("user.deleted_at IS NULL");
+
+    if (search) {
+      qb.andWhere(
+        "(user.name ILIKE :search OR user.username ILIKE :search OR user.mobile ILIKE :search)",
+        { search: `%${search}%` },
+      );
+    }
+
+    const [data, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    return { data, total, page, limit };
+  }
+
+  async assignProjectToEmployee(
+    userId: string,
+    projectId: string,
+  ): Promise<User> {
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ["role"],
+    });
+
+    if (!user) throw new NotFoundException("Employee not found");
+
+    if (user.project_id) {
+      throw new BadRequestException(
+        "Employee is already assigned to a project",
+      );
+    }
+
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
+
+    if (!project) throw new NotFoundException("Project not found");
+
+    user.project_id = projectId;
+    return this.userRepo.save(user);
+  }
   async findByProjectId(projectId: string, user: User) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
