@@ -142,11 +142,14 @@ export class ProjectService extends BaseService<Project> {
   ): Promise<{ data: User[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
 
+    const excludedRoles = [ERole.SUPER_ADMIN, ERole.PROJECT_ADMIN];
+
     const qb = this.userRepo
       .createQueryBuilder("user")
       .leftJoinAndSelect("user.role", "role")
       .where("user.project_id IS NULL")
-      .andWhere("user.deleted_at IS NULL");
+      .andWhere("user.deleted_at IS NULL")
+      .andWhere("role.name NOT IN (:...excludedRoles)", { excludedRoles });
 
     if (search) {
       qb.andWhere(
