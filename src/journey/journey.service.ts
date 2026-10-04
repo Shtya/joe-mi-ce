@@ -6,6 +6,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Optional,
+  Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
@@ -93,6 +94,7 @@ export interface LocationPingResponse {
 
 @Injectable()
 export class JourneyService {
+  private readonly logger = new Logger(JourneyService.name);
   private readonly messages = {
     journeyNotFound: {
       en: "Journey not found",
@@ -446,18 +448,28 @@ export class JourneyService {
       }
     }
 
+    const elapsedMinutes = lastLog
+      ? dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute", true)
+      : null;
+    const distanceFromLastMeters =
+      lastLog && Number.isFinite(Number(lastLog.lat)) && Number.isFinite(Number(lastLog.lng))
+        ? getDistance(
+            { latitude: Number(lastLog.lat), longitude: Number(lastLog.lng) },
+            { latitude: lat, longitude: lng },
+          )
+        : null;
     const shouldSaveLocation =
       !lastLog ||
       !Number.isFinite(Number(lastLog.lat)) ||
       !Number.isFinite(Number(lastLog.lng)) ||
       recordedAt.getTime() < new Date(lastLog.recordedAt).getTime() ||
-      dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute", true) >= 10 ||
-      getDistance(
-        { latitude: Number(lastLog.lat), longitude: Number(lastLog.lng) },
-        { latitude: lat, longitude: lng },
-      ) > 10;
+      (elapsedMinutes !== null && elapsedMinutes >= 10) ||
+      (distanceFromLastMeters !== null && distanceFromLastMeters > 10);
 
     if (!shouldSaveLocation) {
+      this.logger.log(
+        `Tracking location skipped user=${userId} reason=within_10m_before_10m distanceMeters=${distanceFromLastMeters} elapsedMinutes=${elapsedMinutes?.toFixed(2)}`,
+      );
       return {
         ...this.buildLocationResponse({
           user,
@@ -476,6 +488,17 @@ export class JourneyService {
         saved: false,
       };
     }
+
+    const saveReason = !lastLog
+      ? "first_ping"
+      : recordedAt.getTime() < new Date(lastLog.recordedAt).getTime()
+        ? "offline_delayed_ping"
+        : distanceFromLastMeters !== null && distanceFromLastMeters > 10
+          ? "moved_over_10m"
+          : "interval_10m";
+    this.logger.log(
+      `Tracking location saved user=${userId} reason=${saveReason} distanceMeters=${distanceFromLastMeters ?? "unknown"} elapsedMinutes=${elapsedMinutes?.toFixed(2) ?? "unknown"}`,
+    );
 
     // 4. Append to audit log (one row per ping)
     await this.locationLogRepo.save(

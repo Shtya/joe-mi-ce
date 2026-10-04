@@ -18,6 +18,7 @@ import { MailService } from "src/mail/mail.service";
 import { AuthGuard } from "src/auth/auth.guard";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
+import { Logger } from "@nestjs/common";
 import { LocationCacheService } from "./location-cache.service";
 
 describe("Location Tracking System Tests", () => {
@@ -151,6 +152,7 @@ describe("Location Tracking System Tests", () => {
 
   describe("upsertPromoterLocation (Service Level)", () => {
     it("should not save a point within 10 meters before 10 minutes pass", async () => {
+      const logSpy = jest.spyOn(Logger.prototype, "log").mockImplementation();
       mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
       mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
       mockLocationLogRepo.findOne.mockResolvedValue({
@@ -168,6 +170,9 @@ describe("Location Tracking System Tests", () => {
 
       expect(mockLocationLogRepo.save).not.toHaveBeenCalled();
       expect(mockLocationRepo.upsert).not.toHaveBeenCalled();
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining("reason=within_10m_before_10m"),
+      );
     });
 
     it("should reject a tracking ping when the user has no active check-in", async () => {
