@@ -150,6 +150,26 @@ describe("Location Tracking System Tests", () => {
   });
 
   describe("upsertPromoterLocation (Service Level)", () => {
+    it("should not save a point within 10 meters before 10 minutes pass", async () => {
+      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
+      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
+      mockLocationLogRepo.findOne.mockResolvedValue({
+        recordedAt: new Date(Date.now() - 5 * 60_000),
+        lat: 24.7136,
+        lng: 46.6753,
+        isOutside: false,
+      });
+
+      await service.upsertPromoterLocation({
+        userId: "u1",
+        lat: 24.71361,
+        lng: 46.6753,
+      });
+
+      expect(mockLocationLogRepo.save).not.toHaveBeenCalled();
+      expect(mockLocationRepo.upsert).not.toHaveBeenCalled();
+    });
+
     it("should reject a tracking ping when the user has no active check-in", async () => {
       mockUserRepo.findOne.mockResolvedValue({
         id: "u1",
@@ -435,6 +455,7 @@ describe("Location Tracking System Tests", () => {
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
       jest.spyOn(service, "upsertPromoterLocation").mockResolvedValue({
         success: true,
+        saved: true,
         userId: "u1",
         projectId: "p1",
         journeyId: null,

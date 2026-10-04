@@ -75,6 +75,7 @@ type LocationStatus = "inside" | "outside" | "too_far";
 
 export interface LocationPingResponse {
   success: true;
+  saved: boolean;
   userId: string;
   projectId: string | null;
   journeyId: string | null;
@@ -443,6 +444,37 @@ export class JourneyService {
           isOutside = false;
         }
       }
+    }
+
+    const shouldSaveLocation =
+      !lastLog ||
+      !Number.isFinite(Number(lastLog.lat)) ||
+      !Number.isFinite(Number(lastLog.lng)) ||
+      recordedAt.getTime() < new Date(lastLog.recordedAt).getTime() ||
+      dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute", true) >= 10 ||
+      getDistance(
+        { latitude: Number(lastLog.lat), longitude: Number(lastLog.lng) },
+        { latitude: lat, longitude: lng },
+      ) > 10;
+
+    if (!shouldSaveLocation) {
+      return {
+        ...this.buildLocationResponse({
+          user,
+          userId,
+          projectId,
+          journeyId,
+          checkInId,
+          lat,
+          lng,
+          recordedAt,
+          locationStatus,
+          distanceMeters,
+          isOutside,
+          lang,
+        }),
+        saved: false,
+      };
     }
 
     // 4. Append to audit log (one row per ping)
@@ -852,6 +884,7 @@ export class JourneyService {
   }): LocationPingResponse {
     return {
       success: true,
+      saved: true,
       userId: params.userId,
       projectId: params.projectId,
       journeyId: params.journeyId,
