@@ -27,11 +27,9 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayInit,
-  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
-import { Ack } from "@nestjs/websockets/decorators/ack.decorator";
 import { Namespace, Server, Socket } from "socket.io";
 import { UpdatePromoterLocationDto } from "dto/journey.dto";
 import { LocationCacheService } from "./location-cache.service";
@@ -76,6 +74,22 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
   handleConnection(client: Socket) {
     const userId = client.data.user?.id ?? "unknown";
     this.logger.log(`Tracking socket connected user=${userId}`);
+    client.on("location:update", async (payload, ack) => {
+      try {
+        await this.handleLocationUpdate(client, payload, ack);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        this.logger.error(
+          `Tracking ping failed user=${userId} source=socket reason=${message}`,
+        );
+        if (typeof ack === "function") {
+          ack({
+            event: "location:updated",
+            data: { success: false, message },
+          });
+        }
+      }
+    });
     client.on("disconnect", (reason) => {
       this.logger.log(
         `Tracking socket disconnected user=${userId} socket=${client.id} reason=${reason}`,
@@ -116,12 +130,10 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
     }
   }
 
-  @SubscribeMessage("location:update")
-  @UsePipes(new ValidationPipe({ transform: true }))
   async handleLocationUpdate(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: UpdatePromoterLocationDto,
-    @Ack() ack: (response: { event: string; data: unknown }) => void,
+    ack?: (response: { event: string; data: unknown }) => void,
   ) {
     const user = client.data.user;
     if (!user?.id) {
@@ -151,11 +163,15 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
       `Tracking ping completed user=${user.id} source=socket saved=${result.saved !== false}`,
     );
 
-    ack({
-      event: "location:updated",
-      data: result,
-    });
-    this.logger.log(`Tracking ping acknowledged user=${user.id} source=socket`);
+    if (typeof ack === "function") {
+      ack({
+        event: "location:updated",
+        data: result,
+      });
+      this.logger.log(
+        `Tracking ping acknowledged user=${user.id} source=socket`,
+      );
+    }
   }
 
   // GET endpoint for fetching paginated all location logs (filtered by requesting user's project ID)

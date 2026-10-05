@@ -579,10 +579,40 @@ describe("Location Tracking System Tests", () => {
       gateway.handleConnection(client);
 
       expect(on).toHaveBeenCalledWith("disconnect", expect.any(Function));
-      on.mock.calls[0][1]("transport close");
+      const disconnectListener = on.mock.calls.find(
+        ([event]) => event === "disconnect",
+      )?.[1];
+      disconnectListener("transport close");
       expect(logSpy).toHaveBeenCalledWith(
         "Tracking socket disconnected user=u1 socket=socket-1 reason=transport close",
       );
+    });
+
+    it("should acknowledge location updates through the native Socket.IO listener", async () => {
+      const on = jest.fn();
+      const client: any = {
+        data: { user: { id: "u1" } },
+        id: "socket-1",
+        handshake: { auth: { lang: "en" }, headers: {} },
+        on,
+      };
+      const ack = jest.fn();
+      mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
+      jest
+        .spyOn(service, "upsertPromoterLocation")
+        .mockResolvedValue({ success: true } as any);
+
+      gateway.handleConnection(client);
+
+      const locationUpdateListener = on.mock.calls.find(
+        ([event]) => event === "location:update",
+      )?.[1];
+      await locationUpdateListener({ lat: 24.1, lng: 46.2 }, ack);
+
+      expect(ack).toHaveBeenCalledWith({
+        event: "location:updated",
+        data: { success: true },
+      });
     });
 
     it("should reject an unauthenticated socket before location events", async () => {
