@@ -58,8 +58,12 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
 
   afterInit(server: Namespace) {
     server.use(async (client, next) => {
+      this.logger.log(`Tracking socket connection attempt socket=${client.id}`);
       try {
         client.data.user = await this.authenticateSocketClient(client);
+        this.logger.log(
+          `Tracking socket authenticated user=${client.data.user.id} socket=${client.id}`,
+        );
         next();
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
@@ -70,7 +74,13 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
   }
 
   handleConnection(client: Socket) {
-    this.logger.log(`Tracking socket connected user=${client.data.user.id}`);
+    const userId = client.data.user?.id ?? "unknown";
+    this.logger.log(`Tracking socket connected user=${userId}`);
+    client.on("disconnect", (reason) => {
+      this.logger.log(
+        `Tracking socket disconnected user=${userId} socket=${client.id} reason=${reason}`,
+      );
+    });
   }
 
   // POST endpoint for creating a new location ping
@@ -145,6 +155,7 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
       event: "location:updated",
       data: result,
     });
+    this.logger.log(`Tracking ping acknowledged user=${user.id} source=socket`);
   }
 
   // GET endpoint for fetching paginated all location logs (filtered by requesting user's project ID)

@@ -534,13 +534,18 @@ describe("Location Tracking System Tests", () => {
       expect(logSpy).toHaveBeenCalledWith(
         "Tracking ping completed user=u1 source=socket saved=true",
       );
+      expect(logSpy).toHaveBeenCalledWith(
+        "Tracking ping acknowledged user=u1 source=socket",
+      );
     });
 
     it("should authenticate the socket before accepting location events", async () => {
       const use = jest.fn();
       const namespace = { use };
+      const logSpy = jest.spyOn(Logger.prototype, "log").mockImplementation();
       const client: any = {
         data: {},
+        id: "socket-1",
         handshake: { auth: { token: "valid-token" }, headers: {} },
       };
       const next = jest.fn();
@@ -554,6 +559,30 @@ describe("Location Tracking System Tests", () => {
 
       expect(client.data.user).toEqual({ id: "u1", is_active: true });
       expect(next).toHaveBeenCalledWith();
+      expect(logSpy).toHaveBeenCalledWith(
+        "Tracking socket connection attempt socket=socket-1",
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        "Tracking socket authenticated user=u1 socket=socket-1",
+      );
+    });
+
+    it("should log the Socket.IO disconnect reason", () => {
+      const logSpy = jest.spyOn(Logger.prototype, "log").mockImplementation();
+      const on = jest.fn();
+      const client: any = {
+        data: { user: { id: "u1" } },
+        id: "socket-1",
+        on,
+      };
+
+      gateway.handleConnection(client);
+
+      expect(on).toHaveBeenCalledWith("disconnect", expect.any(Function));
+      on.mock.calls[0][1]("transport close");
+      expect(logSpy).toHaveBeenCalledWith(
+        "Tracking socket disconnected user=u1 socket=socket-1 reason=transport close",
+      );
     });
 
     it("should reject an unauthenticated socket before location events", async () => {
