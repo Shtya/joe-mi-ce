@@ -502,12 +502,17 @@ describe("Location Tracking System Tests", () => {
         handshake: { auth: { lang: "ar" }, headers: {} },
       };
       const payload = { lat: 24.1, lng: 46.2 };
+      const ack = jest.fn();
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
       jest
         .spyOn(service, "upsertPromoterLocation")
         .mockResolvedValue({ success: true } as any);
 
-      const res = await gateway.handleLocationUpdate(client, payload);
+      const res = await (gateway.handleLocationUpdate as any)(
+        client,
+        payload,
+        ack,
+      );
 
       expect(service.upsertPromoterLocation).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -518,14 +523,55 @@ describe("Location Tracking System Tests", () => {
           lang: "ar",
         }),
       );
-      expect(res.event).toBe("location:updated");
-      expect(res.data.success).toBe(true);
+      expect(res).toBeUndefined();
+      expect(ack).toHaveBeenCalledWith({
+        event: "location:updated",
+        data: { success: true },
+      });
       expect(logSpy).toHaveBeenCalledWith(
         "Tracking ping received user=u1 source=socket lat=24.1 lng=46.2",
       );
       expect(logSpy).toHaveBeenCalledWith(
         "Tracking ping completed user=u1 source=socket saved=true",
       );
+    });
+
+    it("should authenticate the socket before accepting location events", async () => {
+      const use = jest.fn();
+      const namespace = { use };
+      const client: any = {
+        data: {},
+        handshake: { auth: { token: "valid-token" }, headers: {} },
+      };
+      const next = jest.fn();
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: "u1" });
+      mockUserRepo.findOne.mockResolvedValue({ id: "u1", is_active: true });
+
+      (gateway as any).afterInit(namespace);
+
+      expect(use).toHaveBeenCalledTimes(1);
+      await use.mock.calls[0][0](client, next);
+
+      expect(client.data.user).toEqual({ id: "u1", is_active: true });
+      expect(next).toHaveBeenCalledWith();
+    });
+
+    it("should reject an unauthenticated socket before location events", async () => {
+      const use = jest.fn();
+      const namespace = { use };
+      const client: any = {
+        data: {},
+        handshake: { auth: {}, headers: {} },
+      };
+      const next = jest.fn();
+
+      (gateway as any).afterInit(namespace);
+
+      await use.mock.calls[0][0](client, next);
+
+      expect(client.data.user).toBeUndefined();
+      expect(next).toHaveBeenCalledWith(expect.any(Error));
+      expect(next.mock.calls[0][0].message).toBe("Unauthorized");
     });
 
     it("should GET latest project locations through active location cache path", async () => {

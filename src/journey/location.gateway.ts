@@ -26,11 +26,13 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
-import { Server, Socket } from "socket.io";
+import { Ack } from "@nestjs/websockets/decorators/ack.decorator";
+import { Namespace, Server, Socket } from "socket.io";
 import { UpdatePromoterLocationDto } from "dto/journey.dto";
 import { LocationCacheService } from "./location-cache.service";
 
@@ -39,7 +41,7 @@ import { LocationCacheService } from "./location-cache.service";
   cors: { origin: "*" },
 })
 @Controller("location")
-export class LocationGateway implements OnGatewayConnection {
+export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
   private readonly logger = new Logger(LocationGateway.name);
 
   @WebSocketServer()
@@ -54,17 +56,21 @@ export class LocationGateway implements OnGatewayConnection {
     private readonly locationCacheService: LocationCacheService,
   ) {}
 
-  async handleConnection(client: Socket) {
-    try {
-      client.data.user = await this.authenticateSocketClient(client);
-    } catch (err) {
-      this.logger.warn(`Socket location auth failed: ${err.message}`);
-      client.emit("location:error", {
-        success: false,
-        message: "Unauthorized",
-      });
-      client.disconnect();
-    }
+  afterInit(server: Namespace) {
+    server.use(async (client, next) => {
+      try {
+        client.data.user = await this.authenticateSocketClient(client);
+        next();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown error";
+        this.logger.warn(`Socket location auth failed: ${message}`);
+        next(new Error("Unauthorized"));
+      }
+    });
+  }
+
+  handleConnection(client: Socket) {
+    this.logger.log(`Tracking socket connected user=${client.data.user.id}`);
   }
 
   // POST endpoint for creating a new location ping
@@ -105,6 +111,7 @@ export class LocationGateway implements OnGatewayConnection {
   async handleLocationUpdate(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: UpdatePromoterLocationDto,
+    @Ack() ack: (response: { event: string; data: unknown }) => void,
   ) {
     const user = client.data.user;
     if (!user?.id) {
@@ -134,10 +141,10 @@ export class LocationGateway implements OnGatewayConnection {
       `Tracking ping completed user=${user.id} source=socket saved=${result.saved !== false}`,
     );
 
-    return {
+    ack({
       event: "location:updated",
       data: result,
-    };
+    });
   }
 
   // GET endpoint for fetching paginated all location logs (filtered by requesting user's project ID)

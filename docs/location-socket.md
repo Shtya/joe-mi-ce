@@ -62,8 +62,9 @@ custom WebSocket headers are not consistently supported by browsers.
 
 ### Authentication failure
 
-The JWT must be valid and its user must be active. On failure, the server emits
-`location:error` and immediately disconnects the client:
+The JWT must be valid and its user must be active. On failure, Socket.IO rejects
+the namespace connection with `connect_error` before any location event handler
+can run:
 
 ```json
 {
@@ -75,7 +76,7 @@ The JWT must be valid and its user must be active. On failure, the server emits
 Handle it before attempting location updates:
 
 ```ts
-socket.on("location:error", (error) => {
+socket.on("connect_error", (error) => {
   console.error(error.message);
   socket.disconnect();
   // Refresh/login again before making another socket connection.
@@ -274,7 +275,7 @@ location-processing, timestamp, audit-log, and geofence rules.
 ## Contract checklist for client teams
 
 - [ ] Connect to `${API_ORIGIN}/location` with the current JWT in `auth.token`.
-- [ ] Listen for `location:error`, then reauthenticate before reconnecting.
+- [ ] Listen for `connect_error`, then reauthenticate before reconnecting.
 - [ ] Emit `location:update` with numeric `lat` and `lng`.
 - [ ] Omit `recordedAt` for live pings; include the original ISO-8601 timestamp
       only for delayed/offline pings.

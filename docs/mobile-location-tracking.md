@@ -151,7 +151,7 @@ class LocationSocketManager {
     });
 
     this.socket.on("connect", () => void this.flushQueue());
-    this.socket.on("location:error", (error) => this.handleAuthFailure(error));
+    this.socket.on("connect_error", (error) => this.handleAuthFailure(error));
     this.socket.on("disconnect", (reason) => this.logDisconnect(reason));
   }
 
@@ -269,4 +269,3 @@ The socket acknowledges only the sender; it does not broadcast location updates 
 - [ ] Inside, outside, and too-far geofence states display correctly.
 - [ ] UTC offline timestamp (Z) returns the same instant with Saudi +03:00.
 - [ ] Check-out/logout stops both native GPS and the socket.
-
