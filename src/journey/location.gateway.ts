@@ -111,7 +111,9 @@ export class LocationGateway implements OnGatewayConnection {
       throw new UnauthorizedException("Unauthorized");
     }
 
-    this.logger.log(`Tracking ping received user=${user.id} source=socket`);
+    this.logger.log(
+      `Tracking ping received user=${user.id} source=socket lat=${payload.lat} lng=${payload.lng}`,
+    );
 
     const projectId = await this.usersService.resolveProjectIdFromUser(user.id);
 

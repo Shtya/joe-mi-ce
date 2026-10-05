@@ -521,7 +521,7 @@ describe("Location Tracking System Tests", () => {
       expect(res.event).toBe("location:updated");
       expect(res.data.success).toBe(true);
       expect(logSpy).toHaveBeenCalledWith(
-        "Tracking ping received user=u1 source=socket",
+        "Tracking ping received user=u1 source=socket lat=24.1 lng=46.2",
       );
       expect(logSpy).toHaveBeenCalledWith(
         "Tracking ping completed user=u1 source=socket saved=true",
