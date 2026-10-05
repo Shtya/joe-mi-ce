@@ -111,6 +111,8 @@ export class LocationGateway implements OnGatewayConnection {
       throw new UnauthorizedException("Unauthorized");
     }
 
+    this.logger.log(`Tracking ping received user=${user.id} source=socket`);
+
     const projectId = await this.usersService.resolveProjectIdFromUser(user.id);
 
     const result = await this.journeyService.upsertPromoterLocation({
@@ -126,6 +128,10 @@ export class LocationGateway implements OnGatewayConnection {
       projectId,
     });
 
+    this.logger.log(
+      `Tracking ping completed user=${user.id} source=socket saved=${result.saved !== false}`,
+    );
+
     return {
       event: "location:updated",
       data: result,
@@ -136,20 +142,22 @@ export class LocationGateway implements OnGatewayConnection {
   @Get()
   @UseGuards(AuthGuard)
   async getLocations(
-    @Req()              req:        any,
-    @Query("fromDate")  fromDate?:  string,
-    @Query("toDate")    toDate?:    string,
-    @Query("fromTime")  fromTime?:  string, // e.g. "10:45"
-    @Query("toTime")    toTime?:    string, // e.g. "23:22"
-    @Query("page")      page?:      string,
-    @Query("limit")     limit?:     string,
-    @Query("minutes")   minutes?:   string,
+    @Req() req: any,
+    @Query("fromDate") fromDate?: string,
+    @Query("toDate") toDate?: string,
+    @Query("fromTime") fromTime?: string, // e.g. "10:45"
+    @Query("toTime") toTime?: string, // e.g. "23:22"
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
+    @Query("minutes") minutes?: string,
   ) {
     const pageNum = page ? Number(page) : 1;
     const limitNum = limit ? Number(limit) : 50;
 
     // Resolve projectId directly from the requesting user
-    const projectId = await this.usersService.resolveProjectIdFromUser(req.user.id);
+    const projectId = await this.usersService.resolveProjectIdFromUser(
+      req.user.id,
+    );
 
     if (!fromDate && !toDate && !fromTime && !toTime) {
       const activeMinutes = minutes ? Number(minutes) : 30;
@@ -183,13 +191,13 @@ export class LocationGateway implements OnGatewayConnection {
   @Get("user/:userId")
   @UseGuards(AuthGuard)
   async getUserLocations(
-    @Param("userId")    userId:     string,
-    @Query("fromDate")  fromDate?:  string,
-    @Query("toDate")    toDate?:    string,
-    @Query("fromTime")  fromTime?:  string,
-    @Query("toTime")    toTime?:    string,
-    @Query("page")      page?:      string,
-    @Query("limit")     limit?:     string,
+    @Param("userId") userId: string,
+    @Query("fromDate") fromDate?: string,
+    @Query("toDate") toDate?: string,
+    @Query("fromTime") fromTime?: string,
+    @Query("toTime") toTime?: string,
+    @Query("page") page?: string,
+    @Query("limit") limit?: string,
   ) {
     const pageNum = page ? Number(page) : 1;
     const limitNum = limit ? Number(limit) : 50;
@@ -224,7 +232,8 @@ export class LocationGateway implements OnGatewayConnection {
     const { lat, lng } = payload;
 
     // Resolve projectId directly from the target user
-    const projectId = await this.usersService.resolveProjectIdFromUser(userIdParam);
+    const projectId =
+      await this.usersService.resolveProjectIdFromUser(userIdParam);
 
     try {
       const result = await this.journeyService.upsertPromoterLocation({
@@ -282,9 +291,7 @@ export class LocationGateway implements OnGatewayConnection {
         ? authToken
         : authHeader;
     const token =
-      typeof rawToken === "string"
-        ? rawToken.replace(/^Bearer\s+/i, "")
-        : null;
+      typeof rawToken === "string" ? rawToken.replace(/^Bearer\s+/i, "") : null;
 
     if (!token) {
       throw new UnauthorizedException("Missing token");

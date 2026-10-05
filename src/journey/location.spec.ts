@@ -153,8 +153,15 @@ describe("Location Tracking System Tests", () => {
   describe("upsertPromoterLocation (Service Level)", () => {
     it("should not save a point within 10 meters before 10 minutes pass", async () => {
       const logSpy = jest.spyOn(Logger.prototype, "log").mockImplementation();
-      mockUserRepo.findOne.mockResolvedValue({ id: "u1", name: "Promoter 1", avatar_url: "" });
-      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
+      mockUserRepo.findOne.mockResolvedValue({
+        id: "u1",
+        name: "Promoter 1",
+        avatar_url: "",
+      });
+      mockCheckInRepo.findOne.mockResolvedValue({
+        id: "c1",
+        journey: { id: "j1" },
+      });
       mockLocationLogRepo.findOne.mockResolvedValue({
         recordedAt: new Date(Date.now() - 5 * 60_000),
         lat: 24.7136,
@@ -336,7 +343,10 @@ describe("Location Tracking System Tests", () => {
         name: "Promoter 1",
         avatar_url: "",
       });
-      mockCheckInRepo.findOne.mockResolvedValue({ id: "c1", journey: { id: "j1" } });
+      mockCheckInRepo.findOne.mockResolvedValue({
+        id: "c1",
+        journey: { id: "j1" },
+      });
       mockLocationLogRepo.findOne.mockResolvedValue({
         userId: "u1",
         recordedAt: new Date("2026-06-26T10:00:00.000Z"),
@@ -486,6 +496,7 @@ describe("Location Tracking System Tests", () => {
     });
 
     it("should handle authenticated socket location updates", async () => {
+      const logSpy = jest.spyOn(Logger.prototype, "log").mockImplementation();
       const client: any = {
         data: { user: { id: "u1" } },
         handshake: { auth: { lang: "ar" }, headers: {} },
@@ -509,6 +520,12 @@ describe("Location Tracking System Tests", () => {
       );
       expect(res.event).toBe("location:updated");
       expect(res.data.success).toBe(true);
+      expect(logSpy).toHaveBeenCalledWith(
+        "Tracking ping received user=u1 source=socket",
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        "Tracking ping completed user=u1 source=socket saved=true",
+      );
     });
 
     it("should GET latest project locations through active location cache path", async () => {
@@ -545,15 +562,13 @@ describe("Location Tracking System Tests", () => {
     it("should GET paginated logs filtered by resolved requesting user's project ID", async () => {
       const req = { user: { id: "u1" } };
       mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
-      jest
-        .spyOn(service, "getLocationLog")
-        .mockResolvedValue({
-          items: [],
-          total: 0,
-          page: 1,
-          limit: 50,
-          totalPages: 0,
-        });
+      jest.spyOn(service, "getLocationLog").mockResolvedValue({
+        items: [],
+        total: 0,
+        page: 1,
+        limit: 50,
+        totalPages: 0,
+      });
 
       const res = await gateway.getLocations(
         req,
