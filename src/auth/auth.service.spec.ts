@@ -97,6 +97,27 @@ describe("AuthService MAC binding", () => {
     expect(userRepository.update).not.toHaveBeenCalled();
   });
 
+  it("allows an administrator to log in from another MAC ID", async () => {
+    userRepository.findOne.mockResolvedValue({
+      id: "admin-1",
+      username: "admin",
+      password: "hashed-password",
+      is_active: true,
+      mac_id: "AA:BB:CC:DD:EE:FF",
+      role: { name: ERole.PROJECT_ADMIN },
+    });
+
+    await expect(
+      service.login({
+        username: "admin",
+        password: "password",
+        mac_id: "11:22:33:44:55:66",
+      } as any),
+    ).resolves.toEqual(expect.objectContaining({ access_token: "token" }));
+
+    expect(userRepository.update).not.toHaveBeenCalled();
+  });
+
   it("rejects a bound account login when no MAC ID is provided", async () => {
     userRepository.findOne.mockResolvedValue({
       id: "user-1",

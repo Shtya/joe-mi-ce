@@ -294,6 +294,12 @@ export class AuthService {
       throw new ForbiddenException("Your account is inactive");
     }
 
+    if (
+      [ERole.SUPER_ADMIN, ERole.PROJECT_ADMIN].includes(user.role.name as ERole)
+    ) {
+      return this.generateAuthResponse(user);
+    }
+
     if (!user.mac_id && !dto.mac_id) {
       return this.generateAuthResponse(user);
     }
