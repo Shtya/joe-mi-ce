@@ -213,8 +213,26 @@ const response = await socket.timeout(10_000).emitWithAck(
 ```
 
 This requires `LOCATION_TRACKING_READ_PROJECT`. The project is always derived
-from the authenticated socket user. Send both `fromDate` and `toDate` as
-`YYYY-MM-DD` to filter by date; omit both for all available history.
+from the authenticated socket user. Each query returns one history snapshot;
+these events do not subscribe the client to automatic live updates.
+
+Query rules for both events:
+
+- `page` defaults to 1 and must be a positive integer.
+- `limit` defaults to 50 and must be a positive integer; values above 100 are
+  capped at 100. Invalid numbers receive a failure acknowledgement.
+- Dates must be real calendar dates in `YYYY-MM-DD` format. Impossible dates,
+  timestamps, and reversed ranges receive a failure acknowledgement.
+- Both dates are optional. `fromDate` alone means on or after that Saudi day;
+  `toDate` alone means on or before that Saudi day. Omit both for all history.
+- Date boundaries use Saudi Arabia time (`Asia/Riyadh`, UTC+03:00), regardless
+  of the server's timezone. Both endpoints include the entire final day.
+- Pings are sorted newest first by `recordedAt`, then `id` as a unique tie-breaker.
+  Offset pages are snapshots; new incoming records can shift later pages.
+- `lat` and `lng` are JSON numbers. Event coordinates can be `null`.
+- History timestamps (`recordedAt`, `createdAt`, `occurredAt`, `offlineSince`,
+  and event audit timestamps) are ISO strings with `+03:00`; nullable fields
+  remain `null`. Do not add three hours on the frontend.
 
 Both events acknowledge this shape:
 
@@ -234,6 +252,27 @@ Both events acknowledge this shape:
 
 `tracking:project:get` uses `tracking:project:result` instead. Failed requests
 return the same envelope with `data.success: false` and a safe `message`.
+
+User queries additionally return `events`, `eventsTotal`, and `eventsTotalPages`.
+The same date range applies to `events.occurredAt`. Events are ordered by
+`occurredAt` descending, then `id` descending, and use the same `page` and
+`limit` independently of pings. `total` and `totalPages` describe only `items`.
+To page through both lists, continue while `page` is less than the larger of
+`totalPages` and `eventsTotalPages`. A page may contain events but no pings (or
+vice versa). Project queries contain pings only and have no `events` fields.
+
+These fields describe events actually recorded by the backend. The endpoint
+does not synthesize lifecycle events that have not been persisted.
+
+The two permissions must be assigned to the intended roles. Reconnect after
+role changes so the socket loads the updated permissions. An own-history query
+does not need either permission; a project-history permission alone does not
+grant the separate permission to request another user's history.
+
+Use `try/catch` for network or acknowledgement timeouts. Also check
+`response.data.success` because validation and authorization failures arrive as
+normal acknowledgements. Unexpected internal errors return
+`Unable to retrieve tracking` without database error details.
 
 ## Geofence behavior
 
@@ -256,7 +295,8 @@ assessment. Their result remains `inside` with `distanceMeters: null`.
 - Send queued points in capture order after reconnecting.
 - Use acknowledgements before removing a queued point; retry transient network
   failures with bounded exponential backoff.
-- Each accepted ping creates an append-only audit-log record.
+- A ping acknowledged with `saved: true` creates an append-only audit-log record.
+  Points within 10 meters before 10 minutes pass may return `saved: false`.
 - The current/live-location record and Redis cache update only when the point is
   newer than the currently known location. An older offline point is retained
   in history but cannot move the person backward on the live map.
