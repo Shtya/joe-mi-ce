@@ -11,6 +11,7 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import {
   Repository,
+  FindOptionsWhere,
   LessThanOrEqual,
   MoreThanOrEqual,
   Between,
@@ -61,6 +62,10 @@ import {
 } from "entities/tracking-event.entity";
 import { getDistance } from "geolib";
 import { CRUD } from "common/crud.service";
+import {
+  trackingDateRange,
+  saudiHistoryTimestamp,
+} from "./tracking-history.util";
 import { NotificationService } from "src/notification/notification.service";
 import { toLocalISOString } from "common/date.util";
 import { ERole } from "enums/Role.enum";
@@ -452,7 +457,9 @@ export class JourneyService {
       ? dayjs(recordedAt).diff(dayjs(lastLog.recordedAt), "minute", true)
       : null;
     const distanceFromLastMeters =
-      lastLog && Number.isFinite(Number(lastLog.lat)) && Number.isFinite(Number(lastLog.lng))
+      lastLog &&
+      Number.isFinite(Number(lastLog.lat)) &&
+      Number.isFinite(Number(lastLog.lng))
         ? getDistance(
             { latitude: Number(lastLog.lat), longitude: Number(lastLog.lng) },
             { latitude: lat, longitude: lng },
@@ -553,7 +560,11 @@ export class JourneyService {
       });
     }
 
-    if (previousStatus !== null && previousStatus !== "inside" && locationStatus === "inside") {
+    if (
+      previousStatus !== null &&
+      previousStatus !== "inside" &&
+      locationStatus === "inside"
+    ) {
       await this.recordTrackingEvent({
         userId,
         projectId,
@@ -660,6 +671,7 @@ export class JourneyService {
       limit = 50,
     } = params;
     const skip = (page - 1) * limit;
+    const { start, end } = trackingDateRange(fromDate, toDate);
 
     const qb = this.locationLogRepo.createQueryBuilder("log");
 
@@ -676,10 +688,12 @@ export class JourneyService {
       qb.andWhere("log.projectId = :projectId", { projectId });
     }
 
-    if (fromDate && toDate) {
-      const start = dayjs(fromDate).startOf("day").toDate();
-      const end = dayjs(toDate).endOf("day").toDate();
+    if (start && end) {
       qb.andWhere("log.recordedAt BETWEEN :start AND :end", { start, end });
+    } else if (start) {
+      qb.andWhere("log.recordedAt >= :start", { start });
+    } else if (end) {
+      qb.andWhere("log.recordedAt <= :end", { end });
     }
 
     if (fromTime && toTime) {
@@ -692,12 +706,15 @@ export class JourneyService {
       );
     }
 
-    qb.orderBy("log.recordedAt", "DESC").skip(skip).take(limit);
+    qb.orderBy("log.recordedAt", "DESC")
+      .addOrderBy("log.id", "DESC")
+      .skip(skip)
+      .take(limit);
 
     const [items, total] = await qb.getManyAndCount();
 
     return {
-      items,
+      items: items.map((log) => this.serializeTrackingLog(log)),
       total,
       page,
       limit,
@@ -715,33 +732,70 @@ export class JourneyService {
     const page = Math.max(1, Math.floor(params.page || 1));
     const limit = Math.min(100, Math.max(1, Math.floor(params.limit || 50)));
     const skip = (page - 1) * limit;
-    const where: any = { userId: params.userId };
-
-    if (params.fromDate || params.toDate) {
-      const from = params.fromDate ? dayjs(params.fromDate) : dayjs(0);
-      const to = params.toDate ? dayjs(params.toDate) : dayjs();
-      if (!from.isValid() || !to.isValid() || from.isAfter(to)) {
-        throw new BadRequestException("Invalid tracking date range");
-      }
-      where.recordedAt = Between(from.startOf("day").toDate(), to.endOf("day").toDate());
+    const where: FindOptionsWhere<LocationLog> = { userId: params.userId };
+    const eventWhere: FindOptionsWhere<TrackingEvent> = {
+      userId: params.userId,
+    };
+    const { start, end } = trackingDateRange(params.fromDate, params.toDate);
+    const range =
+      start && end
+        ? Between(start, end)
+        : start
+          ? MoreThanOrEqual(start)
+          : end
+            ? LessThanOrEqual(end)
+            : undefined;
+    if (range) {
+      where.recordedAt = range;
+      eventWhere.occurredAt = range;
     }
 
     const [items, total] = await this.locationLogRepo.findAndCount({
       where,
-      order: { recordedAt: "DESC" },
+      order: { recordedAt: "DESC", id: "DESC" },
       skip,
       take: limit,
     });
 
-    const events = this.trackingEventRepo
-      ? await this.trackingEventRepo.find({
-          where: { userId: params.userId },
-          order: { occurredAt: "DESC" },
+    const [events, eventsTotal] = this.trackingEventRepo
+      ? await this.trackingEventRepo.findAndCount({
+          where: eventWhere,
+          order: { occurredAt: "DESC", id: "DESC" },
+          skip,
           take: limit,
         })
-      : [];
+      : [[], 0];
 
-    return { items, events, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return {
+      items: items.map((log) => this.serializeTrackingLog(log)),
+      events: events.map((event: TrackingEvent) => ({
+        ...event,
+        lat: event.lat == null ? null : Number(event.lat),
+        lng: event.lng == null ? null : Number(event.lng),
+        occurredAt: saudiHistoryTimestamp(event.occurredAt),
+        offlineSince: saudiHistoryTimestamp(event.offlineSince),
+        created_at: saudiHistoryTimestamp(event.created_at),
+        updated_at: saudiHistoryTimestamp(event.updated_at),
+        deleted_at: saudiHistoryTimestamp(event.deleted_at),
+      })),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      eventsTotal,
+      eventsTotalPages: Math.ceil(eventsTotal / limit),
+    };
+  }
+
+  private serializeTrackingLog(log: LocationLog) {
+    return {
+      ...log,
+      lat: Number(log.lat),
+      lng: Number(log.lng),
+      recordedAt: saudiHistoryTimestamp(log.recordedAt),
+      createdAt: saudiHistoryTimestamp(log.createdAt),
+      offlineSince: saudiHistoryTimestamp(log.offlineSince),
+    };
   }
 
   /** Exposed for the gateway – same geofence logic but public */

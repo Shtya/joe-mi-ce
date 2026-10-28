@@ -29,7 +29,6 @@ lerna-debug.log*
 *.sublime-workspace
 
 # IDE - VSCode
-.vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
@@ -61,8 +60,6 @@ package-lock.json
 config.bat
 
 # Local environment files
-.env
-.env.*
 !.env.example
 
 # AI agent and generated workspace files

@@ -13,6 +13,8 @@ import {
   Headers,
   UnauthorizedException,
   ForbiddenException,
+  BadRequestException,
+  HttpException,
   UsePipes,
   ValidationPipe,
 } from "@nestjs/common";
@@ -35,6 +37,7 @@ import { Namespace, Server, Socket } from "socket.io";
 import { UpdatePromoterLocationDto } from "dto/journey.dto";
 import { LocationCacheService } from "./location-cache.service";
 import { EPermission } from "enums/Permissions.enum";
+import { trackingDateRange } from "./tracking-history.util";
 
 @WebSocketGateway({
   namespace: "/location",
@@ -262,21 +265,58 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
   }
 
   private normalizeTrackingQuery(payload: unknown) {
+    if (
+      payload !== undefined &&
+      (!payload || typeof payload !== "object" || Array.isArray(payload))
+    ) {
+      throw new BadRequestException("Tracking query must be an object");
+    }
     const query =
       payload && typeof payload === "object"
         ? (payload as Record<string, unknown>)
         : {};
-    const page = Number(query.page);
-    const limit = Number(query.limit);
+    function positiveInteger(value: unknown, fallback: number) {
+      if (value === undefined) return fallback;
+      if (
+        (typeof value !== "number" && typeof value !== "string") ||
+        value === ""
+      ) {
+        throw new BadRequestException(
+          "Page and limit must be positive integers",
+        );
+      }
+      const number = Number(value);
+      if (!Number.isSafeInteger(number) || number < 1) {
+        throw new BadRequestException(
+          "Page and limit must be positive integers",
+        );
+      }
+      return number;
+    }
+    const page = positiveInteger(query.page, 1);
+    const limit = Math.min(100, positiveInteger(query.limit, 50));
+    if (!Number.isSafeInteger((page - 1) * limit)) {
+      throw new BadRequestException("Tracking page is too large");
+    }
+    for (const field of ["fromDate", "toDate", "userId"]) {
+      if (
+        query[field] !== undefined &&
+        (typeof query[field] !== "string" || !query[field])
+      ) {
+        throw new BadRequestException(`Invalid tracking ${field}`);
+      }
+    }
+    const fromDate =
+      typeof query.fromDate === "string" ? query.fromDate : undefined;
+    const toDate = typeof query.toDate === "string" ? query.toDate : undefined;
+    trackingDateRange(fromDate, toDate);
 
     return {
       userId: typeof query.userId === "string" ? query.userId : undefined,
-      page: Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1,
-      limit: Number.isFinite(limit)
-        ? Math.min(100, Math.max(1, Math.floor(limit)))
-        : 50,
-      fromDate: typeof query.fromDate === "string" ? query.fromDate : undefined,
-      toDate: typeof query.toDate === "string" ? query.toDate : undefined,
+      page,
+      limit,
+      fromDate,
+      toDate,
     };
   }
 
@@ -291,9 +331,14 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
   }
 
   private getSocketErrorMessage(error: unknown) {
-    return error instanceof Error
-      ? error.message
-      : "Unable to retrieve tracking";
+    if (
+      error instanceof HttpException &&
+      [400, 401, 403].includes(error.getStatus())
+    ) {
+      return error.message;
+    }
+    this.logger.error("Tracking query failed due to an internal error");
+    return "Unable to retrieve tracking";
   }
 
   // GET endpoint for fetching paginated all location logs (filtered by requesting user's project ID)

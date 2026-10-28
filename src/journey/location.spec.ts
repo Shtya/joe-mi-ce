@@ -21,6 +21,7 @@ import { JwtService } from "@nestjs/jwt";
 import { Logger } from "@nestjs/common";
 import { LocationCacheService } from "./location-cache.service";
 import { EPermission } from "enums/Permissions.enum";
+import { TrackingEvent } from "entities/tracking-event.entity";
 
 describe("Location Tracking System Tests", () => {
   let gateway: LocationGateway;
@@ -36,11 +37,14 @@ describe("Location Tracking System Tests", () => {
   };
 
   const mockLocationLogRepo = {
+    findAndCount: jest.fn(),
     create: jest.fn((val) => val),
     save: jest.fn((val) => Promise.resolve(val)),
     findOne: jest.fn(),
     createQueryBuilder: jest.fn(),
   };
+
+  const mockTrackingEventRepo = { findAndCount: jest.fn() };
 
   const mockUserRepo = {
     findOne: jest.fn(),
@@ -110,6 +114,10 @@ describe("Location Tracking System Tests", () => {
           useValue: mockLocationLogRepo,
         },
         { provide: getRepositoryToken(User), useValue: mockUserRepo },
+        {
+          provide: getRepositoryToken(TrackingEvent),
+          useValue: mockTrackingEventRepo,
+        },
         { provide: getRepositoryToken(CheckIn), useValue: mockCheckInRepo },
         { provide: getRepositoryToken(Journey), useValue: mockJourneyRepo },
         { provide: getRepositoryToken(Project), useValue: mockGeneralRepo },
@@ -396,10 +404,140 @@ describe("Location Tracking System Tests", () => {
   });
 
   describe("getLocationLog (Service Level Filters)", () => {
+    it.each([
+      [
+        { fromDate: "2026-10-28" },
+        "log.recordedAt >= :start",
+        { start: new Date("2026-10-27T21:00:00Z") },
+      ],
+      [
+        { toDate: "2026-10-28" },
+        "log.recordedAt <= :end",
+        { end: new Date("2026-10-28T20:59:59.999Z") },
+      ],
+    ])(
+      "should support a single project date bound: %j",
+      async (dates, condition, bounds) => {
+        const qb = {
+          andWhere: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          addOrderBy: jest.fn().mockReturnThis(),
+          skip: jest.fn().mockReturnThis(),
+          take: jest.fn().mockReturnThis(),
+          getManyAndCount: jest.fn().mockResolvedValue([
+            [
+              {
+                id: "ping-1",
+                lat: "24.100000",
+                lng: "46.200000",
+                recordedAt: new Date("2026-10-28T09:00:00Z"),
+                createdAt: new Date("2026-10-28T09:00:00Z"),
+                offlineSince: null,
+              },
+            ],
+            1,
+          ]),
+        };
+        mockLocationLogRepo.createQueryBuilder.mockReturnValue(qb);
+        const result = await service.getLocationLog({
+          projectId: "p1",
+          ...(dates as { fromDate?: string; toDate?: string }),
+        });
+        expect(qb.andWhere).toHaveBeenCalledWith(condition, bounds);
+        expect(result.items[0]).toMatchObject({
+          lat: 24.1,
+          lng: 46.2,
+          recordedAt: "2026-10-28T12:00:00.000+03:00",
+        });
+      },
+    );
+
+    it("should serialize history and paginate events within the same Saudi date range", async () => {
+      mockLocationLogRepo.findAndCount.mockResolvedValue([
+        [
+          {
+            id: "ping-1",
+            lat: "24.123456",
+            lng: "46.654321",
+            recordedAt: new Date("2026-10-27T21:00:00Z"),
+            createdAt: new Date("2026-10-28T09:00:00Z"),
+            offlineSince: null,
+          },
+        ],
+        101,
+      ]);
+      mockTrackingEventRepo.findAndCount.mockResolvedValue([
+        [
+          {
+            id: "event-1",
+            lat: null,
+            lng: null,
+            occurredAt: new Date("2026-10-28T09:00:00Z"),
+            created_at: new Date("2026-10-28T09:00:00Z"),
+            updated_at: new Date("2026-10-28T09:00:00Z"),
+            offlineSince: null,
+          },
+        ],
+        51,
+      ]);
+
+      const result = await service.getTrackingHistory({
+        userId: "u1",
+        page: 2,
+        limit: 50,
+        fromDate: "2026-10-28",
+        toDate: "2026-10-28",
+      });
+
+      expect(result.items[0]).toMatchObject({
+        lat: 24.123456,
+        lng: 46.654321,
+        recordedAt: "2026-10-28T00:00:00.000+03:00",
+        createdAt: "2026-10-28T12:00:00.000+03:00",
+      });
+      expect(result.events[0]).toMatchObject({
+        lat: null,
+        lng: null,
+        occurredAt: "2026-10-28T12:00:00.000+03:00",
+      });
+      expect(result).toMatchObject({ eventsTotal: 51, eventsTotalPages: 2 });
+      expect(mockLocationLogRepo.findAndCount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          order: { recordedAt: "DESC", id: "DESC" },
+          skip: 50,
+          take: 50,
+        }),
+      );
+      const pingRange =
+        mockLocationLogRepo.findAndCount.mock.calls[0][0].where.recordedAt;
+      expect(pingRange.value).toEqual([
+        new Date("2026-10-27T21:00:00Z"),
+        new Date("2026-10-28T20:59:59.999Z"),
+      ]);
+      const eventQuery = mockTrackingEventRepo.findAndCount.mock.calls[0][0];
+      expect(eventQuery).toMatchObject({
+        skip: 50,
+        take: 50,
+        order: { occurredAt: "DESC", id: "DESC" },
+      });
+      expect(eventQuery.where.occurredAt.value).toEqual(pingRange.value);
+    });
+
+    it.each(["2026-02-30", "not-a-date", "2026-10-28T00:00:00Z"])(
+      "should reject invalid tracking date %s",
+      async (fromDate) => {
+        await expect(
+          service.getTrackingHistory({ userId: "u1", fromDate }),
+        ).rejects.toThrow("Invalid tracking date");
+        expect(mockLocationLogRepo.findAndCount).not.toHaveBeenCalled();
+      },
+    );
+
     it("should apply query builder conditions correctly", async () => {
       const mockQueryBuilder = {
         andWhere: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
         skip: jest.fn().mockReturnThis(),
         take: jest.fn().mockReturnThis(),
         getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
@@ -435,6 +573,17 @@ describe("Location Tracking System Tests", () => {
       );
       expect(mockQueryBuilder.skip).toHaveBeenCalledWith(10); // page 2 with limit 10 skips 10
       expect(mockQueryBuilder.take).toHaveBeenCalledWith(10);
+      expect(mockQueryBuilder.addOrderBy).toHaveBeenCalledWith(
+        "log.id",
+        "DESC",
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        "log.recordedAt BETWEEN :start AND :end",
+        {
+          start: new Date("2026-06-19T21:00:00Z"),
+          end: new Date("2026-06-24T20:59:59.999Z"),
+        },
+      );
     });
   });
 
@@ -736,6 +885,78 @@ describe("Location Tracking System Tests", () => {
       expect((EPermission as any).LOCATION_TRACKING_READ_PROJECT).toBe(
         "LOCATION_TRACKING_READ_PROJECT",
       );
+    });
+
+    it.each([
+      { page: -1 },
+      { page: 1.5 },
+      { page: true },
+      { limit: "NaN" },
+      { fromDate: "2026-02-30" },
+      { fromDate: 123 },
+      { fromDate: "2026-10-29", toDate: "2026-10-28" },
+    ])(
+      "should reject malformed socket tracking queries: %j",
+      async (payload) => {
+        const on = jest.fn();
+        const client: any = { id: "s1", data: { user: { id: "u1" } }, on };
+        const ack = jest.fn();
+        const history = jest
+          .spyOn(service, "getTrackingHistory")
+          .mockResolvedValue({ items: [] } as any);
+        gateway.handleConnection(client);
+        await on.mock.calls.find(([event]) => event === "tracking:user:get")[1](
+          payload,
+          ack,
+        );
+        expect(ack.mock.calls[0][0].data.success).toBe(false);
+        expect(history).not.toHaveBeenCalled();
+      },
+    );
+
+    it("should hide internal database errors in socket acknowledgements", async () => {
+      jest.spyOn(Logger.prototype, "error").mockImplementation();
+      const on = jest.fn();
+      const client: any = { id: "s1", data: { user: { id: "u1" } }, on };
+      const ack = jest.fn();
+      jest
+        .spyOn(service, "getTrackingHistory")
+        .mockRejectedValue(new Error("SQL password=secret"));
+      gateway.handleConnection(client);
+      await on.mock.calls.find(([event]) => event === "tracking:user:get")[1](
+        {},
+        ack,
+      );
+      expect(ack).toHaveBeenCalledWith({
+        event: "tracking:user:result",
+        data: {
+          success: false,
+          message: "Unable to retrieve tracking",
+        },
+      });
+    });
+
+    it("should deny cross-project user history even with permission", async () => {
+      const on = jest.fn();
+      const client: any = {
+        id: "s1",
+        data: {
+          user: { id: "u1", hasPermission: jest.fn().mockResolvedValue(true) },
+        },
+        on,
+      };
+      const ack = jest.fn();
+      const history = jest.spyOn(service, "getTrackingHistory");
+      mockUsersService.resolveProjectIdFromUser
+        .mockResolvedValueOnce("p1")
+        .mockResolvedValueOnce("p2");
+      gateway.handleConnection(client);
+      await on.mock.calls.find(([event]) => event === "tracking:user:get")[1](
+        { userId: "u2" },
+        ack,
+      );
+      expect(ack.mock.calls[0][0].data.success).toBe(false);
+      expect(history).not.toHaveBeenCalled();
     });
 
     it("should reject an unauthenticated socket before location events", async () => {
