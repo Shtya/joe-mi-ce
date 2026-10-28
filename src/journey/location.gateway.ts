@@ -12,6 +12,7 @@ import {
   Logger,
   Headers,
   UnauthorizedException,
+  ForbiddenException,
   UsePipes,
   ValidationPipe,
 } from "@nestjs/common";
@@ -33,6 +34,7 @@ import {
 import { Namespace, Server, Socket } from "socket.io";
 import { UpdatePromoterLocationDto } from "dto/journey.dto";
 import { LocationCacheService } from "./location-cache.service";
+import { EPermission } from "enums/Permissions.enum";
 
 @WebSocketGateway({
   namespace: "/location",
@@ -88,6 +90,30 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
             data: { success: false, message },
           });
         }
+      }
+    });
+    client.on("tracking:user:get", async (payload, ack) => {
+      const event = "tracking:user:result";
+      try {
+        const result = await this.getUserTrackingFromSocket(client, payload);
+        this.acknowledgeSocketRequest(ack, event, { success: true, ...result });
+      } catch (err) {
+        this.acknowledgeSocketRequest(ack, event, {
+          success: false,
+          message: this.getSocketErrorMessage(err),
+        });
+      }
+    });
+    client.on("tracking:project:get", async (payload, ack) => {
+      const event = "tracking:project:result";
+      try {
+        const result = await this.getProjectTrackingFromSocket(client, payload);
+        this.acknowledgeSocketRequest(ack, event, { success: true, ...result });
+      } catch (err) {
+        this.acknowledgeSocketRequest(ack, event, {
+          success: false,
+          message: this.getSocketErrorMessage(err),
+        });
       }
     });
     client.on("disconnect", (reason) => {
@@ -172,6 +198,102 @@ export class LocationGateway implements OnGatewayConnection, OnGatewayInit {
         `Tracking ping acknowledged user=${user.id} source=socket`,
       );
     }
+  }
+
+  private async getUserTrackingFromSocket(client: Socket, payload: unknown) {
+    const requester = client.data.user as User;
+    const query = this.normalizeTrackingQuery(payload);
+    const targetUserId = query.userId || requester.id;
+
+    if (targetUserId !== requester.id) {
+      const canReadOtherUsers = await requester.hasPermission(
+        EPermission.LOCATION_TRACKING_READ_USER,
+      );
+      if (!canReadOtherUsers) {
+        throw new ForbiddenException(
+          "You cannot view another user's tracking history",
+        );
+      }
+
+      const [requesterProjectId, targetProjectId] = await Promise.all([
+        this.usersService.resolveProjectIdFromUser(requester.id),
+        this.usersService.resolveProjectIdFromUser(targetUserId),
+      ]);
+      if (!requesterProjectId || requesterProjectId !== targetProjectId) {
+        throw new ForbiddenException(
+          "You cannot view another user's tracking history",
+        );
+      }
+    }
+
+    return this.journeyService.getTrackingHistory({
+      userId: targetUserId,
+      page: query.page,
+      limit: query.limit,
+      fromDate: query.fromDate,
+      toDate: query.toDate,
+    });
+  }
+
+  private async getProjectTrackingFromSocket(client: Socket, payload: unknown) {
+    const requester = client.data.user as User;
+    const canReadProject = await requester.hasPermission(
+      EPermission.LOCATION_TRACKING_READ_PROJECT,
+    );
+    if (!canReadProject) {
+      throw new ForbiddenException("You cannot view project tracking history");
+    }
+
+    const projectId = await this.usersService.resolveProjectIdFromUser(
+      requester.id,
+    );
+    if (!projectId) {
+      throw new ForbiddenException("You cannot view project tracking history");
+    }
+
+    const query = this.normalizeTrackingQuery(payload);
+    return this.journeyService.getLocationLog({
+      projectId,
+      page: query.page,
+      limit: query.limit,
+      fromDate: query.fromDate,
+      toDate: query.toDate,
+    });
+  }
+
+  private normalizeTrackingQuery(payload: unknown) {
+    const query =
+      payload && typeof payload === "object"
+        ? (payload as Record<string, unknown>)
+        : {};
+    const page = Number(query.page);
+    const limit = Number(query.limit);
+
+    return {
+      userId: typeof query.userId === "string" ? query.userId : undefined,
+      page: Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1,
+      limit: Number.isFinite(limit)
+        ? Math.min(100, Math.max(1, Math.floor(limit)))
+        : 50,
+      fromDate: typeof query.fromDate === "string" ? query.fromDate : undefined,
+      toDate: typeof query.toDate === "string" ? query.toDate : undefined,
+    };
+  }
+
+  private acknowledgeSocketRequest(
+    ack: unknown,
+    event: string,
+    data: Record<string, unknown>,
+  ) {
+    if (typeof ack === "function") {
+      ack({ event, data });
+    }
+  }
+
+  private getSocketErrorMessage(error: unknown) {
+    return error instanceof Error
+      ? error.message
+      : "Unable to retrieve tracking";
   }
 
   // GET endpoint for fetching paginated all location logs (filtered by requesting user's project ID)

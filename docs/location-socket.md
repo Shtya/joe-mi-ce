@@ -185,6 +185,56 @@ The server returns this acknowledgement object for a successful update:
 | `message` | string | English by default, Arabic when `lang` is `ar`. |
 | `name`, `avatar_url` | string or `null` | Current promoter identity data for a live map. |
 
+## Tracking history queries
+
+These Socket.IO events return data through their acknowledgement callback. They
+are paginated and never accept a project ID from the client.
+
+### One user
+
+```ts
+const response = await socket.timeout(10_000).emitWithAck(
+  "tracking:user:get",
+  { userId, page: 1, limit: 50, fromDate, toDate },
+);
+```
+
+Omit `userId` to retrieve the authenticated user's own history. Requesting
+another user requires `LOCATION_TRACKING_READ_USER`; the target must be in the
+same project as the authenticated user.
+
+### All project tracking
+
+```ts
+const response = await socket.timeout(10_000).emitWithAck(
+  "tracking:project:get",
+  { page: 1, limit: 50, fromDate, toDate },
+);
+```
+
+This requires `LOCATION_TRACKING_READ_PROJECT`. The project is always derived
+from the authenticated socket user. Send both `fromDate` and `toDate` as
+`YYYY-MM-DD` to filter by date; omit both for all available history.
+
+Both events acknowledge this shape:
+
+```json
+{
+  "event": "tracking:user:result",
+  "data": {
+    "success": true,
+    "items": [],
+    "total": 0,
+    "page": 1,
+    "limit": 50,
+    "totalPages": 0
+  }
+}
+```
+
+`tracking:project:get` uses `tracking:project:result` instead. Failed requests
+return the same envelope with `data.success: false` and a safe `message`.
+
 ## Geofence behavior
 
 For ordinary branches, the server calculates the distance from the branch

@@ -20,6 +20,7 @@ import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { Logger } from "@nestjs/common";
 import { LocationCacheService } from "./location-cache.service";
+import { EPermission } from "enums/Permissions.enum";
 
 describe("Location Tracking System Tests", () => {
   let gateway: LocationGateway;
@@ -613,6 +614,128 @@ describe("Location Tracking System Tests", () => {
         event: "location:updated",
         data: { success: true },
       });
+    });
+
+    it("should return a user's paginated tracking history through Socket.IO", async () => {
+      const on = jest.fn();
+      const client: any = {
+        data: { user: { id: "u1", hasPermission: jest.fn() } },
+        id: "socket-1",
+        handshake: { auth: {}, headers: {} },
+        on,
+      };
+      const ack = jest.fn();
+      const history = {
+        items: [{ id: "ping-1" }],
+        total: 1,
+        page: 2,
+        limit: 25,
+        totalPages: 1,
+      };
+      jest
+        .spyOn(service, "getTrackingHistory")
+        .mockResolvedValue(history as any);
+
+      gateway.handleConnection(client);
+
+      const trackingListener = on.mock.calls.find(
+        ([event]) => event === "tracking:user:get",
+      )?.[1];
+      await trackingListener({ page: 2, limit: 25 }, ack);
+
+      expect(service.getTrackingHistory).toHaveBeenCalledWith({
+        userId: "u1",
+        page: 2,
+        limit: 25,
+        fromDate: undefined,
+        toDate: undefined,
+      });
+      expect(ack).toHaveBeenCalledWith({
+        event: "tracking:user:result",
+        data: { success: true, ...history },
+      });
+    });
+
+    it("should return project tracking only with the project tracking permission", async () => {
+      const hasPermission = jest.fn().mockResolvedValue(true);
+      const on = jest.fn();
+      const client: any = {
+        data: { user: { id: "u1", hasPermission } },
+        id: "socket-1",
+        handshake: { auth: {}, headers: {} },
+        on,
+      };
+      const ack = jest.fn();
+      const history = {
+        items: [{ id: "ping-1" }],
+        total: 1,
+        page: 1,
+        limit: 50,
+        totalPages: 1,
+      };
+      mockUsersService.resolveProjectIdFromUser.mockResolvedValue("p1");
+      jest.spyOn(service, "getLocationLog").mockResolvedValue(history as any);
+
+      gateway.handleConnection(client);
+
+      const trackingListener = on.mock.calls.find(
+        ([event]) => event === "tracking:project:get",
+      )?.[1];
+      await trackingListener({ page: 1, limit: 50 }, ack);
+
+      expect(hasPermission).toHaveBeenCalledWith(
+        EPermission.LOCATION_TRACKING_READ_PROJECT,
+      );
+      expect(service.getLocationLog).toHaveBeenCalledWith({
+        projectId: "p1",
+        page: 1,
+        limit: 50,
+        fromDate: undefined,
+        toDate: undefined,
+      });
+      expect(ack).toHaveBeenCalledWith({
+        event: "tracking:project:result",
+        data: { success: true, ...history },
+      });
+    });
+
+    it("should reject another user's tracking without the user tracking permission", async () => {
+      const on = jest.fn();
+      const client: any = {
+        data: {
+          user: { id: "u1", hasPermission: jest.fn().mockResolvedValue(false) },
+        },
+        id: "socket-1",
+        handshake: { auth: {}, headers: {} },
+        on,
+      };
+      const ack = jest.fn();
+      const getTrackingHistorySpy = jest.spyOn(service, "getTrackingHistory");
+
+      gateway.handleConnection(client);
+
+      const trackingListener = on.mock.calls.find(
+        ([event]) => event === "tracking:user:get",
+      )?.[1];
+      await trackingListener({ userId: "u2" }, ack);
+
+      expect(getTrackingHistorySpy).not.toHaveBeenCalled();
+      expect(ack).toHaveBeenCalledWith({
+        event: "tracking:user:result",
+        data: {
+          success: false,
+          message: "You cannot view another user's tracking history",
+        },
+      });
+    });
+
+    it("should define separate permissions for user and project tracking", () => {
+      expect((EPermission as any).LOCATION_TRACKING_READ_USER).toBe(
+        "LOCATION_TRACKING_READ_USER",
+      );
+      expect((EPermission as any).LOCATION_TRACKING_READ_PROJECT).toBe(
+        "LOCATION_TRACKING_READ_PROJECT",
+      );
     });
 
     it("should reject an unauthenticated socket before location events", async () => {
