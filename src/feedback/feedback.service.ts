@@ -1,12 +1,32 @@
 // --- File: feedback/feedback.service.ts ---
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { join } from "path";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Feedback } from "entities/feedback.entity";
 import { User } from "entities/user.entity";
 import { Project } from "entities/project.entity";
+import { Journey } from "entities/all_plans.entity";
 import { CreateFeedbackDto, UpdateFeedbackStatusDto } from "dto/feedback.dto";
 import { CRUD } from "common/crud.service";
+import { UsersService } from "src/users/users.service";
+import { buildFeedbackWorkbook } from "./feedback-export";
+
+export interface FeedbackExportFilters {
+  projectId: string;
+  search?: string;
+  userId?: string;
+  type?: string;
+  is_resolved?: string;
+  start_date?: string;
+  end_date?: string;
+  created_at?: string;
+  publicBaseUrl?: string;
+}
 
 @Injectable()
 export class FeedbackService {
@@ -19,6 +39,8 @@ export class FeedbackService {
 
     @InjectRepository(Project)
     private readonly projectRepo: Repository<Project>,
+
+    private readonly usersService: UsersService,
   ) {}
 
   async create(
@@ -34,14 +56,22 @@ export class FeedbackService {
       user = await this.userRepo.findOne({ where: { id: currentUser.id } });
     }
 
-    let project: Project | null = null;
-    if (dto.projectId) {
-      project = await this.projectRepo.findOne({
-        where: { id: dto.projectId },
-      });
-      if (!project) {
-        throw new NotFoundException("Project not found for given projectId");
-      }
+    if (!user) {
+      throw new NotFoundException("User not found for feedback submission");
+    }
+
+    // Use the same project resolution as listing, including owners and branches.
+    const projectId = await this.usersService.resolveProjectIdFromUser(user.id);
+    if (dto.projectId && dto.projectId !== projectId) {
+      throw new ForbiddenException(
+        "Feedback project must match the user's project",
+      );
+    }
+    const project = await this.projectRepo.findOne({
+      where: { id: projectId },
+    });
+    if (!project) {
+      throw new NotFoundException("Project not found for feedback submission");
     }
 
     const feedback = this.feedbackRepo.create({
@@ -108,6 +138,100 @@ export class FeedbackService {
     });
     if (!feedback) throw new NotFoundException("Feedback not found");
     return feedback;
+  }
+
+  async exportToExcel(filters: FeedbackExportFilters) {
+    const query = this.feedbackRepo
+      .createQueryBuilder("feedback")
+      .leftJoinAndSelect("feedback.user", "user")
+      .leftJoinAndSelect("user.branch", "userBranch")
+      .leftJoinAndSelect("feedback.project", "project")
+      .leftJoinAndSelect("feedback.resolvedBy", "resolvedBy")
+      .where("project.id = :projectId", { projectId: filters.projectId })
+      .orderBy("feedback.created_at", "DESC");
+
+    if (filters.userId) {
+      query.andWhere("user.id = :userId", { userId: filters.userId });
+    }
+    if (filters.type) {
+      query.andWhere("feedback.type = :type", { type: filters.type });
+    }
+    if (filters.is_resolved === "true" || filters.is_resolved === "false") {
+      query.andWhere("feedback.is_resolved = :isResolved", {
+        isResolved: filters.is_resolved === "true",
+      });
+    }
+    if (filters.start_date) {
+      query.andWhere("DATE(feedback.created_at) >= :startDate", {
+        startDate: filters.start_date,
+      });
+    }
+    if (filters.end_date) {
+      query.andWhere("DATE(feedback.created_at) <= :endDate", {
+        endDate: filters.end_date,
+      });
+    }
+    if (filters.created_at) {
+      query.andWhere("DATE(feedback.created_at) = :createdAt", {
+        createdAt: filters.created_at,
+      });
+    }
+    if (filters.search?.trim()) {
+      query.andWhere(
+        `(LOWER(feedback.message) LIKE LOWER(:search)
+          OR LOWER(feedback.type) LIKE LOWER(:search)
+          OR LOWER(user.name) LIKE LOWER(:search)
+          OR LOWER(user.username) LIKE LOWER(:search)
+          OR LOWER(project.name) LIKE LOWER(:search))`,
+        { search: `%${filters.search.trim()}%` },
+      );
+    }
+
+    const feedbacks = await query.getMany();
+    const branchByUserId = new Map<string, string>();
+    const userIds = [
+      ...new Set(
+        feedbacks
+          .map((feedback) => feedback.user?.id)
+          .filter((userId): userId is string => Boolean(userId)),
+      ),
+    ];
+
+    await Promise.all(
+      userIds.map(async (userId) => {
+        const lastCheckedInJourney = await this.feedbackRepo.manager
+          .createQueryBuilder(Journey, "journey")
+          .innerJoin("journey.checkin", "checkin")
+          .leftJoinAndSelect("journey.branch", "branch")
+          .where("journey.user.id = :userId", { userId })
+          .andWhere("checkin.checkInTime IS NOT NULL")
+          .orderBy("checkin.checkInTime", "DESC")
+          .addOrderBy("journey.date", "DESC")
+          .addOrderBy("journey.created_at", "DESC")
+          .getOne();
+
+        const assignedBranch = feedbacks.find(
+          (feedback) => feedback.user?.id === userId,
+        )?.user?.branch;
+        branchByUserId.set(
+          userId,
+          lastCheckedInJourney?.branch?.name ?? assignedBranch?.name ?? "",
+        );
+      }),
+    );
+
+    const exportRows = feedbacks.map((feedback) => ({
+      ...feedback,
+      exportBranchName: feedback.user?.id
+        ? (branchByUserId.get(feedback.user.id) ?? "")
+        : "",
+    }));
+
+    return buildFeedbackWorkbook(
+      exportRows,
+      join(process.cwd(), "uploads", "feedback"),
+      filters.publicBaseUrl,
+    );
   }
 
   async resolve(id: string, dto: UpdateFeedbackStatusDto, resolver?: User) {

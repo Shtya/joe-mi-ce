@@ -77,6 +77,10 @@ export class User extends CoreEntity {
   @Column({ default: true })
   is_active: boolean;
 
+  // Individual permission: project-admin and super-admin roles do not imply it.
+  @Column({ name: "can_grant_compensatory_leave", default: false })
+  canGrantCompensatoryLeave: boolean;
+
   @Column({
     type: "enum",
     enum: BrandAssignmentMode,

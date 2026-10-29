@@ -16,6 +16,7 @@ import {
   ValidationPipe,
   Patch,
   Req,
+  HttpException,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { VacationService } from "./vacation.service";
@@ -67,8 +68,14 @@ export class VacationController {
       }
       const lang =
         res.headers?.["accept-language"] || res.headers?.["lang"] || "en";
-      return await this.vacationService.createVacation(dto, imagePath, lang);
+      return await this.vacationService.createVacation(
+        dto,
+        imagePath,
+        lang,
+        res.user,
+      );
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       throw new BadRequestException(
         `Failed to create vacation: ${error.message}`,
       );
@@ -81,8 +88,9 @@ export class VacationController {
   async updateDateStatus(
     @Param("id") id: string,
     @Body() dto: UpdateDateStatusDto,
+    @Req() req: any,
   ) {
-    return await this.vacationService.updateDateStatus(id, dto);
+    return await this.vacationService.updateDateStatus(id, dto, req.user);
   }
 
   @Get("for-mobile")
@@ -243,8 +251,8 @@ export class VacationController {
   // 🔹 Delete vacation
   @Delete(":id")
   @Permissions(EPermission.VACATION_DELETE)
-  async deleteVacation(@Param("id") id: string) {
-    return await this.vacationService.vacationRepo.softDelete(id);
+  async deleteVacation(@Param("id") id: string, @Req() req: any) {
+    return await this.vacationService.deleteVacation(id, req.user);
   }
 
   private transformQueryParams(query: any): any {

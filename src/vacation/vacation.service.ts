@@ -5,6 +5,8 @@ import {
   ConflictException,
   BadRequestException,
   InternalServerErrorException,
+  HttpException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, In, Brackets, Not } from "typeorm";
@@ -23,6 +25,8 @@ import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Journey, JourneyStatus } from "entities/all_plans.entity";
 import { ERole } from "enums/Role.enum";
+import { VacationBalanceService } from "./vacation-balance.service";
+import { vacationBalanceType } from "./vacation-balance-type";
 
 @Injectable()
 export class VacationService {
@@ -41,6 +45,7 @@ export class VacationService {
 
     @InjectRepository(Journey)
     public readonly journeyRepo: Repository<Journey>,
+    private readonly balances: VacationBalanceService,
   ) {}
 
   private readonly vacationMessages = {
@@ -66,6 +71,7 @@ export class VacationService {
     dto: CreateVacationDto,
     imagePath: string | null = null,
     lang: string = "en",
+    actor?: User,
   ) {
     try {
       if (!dto.userId) {
@@ -99,6 +105,70 @@ export class VacationService {
       }
 
       const formattedDates = this.transformAndValidateDates(dto.dates);
+      const balanceUser = await this.balances.employee(
+        this.userRepo.manager,
+        user.id,
+      );
+      if (await this.balances.isEnabled(this.userRepo.manager, balanceUser)) {
+        const savedId = await this.balances.withEmployee(
+          user.id,
+          async (manager, employee) => {
+            await this.balances.authorizeRequest(
+              manager,
+              employee,
+              actor,
+              true,
+            );
+            const employeeProject =
+              employee.project_id ??
+              employee.project?.id ??
+              employee.branch?.project?.id;
+            const scopedBranch = await manager.findOne(Branch, {
+              where: { id: branch.id },
+              relations: ["project"],
+            });
+            if (scopedBranch?.project?.id !== employeeProject)
+              throw new ForbiddenException(
+                "Vacation branch must belong to the employee project",
+              );
+            await this.checkForOverlappingVacations(
+              employee.id,
+              formattedDates,
+              manager.getRepository(VacationDate),
+            );
+            const allocations = await this.balances.allocate(
+              manager,
+              employee,
+              formattedDates,
+              lang,
+              undefined,
+              dto.reason,
+            );
+            const saved = await manager.save(
+              Vacation,
+              manager.create(Vacation, {
+                user: employee,
+                branch: scopedBranch,
+                reason: dto.reason,
+                image_url: imagePath || dto.imageUrl || null,
+                overall_status: "pending",
+              }),
+            );
+            await manager.save(
+              VacationDate,
+              formattedDates.map((date, index) =>
+                manager.create(VacationDate, {
+                  vacation: saved,
+                  date,
+                  ...allocations[index],
+                }),
+              ),
+            );
+            return saved.id;
+          },
+        );
+        return this.getVacationById(savedId);
+      }
       await this.checkForOverlappingVacations(dto.userId, formattedDates);
 
       const vacation = this.vacationRepo.create({
@@ -122,7 +192,7 @@ export class VacationService {
 
       return this.getVacationById(savedVacation.id);
     } catch (error) {
-      console.log(error);
+      if (error instanceof HttpException) throw error;
       if (
         error instanceof NotFoundException ||
         error instanceof ConflictException ||
@@ -137,7 +207,11 @@ export class VacationService {
   }
 
   // Update single date status
-  async updateDateStatus(vacationId: string, dto: UpdateDateStatusDto) {
+  async updateDateStatus(
+    vacationId: string,
+    dto: UpdateDateStatusDto,
+    actor?: User,
+  ) {
     try {
       const vacation = await this.vacationRepo.findOne({
         where: { id: vacationId },
@@ -146,6 +220,107 @@ export class VacationService {
 
       if (!vacation) {
         throw new NotFoundException(`Vacation with id ${vacationId} not found`);
+      }
+
+      const balanceUser = await this.balances.employee(
+        this.userRepo.manager,
+        vacation.user.id,
+      );
+      if (await this.balances.isEnabled(this.userRepo.manager, balanceUser)) {
+        await this.balances.withEmployee(
+          balanceUser.id,
+          async (manager, employee) => {
+            await this.balances.authorizeRequest(
+              manager,
+              employee,
+              actor,
+              false,
+            );
+            const current = await manager.findOne(Vacation, {
+              where: { id: vacationId },
+              relations: ["vacationDates", "user"],
+            });
+            if (!current) throw new NotFoundException("Vacation not found");
+            const previousStatus = current.overall_status;
+            if (
+              dto.overall_status === "approved" &&
+              current.overall_status !== "approved"
+            ) {
+              const dates = current.vacationDates
+                .slice()
+                .sort((a, b) => a.date.localeCompare(b.date));
+              await this.checkForOverlappingVacations(
+                employee.id,
+                dates.map((date) => date.date),
+                manager.getRepository(VacationDate),
+                vacationId,
+              );
+              if (
+                current.overall_status === "rejected" ||
+                dates.some(
+                  (date) =>
+                    date.balancePeriodStart == null ||
+                    (vacationBalanceType(current.reason) === "annual" &&
+                      Number(date.compensatoryBalanceDays) > 0) ||
+                    (vacationBalanceType(current.reason) === "compensatory" &&
+                      Number(date.annualBalanceDays) > 0),
+                )
+              ) {
+                const allocations = await this.balances.allocate(
+                  manager,
+                  employee,
+                  dates.map((date) => date.date),
+                  "en",
+                  vacationId,
+                  current.reason,
+                );
+                await manager.save(
+                  VacationDate,
+                  dates.map((date, index) =>
+                    Object.assign(date, allocations[index]),
+                  ),
+                );
+              }
+            }
+            current.overall_status = dto.overall_status;
+            current.processedBy = actor;
+            current.rejection_reason = dto.rejectionReason;
+            // Dates are saved explicitly above; avoid cascading stale copies.
+            await manager.getRepository(Vacation).update(vacationId, {
+              overall_status: current.overall_status,
+              processedBy: actor,
+              rejection_reason: dto.rejectionReason ?? null,
+            });
+            const dates = current.vacationDates.map((date) => date.date);
+            if (dates.length && dto.overall_status === "approved") {
+              await manager.update(
+                Journey,
+                {
+                  user: { id: employee.id },
+                  date: In(dates),
+                  status: JourneyStatus.ABSENT,
+                },
+                { status: JourneyStatus.VACATION },
+              );
+            }
+            if (
+              dates.length &&
+              dto.overall_status === "rejected" &&
+              previousStatus === "approved"
+            ) {
+              await manager.update(
+                Journey,
+                {
+                  user: { id: employee.id },
+                  date: In(dates),
+                  status: JourneyStatus.VACATION,
+                },
+                { status: JourneyStatus.ABSENT },
+              );
+            }
+          },
+        );
+        return this.getVacationById(vacationId);
       }
 
       const processedBy = dto.processedById
@@ -182,6 +357,7 @@ export class VacationService {
 
       return this.getVacationById(vacationId);
     } catch (error) {
+      if (error instanceof HttpException) throw error;
       if (
         error instanceof NotFoundException ||
         error instanceof BadRequestException
@@ -190,6 +366,43 @@ export class VacationService {
       }
       throw new InternalServerErrorException("Failed to update date status");
     }
+  }
+
+  async deleteVacation(vacationId: string, actor: User) {
+    const vacation = await this.vacationRepo.findOne({
+      where: { id: vacationId },
+      relations: ["user"],
+    });
+    if (!vacation) throw new NotFoundException("Vacation not found");
+    const user = await this.balances.employee(
+      this.userRepo.manager,
+      vacation.user.id,
+    );
+    if (!(await this.balances.isEnabled(this.userRepo.manager, user)))
+      return this.vacationRepo.softDelete(vacationId);
+    return this.balances.withEmployee(user.id, async (manager, employee) => {
+      await this.balances.authorizeRequest(manager, employee, actor, false);
+      const current = await manager.findOne(Vacation, {
+        where: { id: vacationId },
+        relations: ["vacationDates"],
+      });
+      if (!current) throw new NotFoundException("Vacation not found");
+      if (
+        current.overall_status === "approved" &&
+        current.vacationDates.length
+      ) {
+        await manager.update(
+          Journey,
+          {
+            user: { id: user.id },
+            date: In(current.vacationDates.map((date) => date.date)),
+            status: JourneyStatus.VACATION,
+          },
+          { status: JourneyStatus.ABSENT },
+        );
+      }
+      return manager.softDelete(Vacation, vacationId);
+    });
   }
 
   // Get vacation by ID with full detail
@@ -712,8 +925,12 @@ export class VacationService {
   private async checkForOverlappingVacations(
     userId: string,
     dates: string[],
+    repository: Repository<VacationDate> = this.vacationDateRepo,
+    excludeVacationId?: string,
   ): Promise<void> {
-    const overlappingDates = await this.vacationDateRepo
+    if (!dates.length)
+      throw new BadRequestException("At least one date must be provided");
+    const query = repository
       .createQueryBuilder("vacationDate")
       .leftJoinAndSelect("vacationDate.vacation", "vacation")
       .where("vacation.user_id = :userId", { userId })
@@ -721,7 +938,12 @@ export class VacationService {
         statuses: ["pending", "approved"],
       })
       .andWhere("vacationDate.date IN (:...dates)", { dates })
-      .getMany();
+      .andWhere("vacation.deleted_at IS NULL");
+    if (excludeVacationId)
+      query.andWhere("vacation.id <> :excludeVacationId", {
+        excludeVacationId,
+      });
+    const overlappingDates = await query.getMany();
 
     if (overlappingDates.length > 0) {
       const conflictingDates = overlappingDates.map((vd) => vd.date);
@@ -764,7 +986,11 @@ export class VacationService {
         .getMany();
 
       if (vacations.length === 0) {
-        return { message: "No pending vacations found to approve", count: 0, dryRun };
+        return {
+          message: "No pending vacations found to approve",
+          count: 0,
+          dryRun,
+        };
       }
 
       if (dryRun) {
@@ -779,6 +1005,19 @@ export class VacationService {
       let approvedCount = 0;
 
       for (const vacation of vacations) {
+        const employee = await this.balances.employee(
+          this.userRepo.manager,
+          vacation.user.id,
+        );
+        if (await this.balances.isEnabled(this.userRepo.manager, employee)) {
+          await this.updateDateStatus(
+            vacation.id,
+            { overall_status: "approved" },
+            req.user,
+          );
+          approvedCount++;
+          continue;
+        }
         vacation.overall_status = "approved";
         vacation.processedBy = admin;
         await this.vacationRepo.save(vacation);

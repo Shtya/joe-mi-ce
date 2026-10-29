@@ -36,6 +36,24 @@ describe("AuthService MAC binding", () => {
     jest.restoreAllMocks();
   });
 
+  it("returns the new project admin scope and its individual compensatory grant permission at login", async () => {
+    userRepository.findOne.mockResolvedValue({
+      id: "granter",
+      username: "MAlhaj@aecksa.com",
+      password: "hash",
+      is_active: true,
+      project_id: "taqnia-project",
+      canGrantCompensatoryLeave: true,
+      role: { name: ERole.PROJECT_ADMIN },
+    });
+    const result = await service.login({
+      username: "MAlhaj@aecksa.com",
+      password: "test",
+    });
+    expect(result.user.project_id).toBe("taqnia-project");
+    expect(result.user.canGrantCompensatoryLeave).toBe(true);
+  });
+
   it("binds an unbound account to the MAC ID from its first successful login", async () => {
     userRepository.findOne.mockResolvedValue({
       id: "user-1",

@@ -280,6 +280,8 @@ export class AuthService {
         "name",
         "password",
         "is_active",
+        "project_id",
+        "canGrantCompensatoryLeave",
         "mac_id",
         "role",
         "national_id",
@@ -407,10 +409,16 @@ export class AuthService {
       name: userWithRelations.name,
       role: userWithRelations.role.name,
       project: userWithRelations.project,
+      project_id:
+        userWithRelations.project?.id ??
+        userWithRelations.project_id ??
+        userWithRelations.branch?.project?.id,
       branch: userWithRelations.branch,
       created_by: userWithRelations.created_by,
       mobile: userWithRelations.mobile,
       is_active: userWithRelations.is_active,
+      canGrantCompensatoryLeave:
+        userWithRelations.canGrantCompensatoryLeave === true,
       national_id: userWithRelations.national_id,
       account_name: userWithRelations.account_name,
       iban: userWithRelations.iban,
@@ -632,6 +640,7 @@ export class AuthService {
         mobile: user.mobile,
         project_id: user.project?.id ?? user.project_id,
         is_active: user.is_active,
+        canGrantCompensatoryLeave: user.canGrantCompensatoryLeave === true,
         national_id: user.national_id,
         account_name: user.account_name,
         iban: user.iban,

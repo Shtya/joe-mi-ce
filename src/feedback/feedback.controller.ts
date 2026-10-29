@@ -12,14 +12,15 @@ import {
   UseInterceptors,
   UploadedFiles,
   Req,
+  Res,
 } from "@nestjs/common";
+import { Response } from "express";
 import { FeedbackService } from "./feedback.service";
 import { AuthGuard } from "../auth/auth.guard";
 import { CreateFeedbackDto, UpdateFeedbackStatusDto } from "dto/feedback.dto";
 import { EPermission } from "enums/Permissions.enum";
 import { Permissions } from "decorators/permissions.decorators";
 import { FilesInterceptor } from "@nestjs/platform-express";
-import { feedbackUploadOptions } from "src/journey/upload.config";
 import { CRUD } from "common/crud.service";
 import { Feedback } from "entities/feedback.entity";
 import { multerOptionsFeedbackTmp } from "common/multer.config";
@@ -86,6 +87,45 @@ export class FeedbackController {
       ["message", "type"], // searchFields
       filters,
     );
+  }
+
+  @Get("export")
+  async exportFeedback(
+    @Query() query: any,
+    @Query("search") search: string,
+    @Query("userId") userId: string,
+    @Query("type") type: string,
+    @Query("is_resolved") is_resolved: string,
+    @Res() res: Response,
+    @Req() req: any,
+  ) {
+    const projectId = await this.usersService.resolveProjectIdFromUser(
+      req.user.id,
+    );
+    const queryFilters =
+      query.filters && typeof query.filters === "object" ? query.filters : {};
+    const workbook = await this.feedbackService.exportToExcel({
+      projectId,
+      search,
+      userId,
+      type,
+      is_resolved,
+      start_date: queryFilters.start_date ?? query.start_date,
+      end_date: queryFilters.end_date ?? query.end_date,
+      created_at: queryFilters.created_at ?? query.created_at,
+      publicBaseUrl:
+        process.env.PUBLIC_API_URL || `${req.protocol}://${req.get("host")}`,
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=feedback-export-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+    res.send(workbook);
   }
 
   // Get single feedback
