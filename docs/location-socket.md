@@ -187,6 +187,9 @@ The server returns this acknowledgement object for a successful update:
 
 ## Tracking history queries
 
+For a short Arabic frontend guide covering only read requests, see
+[جلب بيانات التتبع](./location-tracking-get-ar.md).
+
 These Socket.IO events return data through their acknowledgement callback. They
 are paginated and never accept a project ID from the client.
 
