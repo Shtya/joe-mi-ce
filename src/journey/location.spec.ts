@@ -47,14 +47,17 @@ describe("Location Tracking System Tests", () => {
   const mockTrackingEventRepo = { findAndCount: jest.fn() };
 
   const mockUserRepo = {
+    find: jest.fn(),
     findOne: jest.fn(),
   };
 
   const mockCheckInRepo = {
+    find: jest.fn(),
     findOne: jest.fn(),
   };
 
   const mockJourneyRepo = {
+    find: jest.fn(),
     findOne: jest.fn(),
   };
 
@@ -147,6 +150,10 @@ describe("Location Tracking System Tests", () => {
     mockLocationLogRepo.save.mockImplementation((val) => Promise.resolve(val));
     mockLocationRepo.upsert.mockResolvedValue({} as any);
     mockLocationRepo.findOne.mockResolvedValue(null);
+    mockUserRepo.find.mockResolvedValue([]);
+    mockJourneyRepo.find.mockResolvedValue([]);
+    mockCheckInRepo.find.mockResolvedValue([]);
+    mockGeneralRepo.find.mockResolvedValue([]);
     mockLocationCacheService.getProjectLocations.mockResolvedValue([]);
     mockLocationCacheService.getLocationContext.mockResolvedValue(null);
     mockLocationCacheService.setLocationContext.mockResolvedValue(undefined);
@@ -404,6 +411,97 @@ describe("Location Tracking System Tests", () => {
   });
 
   describe("getLocationLog (Service Level Filters)", () => {
+    it("should enrich user tracking from its saved journey and employee", async () => {
+      mockLocationLogRepo.findAndCount.mockResolvedValue([
+        [
+          {
+            id: "l1",
+            userId: "u1",
+            journeyId: "j1",
+            checkInId: "c1",
+            lat: "24.1",
+            lng: "46.2",
+            recordedAt: new Date(),
+            createdAt: new Date(),
+            offlineSince: null,
+          },
+        ],
+        1,
+      ]);
+      mockTrackingEventRepo.findAndCount.mockResolvedValue([[], 0]);
+      mockUserRepo.find.mockResolvedValue([
+        {
+          id: "u1",
+          name: "Employee One",
+          username: "AEC-1",
+          password: "never-expose",
+        },
+      ]);
+      mockJourneyRepo.find.mockResolvedValue([
+        {
+          id: "j1",
+          date: "2026-10-29",
+          type: "planned",
+          status: "present",
+          branch: { id: "b1", name: "Historical branch" },
+        },
+      ]);
+      const result = await service.getTrackingHistory({ userId: "u1" });
+      expect(result.items[0]).toMatchObject({
+        employeeName: "Employee One",
+        username: "AEC-1",
+        branchId: "b1",
+        branchName: "Historical branch",
+        journey: { id: "j1", date: "2026-10-29", branchId: "b1" },
+      });
+      expect(JSON.stringify(result)).not.toContain("never-expose");
+    });
+
+    it("should recover the project tracking branch through its saved check-in", async () => {
+      const qb = {
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([
+          [
+            {
+              id: "l1",
+              userId: "u1",
+              journeyId: null,
+              checkInId: "c1",
+              lat: 24.1,
+              lng: 46.2,
+              recordedAt: new Date(),
+              createdAt: new Date(),
+              offlineSince: null,
+            },
+          ],
+          1,
+        ]),
+      };
+      mockLocationLogRepo.createQueryBuilder.mockReturnValue(qb);
+      mockCheckInRepo.find.mockResolvedValue([
+        {
+          id: "c1",
+          journey: {
+            id: "j1",
+            date: "2026-10-29",
+            branch: { id: "b1", name: "Branch One" },
+          },
+        },
+      ]);
+      const result = await service.getLocationLog({ projectId: "p1" });
+      expect(result.items[0]).toMatchObject({
+        branchId: "b1",
+        branchName: "Branch One",
+        journey: { id: "j1" },
+        employeeName: null,
+        username: null,
+      });
+    });
+
     it.each([
       [
         { fromDate: "2026-10-28" },

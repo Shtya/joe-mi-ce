@@ -254,6 +254,32 @@ Both events acknowledge this shape:
 return the same envelope with `data.success: false` and a safe `message`.
 
 User queries additionally return `events`, `eventsTotal`, and `eventsTotalPages`.
+Every tracking item (and user tracking event) also includes employee and branch
+display fields, for example:
+
+```json
+{
+  "employeeName": "Example Employee",
+  "username": "AEC-123",
+  "branchId": "branch-uuid",
+  "branchName": "Example Branch",
+  "journey": {
+    "id": "journey-uuid",
+    "date": "2026-10-29",
+    "type": "planned",
+    "status": "present",
+    "branchId": "branch-uuid"
+  }
+}
+```
+
+These fields are added alongside the existing coordinates, timestamps, and IDs.
+The branch comes from the saved journey, with the saved check-in's journey used
+when `journeyId` is absent. A tracking event's recorded branch is a final
+fallback. The API does not infer a historical journey from the employee's
+current branch. Missing/deleted relationships return `null`. Employee names and
+usernames reflect the current user profile; they are not historical snapshots.
+
 The same date range applies to `events.occurredAt`. Events are ordered by
 `occurredAt` descending, then `id` descending, and use the same `page` and
 `limit` independently of pings. `total` and `totalPages` describe only `items`.

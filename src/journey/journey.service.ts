@@ -714,7 +714,9 @@ export class JourneyService {
     const [items, total] = await qb.getManyAndCount();
 
     return {
-      items: items.map((log) => this.serializeTrackingLog(log)),
+      items: await this.enrichTrackingRows(
+        items.map((log) => this.serializeTrackingLog(log)),
+      ),
       total,
       page,
       limit,
@@ -767,17 +769,21 @@ export class JourneyService {
       : [[], 0];
 
     return {
-      items: items.map((log) => this.serializeTrackingLog(log)),
-      events: events.map((event: TrackingEvent) => ({
-        ...event,
-        lat: event.lat == null ? null : Number(event.lat),
-        lng: event.lng == null ? null : Number(event.lng),
-        occurredAt: saudiHistoryTimestamp(event.occurredAt),
-        offlineSince: saudiHistoryTimestamp(event.offlineSince),
-        created_at: saudiHistoryTimestamp(event.created_at),
-        updated_at: saudiHistoryTimestamp(event.updated_at),
-        deleted_at: saudiHistoryTimestamp(event.deleted_at),
-      })),
+      items: await this.enrichTrackingRows(
+        items.map((log) => this.serializeTrackingLog(log)),
+      ),
+      events: await this.enrichTrackingRows(
+        events.map((event: TrackingEvent) => ({
+          ...event,
+          lat: event.lat == null ? null : Number(event.lat),
+          lng: event.lng == null ? null : Number(event.lng),
+          occurredAt: saudiHistoryTimestamp(event.occurredAt),
+          offlineSince: saudiHistoryTimestamp(event.offlineSince),
+          created_at: saudiHistoryTimestamp(event.created_at),
+          updated_at: saudiHistoryTimestamp(event.updated_at),
+          deleted_at: saudiHistoryTimestamp(event.deleted_at),
+        })),
+      ),
       total,
       page,
       limit,
@@ -796,6 +802,120 @@ export class JourneyService {
       createdAt: saudiHistoryTimestamp(log.createdAt),
       offlineSince: saudiHistoryTimestamp(log.offlineSince),
     };
+  }
+
+  private async enrichTrackingRows<
+    T extends {
+      userId: string;
+      journeyId?: string | null;
+      checkInId?: string | null;
+      branchId?: string | null;
+    },
+  >(rows: T[]) {
+    const userIds = [...new Set(rows.map((row) => row.userId).filter(Boolean))];
+    const journeyIds = [
+      ...new Set(
+        rows.map((row) => row.journeyId).filter((id): id is string => !!id),
+      ),
+    ];
+    const checkInIds = [
+      ...new Set(
+        rows
+          .filter((row) => !row.journeyId)
+          .map((row) => row.checkInId)
+          .filter((id): id is string => !!id),
+      ),
+    ];
+    // Batch by page so fetching names never performs one query per GPS point.
+    const [users, journeys, checkIns]: [User[], Journey[], CheckIn[]] =
+      await Promise.all([
+        userIds.length
+          ? this.userRepo.find({
+              where: { id: In(userIds) },
+              select: { id: true, name: true, username: true },
+              loadEagerRelations: false,
+            })
+          : [],
+        journeyIds.length
+          ? this.journeyRepo.find({
+              where: { id: In(journeyIds) },
+              relations: { branch: true },
+              select: {
+                id: true,
+                date: true,
+                type: true,
+                status: true,
+                branch: { id: true, name: true },
+              },
+              loadEagerRelations: false,
+            })
+          : [],
+        checkInIds.length
+          ? this.checkInRepo.find({
+              where: { id: In(checkInIds) },
+              relations: { journey: { branch: true } },
+              select: {
+                id: true,
+                journey: {
+                  id: true,
+                  date: true,
+                  type: true,
+                  status: true,
+                  branch: { id: true, name: true },
+                },
+              },
+              loadEagerRelations: false,
+            })
+          : [],
+      ]);
+    const usersById = new Map(users.map((user) => [user.id, user]));
+    const journeysById = new Map(
+      journeys.map((journey) => [journey.id, journey]),
+    );
+    const checkInsById = new Map(
+      checkIns.map((checkIn) => [checkIn.id, checkIn]),
+    );
+    const branchIds = [
+      ...new Set(
+        rows.map((row) => row.branchId).filter((id): id is string => !!id),
+      ),
+    ];
+    const branches = branchIds.length
+      ? await this.branchRepo.find({
+          where: { id: In(branchIds) },
+          select: { id: true, name: true },
+          loadEagerRelations: false,
+        })
+      : [];
+    const branchesById = new Map(branches.map((branch) => [branch.id, branch]));
+
+    return rows.map((row) => {
+      const user = usersById.get(row.userId);
+      const journey = row.journeyId
+        ? journeysById.get(row.journeyId)
+        : row.checkInId
+          ? checkInsById.get(row.checkInId)?.journey
+          : undefined;
+      const branch =
+        journey?.branch ||
+        (row.branchId ? branchesById.get(row.branchId) : undefined);
+      return {
+        ...row,
+        employeeName: user?.name ?? null,
+        username: user?.username ?? null,
+        branchId: branch?.id ?? row.branchId ?? null,
+        branchName: branch?.name ?? null,
+        journey: journey
+          ? {
+              id: journey.id,
+              date: journey.date ?? null,
+              type: journey.type ?? null,
+              status: journey.status ?? null,
+              branchId: journey.branch?.id ?? null,
+            }
+          : null,
+      };
+    });
   }
 
   /** Exposed for the gateway – same geofence logic but public */
