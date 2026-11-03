@@ -1,3 +1,5 @@
+import { VacationBalanceService } from "src/vacation/vacation-balance.service";
+import { User } from "entities/user.entity";
 import {
   Controller,
   Get,
@@ -27,7 +29,10 @@ import { Brackets } from "typeorm";
 @Controller("projects")
 @UseGuards(AuthGuard)
 export class ProjectController {
-  constructor(private readonly projectService: ProjectService) {}
+  constructor(
+    private readonly projectService: ProjectService,
+    private readonly balances: VacationBalanceService,
+  ) {}
 
   // 🔹 List all projects (super admin only)
   @Get("")
@@ -58,6 +63,7 @@ export class ProjectController {
   async getTeamsByProject(
     @Param("projectId") projectId: string,
     @Query() query: any,
+    @Req() req: { user: User },
   ) {
     // Robustly parse nested filters from query parameters
     const filters: any = {};
@@ -86,7 +92,7 @@ export class ProjectController {
     // Ensure we are filtering by the project ID from the URL
     filters.project_id = projectId;
 
-    return CRUD.findAllRelation(
+    const result = await CRUD.findAllRelation(
       this.projectService.userRepo,
       "users",
       query.search,
@@ -98,6 +104,10 @@ export class ProjectController {
       ["name", "mobile", "username"],
       filters,
     );
+    return {
+      ...result,
+      records: await this.balances.withBalances(result.records, req.user),
+    };
   }
 
   // Helper method to parse bracket notation

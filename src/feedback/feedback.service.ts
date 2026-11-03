@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { join } from "path";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { Feedback } from "entities/feedback.entity";
@@ -227,11 +226,7 @@ export class FeedbackService {
         : "",
     }));
 
-    return buildFeedbackWorkbook(
-      exportRows,
-      join(process.cwd(), "uploads", "feedback"),
-      filters.publicBaseUrl,
-    );
+    return buildFeedbackWorkbook(exportRows, filters.publicBaseUrl);
   }
 
   async resolve(id: string, dto: UpdateFeedbackStatusDto, resolver?: User) {

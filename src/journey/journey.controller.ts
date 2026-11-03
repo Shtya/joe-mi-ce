@@ -147,7 +147,7 @@ export class JourneyController {
 
     if (!dto.userId) dto.userId = req.user.id;
 
-    return this.journeyService.checkInOut(dto, lang);
+    return this.journeyService.checkInOut(dto, lang, req.user.id);
   }
 
   @Get("tracking/:userId")
@@ -166,7 +166,9 @@ export class JourneyController {
     ]);
 
     if (!requesterProjectId || requesterProjectId !== targetProjectId) {
-      throw new ForbiddenException("You cannot view this user's tracking history");
+      throw new ForbiddenException(
+        "You cannot view this user's tracking history",
+      );
     }
 
     return this.journeyService.getTrackingHistory({
@@ -477,6 +479,8 @@ export class JourneyController {
 
         allOptimizedPlans.push({
           planId: plan.id,
+          allowAttendanceFromAnyProjectLocation:
+            plan.allowAttendanceFromAnyProjectLocation === true,
           branchName: plan.branch?.name,
           branchId: plan.branch?.id,
           city: plan.branch?.city?.name,
@@ -750,7 +754,7 @@ export class JourneyController {
     for (const plan of plans.records || []) {
       const key = `${plan.user?.id ?? "null"}|${plan.branch?.id ?? "null"}|${
         plan.shift?.id ?? "null"
-      }|${plan.projectId ?? ""}`;
+      }|${plan.projectId ?? ""}|${plan.allowAttendanceFromAnyProjectLocation === true}`;
       const existing = dedupedPlans.get(key);
       if (!existing) {
         dedupedPlans.set(key, plan);
@@ -946,6 +950,8 @@ export class JourneyController {
 
           transformedData.push({
             planId: plan.id,
+            allowAttendanceFromAnyProjectLocation:
+              plan.allowAttendanceFromAnyProjectLocation === true,
             branchName: plan.branch?.name,
             branchId: plan.branch?.id,
             city: plan.branch?.city?.name,
@@ -1051,6 +1057,8 @@ export class JourneyController {
 
           transformedData.push({
             planId: plan.id,
+            allowAttendanceFromAnyProjectLocation:
+              plan.allowAttendanceFromAnyProjectLocation === true,
             branchName: plan.branch?.name,
             branchId: plan.branch?.id,
             city: plan.branch?.city?.name,
@@ -1160,6 +1168,8 @@ export class JourneyController {
 
       transformedData.push({
         planId: null,
+        allowAttendanceFromAnyProjectLocation:
+          journey.allowAttendanceFromAnyProjectLocation === true,
         branchName: journey.branch?.name,
         branchId: journey.branch?.id,
         city: journey.branch?.city?.name,
@@ -1219,6 +1229,7 @@ export class JourneyController {
 
           transformedData.push({
             planId: null,
+            allowAttendanceFromAnyProjectLocation: false,
             branchName: promoter.branch?.name,
             branchId: promoter.branch?.id,
             city: promoter.branch?.city?.name,

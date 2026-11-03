@@ -15,6 +15,7 @@ import { Stock } from "entities/products/stock.entity";
 import { SalesTarget, SalesTargetStatus } from "entities/sales-target.entity";
 import { Journey } from "entities/all_plans.entity";
 import { CRUD } from "common/crud.service";
+import { projectSaleAmount } from "./project-sale-amount";
 
 @Injectable()
 export class SaleService {
@@ -81,7 +82,13 @@ export class SaleService {
             category: sale.product.category ?? null,
             unit_amount: unitPrice,
             total_amount: unitPrice * quantity,
-            discounted_amount: unitPrice * quantity * (1 - discount / 100),
+            discounted_amount: projectSaleAmount(
+              sale.projectId,
+              unitPrice,
+              quantity,
+              discount,
+              unitPrice * quantity * (1 - discount / 100),
+            ),
           }
         : null,
     };
@@ -201,7 +208,13 @@ export class SaleService {
     }
 
     const discount = product.discount ?? 0;
-    const totalAmount = dto.price * dto.quantity * (1 - discount / 100);
+    const totalAmount = projectSaleAmount(
+      branch.project.id,
+      dto.price,
+      dto.quantity,
+      discount,
+      dto.price * dto.quantity * (1 - discount / 100),
+    );
 
     let targetDate: Date | undefined;
     if ((dto as any).date) {
@@ -330,12 +343,19 @@ export class SaleService {
     }
     // Handle price changes
     const oldTotalAmount = sale.total_amount;
-    const newTotalAmount =
+    let newTotalAmount =
       dto.price !== undefined
         ? dto.price * (dto.quantity || sale.quantity)
         : oldTotalAmount;
 
     if (dto.price !== undefined || dto.quantity !== undefined) {
+      newTotalAmount = projectSaleAmount(
+        sale.projectId,
+        dto.price ?? sale.price,
+        dto.quantity ?? sale.quantity,
+        sale.product?.discount ?? 0,
+        newTotalAmount,
+      );
       amountAdjustment = newTotalAmount - oldTotalAmount;
     }
 
@@ -428,7 +448,13 @@ export class SaleService {
             // All three amount types matching the optimized structure
             unit_amount: unitPrice, // Unit price (same as product price)
             total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
-            discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
+            discounted_amount: projectSaleAmount(
+              updatedSale.projectId,
+              updatedSale.price ?? unitPrice,
+              quantity,
+              discount,
+              (unitPrice - discount) * quantity,
+            ),
             brand_name: updatedSale.product?.brand?.name || null,
             category_name: updatedSale.product?.category?.name || null,
           },
@@ -504,9 +530,14 @@ export class SaleService {
             price: sale.product?.price || 0,
             unit_amount: sale.product?.price || 0,
             total_amount: (sale.product?.price || 0) * sale.quantity,
-            discounted_amount:
-              ((sale.product?.price || 0) - (sale.product?.discount || 0)) *
+            discounted_amount: projectSaleAmount(
+              sale.projectId,
+              sale.price ?? sale.product?.price ?? 0,
               sale.quantity,
+              sale.product?.discount ?? 0,
+              ((sale.product?.price || 0) - (sale.product?.discount || 0)) *
+                sale.quantity,
+            ),
             brand_name: sale.product?.brand?.name || null,
             category_name: sale.product?.category?.name || null,
           },
@@ -640,9 +671,14 @@ export class SaleService {
             price: sale.product?.price || 0,
             unit_amount: sale.product?.price || 0,
             total_amount: (sale.product?.price || 0) * sale.quantity,
-            discounted_amount:
-              ((sale.product?.price || 0) - (sale.product?.discount || 0)) *
+            discounted_amount: projectSaleAmount(
+              sale.projectId,
+              sale.price ?? sale.product?.price ?? 0,
               sale.quantity,
+              sale.product?.discount ?? 0,
+              ((sale.product?.price || 0) - (sale.product?.discount || 0)) *
+                sale.quantity,
+            ),
             brand_name: sale.product?.brand?.name || null,
             category_name: sale.product?.category?.name || null,
           },
@@ -1153,6 +1189,7 @@ export class SaleService {
         "sale.created_at",
         "sale.sale_date",
         "sale.status",
+        "sale.projectId",
         "product.id",
         "product.name",
         "product.sku",
@@ -1186,7 +1223,8 @@ export class SaleService {
     if (search) {
       qb.andWhere(
         new Brackets((subQb) => {
-          subQb.where("product.name ILIKE :search", { search: `%${search}%` })
+          subQb
+            .where("product.name ILIKE :search", { search: `%${search}%` })
             .orWhere("user.name ILIKE :search", { search: `%${search}%` })
             .orWhere("user.username ILIKE :search", { search: `%${search}%` });
         }),
@@ -1451,7 +1489,13 @@ export class SaleService {
           // All three amount types
           unit_amount: unitPrice, // Unit price (same as product price)
           total_amount: unitPrice * quantity, // Total amount per product (price × quantity)
-          discounted_amount: (unitPrice - discount) * quantity, // Discounted amount
+          discounted_amount: projectSaleAmount(
+            sale.projectId,
+            unitPrice,
+            quantity,
+            discount,
+            (unitPrice - discount) * quantity,
+          ),
           brand_name: sale.product?.brand?.name || null,
           category_name: sale.product?.category?.name || null,
         },
@@ -1505,9 +1549,12 @@ export class SaleService {
             const parts = key.split(".");
             const field = parts.pop();
             const alias = parts.length > 0 ? parts.pop() : "sale";
-            totalsQb.andWhere(`${alias}.${field} = :${key.replace(/\./g, "_")}`, {
-              [key.replace(/\./g, "_")]: value,
-            });
+            totalsQb.andWhere(
+              `${alias}.${field} = :${key.replace(/\./g, "_")}`,
+              {
+                [key.replace(/\./g, "_")]: value,
+              },
+            );
           } else {
             totalsQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
           }
@@ -1604,9 +1651,12 @@ export class SaleService {
             const parts = key.split(".");
             const field = parts.pop();
             const alias = parts.length > 0 ? parts.pop() : "sale";
-            categoryQb.andWhere(`${alias}.${field} = :${key.replace(/\./g, "_")}`, {
-              [key.replace(/\./g, "_")]: value,
-            });
+            categoryQb.andWhere(
+              `${alias}.${field} = :${key.replace(/\./g, "_")}`,
+              {
+                [key.replace(/\./g, "_")]: value,
+              },
+            );
           } else {
             categoryQb.andWhere(`sale.${key} = :${key}`, { [key]: value });
           }

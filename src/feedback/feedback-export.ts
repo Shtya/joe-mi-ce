@@ -1,9 +1,5 @@
-import { existsSync } from "fs";
-import { extname, join, relative, resolve } from "path";
 import * as ExcelJS from "exceljs";
 import { Feedback } from "entities/feedback.entity";
-
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg"]);
 
 type FeedbackExportRow = Pick<
   Feedback,
@@ -20,32 +16,6 @@ type FeedbackExportRow = Pick<
   exportBranchName?: string;
 };
 
-function getLocalImagePath(
-  attachmentUrl: string,
-  uploadRoot: string,
-): string | null {
-  if (!attachmentUrl.startsWith("/uploads/feedback/")) return null;
-
-  const relativeAttachmentPath = attachmentUrl.slice(
-    "/uploads/feedback/".length,
-  );
-  const root = resolve(uploadRoot);
-  const path = resolve(join(root, relativeAttachmentPath));
-  const pathRelativeToRoot = relative(root, path);
-
-  if (
-    !pathRelativeToRoot ||
-    pathRelativeToRoot.startsWith("..") ||
-    pathRelativeToRoot.split(/[\\/]/).includes("..") ||
-    !IMAGE_EXTENSIONS.has(extname(path).toLowerCase()) ||
-    !existsSync(path)
-  ) {
-    return null;
-  }
-
-  return path;
-}
-
 function formatUser(user: Feedback["user"]): string {
   if (!user) return "";
   return [user.name, user.username].filter(Boolean).join(" / ");
@@ -53,18 +23,8 @@ function formatUser(user: Feedback["user"]): string {
 
 export async function buildFeedbackWorkbook(
   feedbacks: FeedbackExportRow[],
-  uploadRoot: string,
   publicBaseUrl = "",
 ): Promise<Buffer> {
-  const localImages = feedbacks.map((feedback) =>
-    (feedback.attachment_urls ?? [])
-      .map((url) => getLocalImagePath(url, uploadRoot))
-      .filter((path): path is string => Boolean(path)),
-  );
-  const imageColumnCount = Math.max(
-    0,
-    ...localImages.map((images) => images.length),
-  );
   const attachmentColumnCount = Math.max(
     0,
     ...feedbacks.map((feedback) => feedback.attachment_urls?.length ?? 0),
@@ -87,11 +47,6 @@ export async function buildFeedbackWorkbook(
       key: `attachment_${index + 1}`,
       width: 48,
     })),
-    ...Array.from({ length: imageColumnCount }, (_, index) => ({
-      header: `Image ${index + 1}`,
-      key: `image_${index + 1}`,
-      width: 18,
-    })),
   ];
   worksheet.columns = columns;
   worksheet.views = [{ state: "frozen", ySplit: 1 }];
@@ -100,7 +55,7 @@ export async function buildFeedbackWorkbook(
     to: `${String.fromCharCode(65 + columns.length - 1)}1`,
   };
 
-  feedbacks.forEach((feedback, feedbackIndex) => {
+  feedbacks.forEach((feedback) => {
     const attachmentUrls = feedback.attachment_urls ?? [];
     const row = worksheet.addRow({
       created_at: feedback.created_at,
@@ -120,7 +75,7 @@ export async function buildFeedbackWorkbook(
         ? url
         : `${publicBaseUrl.replace(/\/$/, "")}/${url.replace(/^\//, "")}`;
       cell.value = {
-        text: url,
+        text: hyperlink,
         hyperlink,
         tooltip: "Open attachment",
       };
@@ -129,24 +84,6 @@ export async function buildFeedbackWorkbook(
 
     row.eachCell((cell) => {
       cell.alignment = { vertical: "middle", wrapText: true };
-    });
-
-    const images = localImages[feedbackIndex];
-    if (images.length) row.height = 72;
-    images.forEach((imagePath, imageIndex) => {
-      const extension: "jpeg" | "png" = [".jpg", ".jpeg"].includes(
-        extname(imagePath).toLowerCase(),
-      )
-        ? "jpeg"
-        : "png";
-      const imageId = workbook.addImage({ filename: imagePath, extension });
-      worksheet.addImage(imageId, {
-        tl: {
-          col: 9 + attachmentColumnCount + imageIndex,
-          row: row.number - 1,
-        },
-        ext: { width: 88, height: 66 },
-      });
     });
   });
 

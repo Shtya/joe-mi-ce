@@ -1,3 +1,4 @@
+import { VacationBalanceReadModule } from "src/vacation/vacation-balance-read.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { VacationService } from "./vacation.service";
@@ -9,13 +10,13 @@ import { VacationDate } from "entities/employee/vacation-date.entity";
 import { Journey } from "entities/all_plans.entity";
 import { VacationBalanceAccount } from "entities/employee/vacation-balance-account.entity";
 import { VacationCompensatoryCredit } from "entities/employee/vacation-compensatory-credit.entity";
-import { VacationBalanceService } from "./vacation-balance.service";
 import { VacationBalanceController } from "./vacation-balance.controller";
 import { VacationBalanceCron } from "./vacation-balance.cron";
 import { Project } from "entities/project.entity";
 
 @Module({
   imports: [
+    VacationBalanceReadModule,
     TypeOrmModule.forFeature([
       Vacation,
       User,
@@ -28,6 +29,6 @@ import { Project } from "entities/project.entity";
     ]),
   ],
   controllers: [VacationBalanceController, VacationController],
-  providers: [VacationService, VacationBalanceService, VacationBalanceCron],
+  providers: [VacationService, VacationBalanceCron],
 })
 export class VacationModule {}

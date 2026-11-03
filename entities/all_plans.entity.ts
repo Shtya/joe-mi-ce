@@ -33,7 +33,7 @@ export class JourneyPlan extends CoreEntity {
   @ManyToOne(() => User, { eager: true, onDelete: "CASCADE" })
   user: Relation<User>;
 
-  @ManyToOne(() => Branch, { eager: true, onDelete: "CASCADE" })
+  @ManyToOne(() => Branch, { eager: true, nullable: true, onDelete: "CASCADE" })
   branch: Relation<Branch>;
 
   @ManyToOne(() => Shift, { eager: true, onDelete: "CASCADE" })
@@ -48,6 +48,9 @@ export class JourneyPlan extends CoreEntity {
 
   @Column({ type: "text", array: true })
   days: string[];
+
+  @Column({ type: "boolean", default: false })
+  allowAttendanceFromAnyProjectLocation: boolean;
 
   @Column({ default: true })
   is_active: boolean;
@@ -72,6 +75,9 @@ export class Journey extends CoreEntity {
 
   @Column({ type: "date", nullable: true })
   date: string;
+
+  @Column({ type: "boolean", default: false })
+  allowAttendanceFromAnyProjectLocation: boolean;
 
   /** The supervisor-selected location for an unplanned visit. */
   @Column({ type: "jsonb", nullable: true })

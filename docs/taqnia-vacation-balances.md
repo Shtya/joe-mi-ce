@@ -88,3 +88,34 @@ The user chose to preserve compensatory leave from before credit tracking withou
 - All 50 authentication/vacation tests passed locally, including migration reruns and real PostgreSQL denial cases. All 40 non-database tests passed on the server. Build, typecheck and application-import validation passed before activation.
 - Deployed by restarting only `ce-api-back`; preserved unrelated feedback changes and both frontends. Verified real password login through the login service, public profile HTTP 200, the authorized account reaching post-permission validation, and HTTP 403 for the existing Taqnia admin and super admin. No credits were created during verification.
 - The initial password is not automatically expired by the existing application. Change it after first login. No frontend UI change or Git push was included.
+
+## Balances in user and team responses — November 3, 2026
+
+The existing authenticated endpoints now include a `vacationBalance` object:
+
+- `GET /api/v1/projects/:projectId/teams`: each entry in `records`.
+- `GET /api/v1/users/:id`: the returned user.
+- `GET /api/v1/users`: each entry in `records`.
+
+The object uses the same calculation as `GET /api/v1/vacations/balance/:userId`. The public response is now limited to `annualRemainingDays` and `compensatoryRemainingDays`. Pagination and existing user fields are preserved. Pending requests are already reserved in the displayed balances. The annual and compensatory amounts remain separate spending pools.
+
+`vacationBalance` is `null` for other projects, users without a balance account/joining date, or callers who cannot read that employee's balance. Access remains limited to the employee, their project administrator, or a super administrator. The supplied example project and user belong to Inatural; their balances are intentionally null because this feature is scoped to Taqnia.
+
+List enrichment uses batched reads in a repeatable-read transaction, shares the individual endpoint's calculation, and does not update anniversary dates or lock employee rows. No schema migration or frontend deployment was needed.
+
+All 59 focused authentication/vacation tests passed locally, including 11 PostgreSQL integration tests. Build, typecheck, standalone ESLint, and production staged build/tests passed. Deployed only the scoped backend changes with rollback copies in `/root/deployments/taqnia-balance-responses-20261103/backup`. Public checks verified the supplied URLs, Taqnia list/detail/individual balance equality, and unauthenticated HTTP 401. All three PM2 applications remained online; only `ce-api-back` was restarted.
+
+
+## Compact balances and PUT user updates — November 3, 2026
+
+All public vacation-balance responses now contain only `annualRemainingDays` and `compensatoryRemainingDays`. User details and list entries retain these two values in `vacationBalance`; internal calculations still retain contract/accrual/reservation details.
+
+The existing `PUT /api/v1/users/:id` accepts a root-level `compensatoryRemainingDays` number from 0 to 365, with at most four decimal places. It sets the remaining balance absolutely, so retrying the same value does not grant additional days. For example, `{"compensatoryRemainingDays":3}` sets three days remaining. It may be combined with the existing user profile fields.
+
+The existing same-project admin and individual compensatory grant permission are enforced before any profile or balance changes. Both updates share the employee lock and one transaction; an invalid profile update rolls back the balance adjustment. Existing reservations remain counted. Corrections append signed credit entries with actor/reason rather than rewriting previous grants. Apply `database/20261103_compensatory_balance_adjustments.sql` first; this rerunnable migration permits nonzero signed credit adjustments. The original grant endpoint remains restricted to positive grants.
+
+The requested `reports.service.ts` update was deployed with this change: Taqnia monthly exports omit MG Attendance and Overtime, even if those tabs are explicitly requested. Other unrelated report controller/cron edits were excluded.
+
+All 75 focused tests passed locally, including 15 PostgreSQL integration tests and an exported-workbook worksheet check. The staged production build/typecheck and 60 non-database tests passed. A verified full database dump, source backup, and previous compiled build are retained under `/root/deployments/taqnia-simple-vacation-20261103/backup`. Production activation applied the migration and restarted only `ce-api-back`; health and public compact GET checks passed. The deployed report service checksum matches the requested local file.
+
+No live balance was changed during verification. The supplied user belongs to Main Project and has no vacation balance account, so the initial same-value PUT check stopped before sending any PUT. Balance editing remains scoped to Taqnia as requested. Automatic approval review rejected a proposed PUT test on a different employee; setter behavior and permission denials were verified against disposable PostgreSQL instead.

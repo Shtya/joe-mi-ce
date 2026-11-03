@@ -1,19 +1,8 @@
-import { mkdtemp, writeFile } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
 import * as ExcelJS from "exceljs";
 import { buildFeedbackWorkbook } from "./feedback-export";
 
 describe("buildFeedbackWorkbook", () => {
-  it("exports feedback details, attachment URLs, and local image attachments", async () => {
-    const uploadRoot = await mkdtemp(join(tmpdir(), "feedback-export-"));
-    const imagePath = join(uploadRoot, "photo.png");
-    const png = Buffer.from(
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-      "base64",
-    );
-    await writeFile(imagePath, png);
-
+  it("exports clickable full attachment URLs without embedding files", async () => {
     const workbookBuffer = await buildFeedbackWorkbook(
       [
         {
@@ -32,7 +21,6 @@ describe("buildFeedbackWorkbook", () => {
           exportBranchName: "Riyadh Branch",
         },
       ] as any,
-      uploadRoot,
       "https://api.example.com",
     );
 
@@ -44,13 +32,14 @@ describe("buildFeedbackWorkbook", () => {
     expect(worksheet.getRow(1).values).not.toContain("Project");
     expect(worksheet.getCell("D2").value).toBe("Riyadh Branch");
     expect(worksheet.getCell("J2").value).toEqual({
-      text: "/uploads/feedback/photo.png",
+      text: "https://api.example.com/uploads/feedback/photo.png",
       hyperlink: "https://api.example.com/uploads/feedback/photo.png",
     });
     expect(worksheet.getCell("K2").value).toEqual({
-      text: "/uploads/feedback/manual.pdf",
+      text: "https://api.example.com/uploads/feedback/manual.pdf",
       hyperlink: "https://api.example.com/uploads/feedback/manual.pdf",
     });
-    expect(workbook.model.media).toHaveLength(1);
+    expect(workbook.model.media ?? []).toHaveLength(0);
+    expect(worksheet.getRow(1).values).not.toContain("Image 1");
   });
 });

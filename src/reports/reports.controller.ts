@@ -351,7 +351,7 @@ export class ReportsController {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the period ending ${date}.</p>
-      <p>The report follows the full <strong>Taqnia monthly report</strong> format (Attendance, MG Attendance, SAR Entries, Check-in - Check-out, Overtime, Sales by Model, Sales Detail) with sales data filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+      <p>The report follows the full <strong>Taqnia monthly report</strong> format (Attendance, SAR Entries, Check-in - Check-out, Sales by Model, Sales Detail) with sales data filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
     </div>
     <div class="footer">
       &copy; ${new Date().getFullYear()} System Operations. All rights reserved.<br>
@@ -431,7 +431,7 @@ export class ReportsController {
     <div class="content">
       <p>Dear Team,</p>
       <p>Please find attached the <strong>Dreame Monthly Performance Report</strong> for the current month up to yesterday.</p>
-      <p>The report follows the full <strong>Taqnia monthly report</strong> format (Attendance, MG Attendance, SAR Entries, Check-in - Check-out, Overtime, Sales by Model, Sales Detail) with sales data filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
+      <p>The report follows the full <strong>Taqnia monthly report</strong> format (Attendance, SAR Entries, Check-in - Check-out, Sales by Model, Sales Detail) with sales data filtered for brand <strong>Dreame</strong> and project <strong>taqnia</strong>.</p>
       <p>The report is attached to this email as an Excel spreadsheet.</p>
     </div>
     <div class="footer">
