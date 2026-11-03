@@ -1,3 +1,4 @@
+import { VacationBalanceReadModule } from "src/vacation/vacation-balance-read.module";
 // project.module.ts
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -15,6 +16,7 @@ import { Journey, JourneyPlan } from "entities/all_plans.entity";
 
 @Module({
   imports: [
+    VacationBalanceReadModule,
     TypeOrmModule.forFeature([
       Project,
       Branch,

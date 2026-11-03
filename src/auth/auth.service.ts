@@ -5,10 +5,11 @@ import {
   ForbiddenException,
   NotFoundException,
   ConflictException,
+  Logger,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { InjectRepository } from "@nestjs/typeorm";
-import { IsNull, Repository } from "typeorm";
+import { EntityManager, IsNull, Repository } from "typeorm";
 import * as argon2 from "argon2";
 import { ERole } from "enums/Role.enum";
 import { User } from "entities/user.entity";
@@ -24,6 +25,7 @@ import { v4 as uuidv4 } from "uuid";
 import axios from "axios";
 import { ProjectService } from "src/project/project.service";
 import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
+import { describeLoginFailure } from "./login-failure";
 const PROMOTER_HEADER_MAP: Record<string, string> = {
   "promoter username": "username",
   username: "username",
@@ -50,6 +52,7 @@ const normalizeHeader = (h: string) =>
 @Injectable()
 export class AuthService {
   private readonly uploadPath = "./uploads/avatars";
+  private readonly logger = new Logger(AuthService.name);
 
   constructor(
     @InjectRepository(User) public userRepository: Repository<User>,
@@ -270,7 +273,42 @@ export class AuthService {
     return result;
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, language: string = "en") {
+    const requestId = uuidv4();
+    const context = {
+      requestId,
+      username: dto.username.slice(0, 80),
+      deviceProvided: Boolean(dto.mac_id),
+    };
+    try {
+      const response = await this.authenticate(dto);
+      this.logger.log({ event: "auth.login.accepted", ...context });
+      return { ...response, requestId };
+    } catch (error: unknown) {
+      if (error instanceof ForbiddenException) {
+        const failure = describeLoginFailure(error.message, language);
+        this.logger.warn({
+          event: "auth.login.rejected",
+          ...context,
+          reason: failure.code,
+        });
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: "Forbidden",
+          ...failure,
+          requestId,
+        });
+      }
+      this.logger.error({
+        event: "auth.login.failed",
+        ...context,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
+      throw error;
+    }
+  }
+
+  private async authenticate(dto: LoginDto) {
     const user = await this.userRepository.findOne({
       where: { username: dto.username },
       relations: ["role", "project"],
@@ -517,8 +555,10 @@ export class AuthService {
     dto: UpdateUserDto,
     requester: User,
     file?: Express.Multer.File,
+    manager?: EntityManager,
   ) {
-    const user = await this.userRepository.findOne({
+    const userRepository = manager?.getRepository(User) ?? this.userRepository;
+    const user = await userRepository.findOne({
       where: { id: userId },
       relations: ["assignedBrands"],
       withDeleted: true,
@@ -545,7 +585,7 @@ export class AuthService {
 
     // ✅ Optimized mobile check
     if (dto.mobile !== undefined && dto.mobile !== user.mobile) {
-      const existingUser = await this.userRepository.findOne({
+      const existingUser = await userRepository.findOne({
         where: { mobile: dto.mobile },
       });
 
@@ -558,11 +598,11 @@ export class AuthService {
       user.password = await argon2.hash(dto.password);
     }
     if (dto.role_id) {
-      await this.updateUserRole(userId, dto.role_id, requester);
+      await this.updateUserRole(userId, dto.role_id, requester, manager);
     }
 
     if (dto.username) {
-      const existingUser = await this.userRepository.findOne({
+      const existingUser = await userRepository.findOne({
         where: { username: dto.username },
       });
       if (existingUser) {
@@ -599,13 +639,21 @@ export class AuthService {
       );
     }
 
-    const { password, brandIds, ...updateData } = dto;
+    const { password, brandIds, compensatoryRemainingDays, ...updateData } =
+      dto;
     Object.assign(user, updateData);
-    return await this.userRepository.save(user);
+    return await userRepository.save(user);
   }
 
-  async updateUserRole(userId: any, roleId: any, requester: User) {
-    const user = await this.userRepository.findOne({
+  async updateUserRole(
+    userId: any,
+    roleId: any,
+    requester: User,
+    manager?: EntityManager,
+  ) {
+    const userRepository = manager?.getRepository(User) ?? this.userRepository;
+    const roleRepository = manager?.getRepository(Role) ?? this.roleRepository;
+    const user = await userRepository.findOne({
       where: { id: userId },
       relations: ["project"],
     });
@@ -616,11 +664,11 @@ export class AuthService {
     //   throw new ForbiddenException('You can only update users in your own project');
     // }
 
-    const role = await this.roleRepository.findOneBy({ id: roleId as any });
+    const role = await roleRepository.findOneBy({ id: roleId as any });
     if (!role) throw new NotFoundException("Role not found");
 
     user.role = role;
-    return this.userRepository.save(user);
+    return userRepository.save(user);
   }
 
   private async generateAuthResponse(user: User) {

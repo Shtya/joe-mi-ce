@@ -3,8 +3,8 @@ import {
   NestInterceptor,
   ExecutionContext,
   CallHandler,
-} from '@nestjs/common';
-import { Observable, tap } from 'rxjs';
+} from "@nestjs/common";
+import { Observable, tap } from "rxjs";
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -12,20 +12,28 @@ export class LoggingInterceptor implements NestInterceptor {
     const req = context.switchToHttp().getRequest();
 
     const { method, originalUrl } = req;
-    const body = req.body;
+    const isLogin = /\/auth\/(?:login|refresh-token)\/?$/.test(
+      originalUrl?.split("?")[0] ?? "",
+    );
+    const body = isLogin
+      ? {
+          username: req.body?.username,
+          deviceProvided: Boolean(req.body?.mac_id),
+        }
+      : req.body;
     const files = req.files || req.file || null;
     const query = req.query;
 
-    console.log('🔵 ----- Incoming Request -----');
-    console.log('➡️ Endpoint:', method, originalUrl);
-    console.log('🧩 Query:', query);
-    console.log('📦 Body:', body);
+    console.log("🔵 ----- Incoming Request -----");
+    console.log("➡️ Endpoint:", method, originalUrl);
+    console.log("🧩 Query:", query);
+    console.log("📦 Body:", body);
 
     if (files) {
-      console.log('📁 Uploaded Files:', files);
+      console.log("📁 Uploaded Files:", files);
     }
 
-    console.log('------------------------------');
+    console.log("------------------------------");
 
     return next.handle().pipe(
       tap((data) => {
@@ -35,7 +43,6 @@ export class LoggingInterceptor implements NestInterceptor {
     );
   }
 }
-
 
 /* 
 📁 Uploaded Files: {

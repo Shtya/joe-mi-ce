@@ -1,3 +1,4 @@
+import { VacationBalanceService } from "src/vacation/vacation-balance.service";
 import {
   Controller,
   Post,
@@ -13,6 +14,7 @@ import {
   BadRequestException,
   UploadedFile,
   UseInterceptors,
+  Headers,
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { AuthGuard } from "./auth.guard";
@@ -42,6 +44,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly userService: UsersService,
+    private readonly balances: VacationBalanceService,
   ) {}
 
   @UseGuards(AuthGuard)
@@ -59,8 +62,8 @@ export class AuthController {
   }
 
   @Post("auth/login")
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Headers("lang") lang: string = "en") {
+    return this.authService.login(dto, lang);
   }
 
   @UseGuards(AuthGuard)
@@ -84,8 +87,9 @@ export class AuthController {
   @UseGuards(AuthGuard)
   @Get("users/:id")
   @Permissions(EPermission.USER_READ)
-  async getUserById(@Param("id") userId: string) {
-    return this.authService.getUserById(userId);
+  async getUserById(@Param("id") userId: string, @Req() req: { user: User }) {
+    const user = await this.authService.getUserById(userId);
+    return (await this.balances.withBalances([user], req.user))[0];
   }
 
   @UseGuards(AuthGuard)
@@ -98,7 +102,7 @@ export class AuthController {
       );
       query.project_id = projectId;
     }
-    return CRUD.findAll(
+    const result = await CRUD.findAll(
       this.authService.userRepository,
       "user",
       query.search,
@@ -110,6 +114,10 @@ export class AuthController {
       ["name", "mobile", "username"],
       {},
     );
+    return {
+      ...result,
+      records: await this.balances.withBalances(result.records, req.user),
+    };
   }
 
   @UseGuards(AuthGuard)
@@ -121,7 +129,18 @@ export class AuthController {
     @Req() req: any,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    return this.authService.updateUser(id, dto, req.user, file);
+    if (dto.compensatoryRemainingDays !== undefined) {
+      const result = await this.balances.setCompensatoryRemainingDays(
+        id,
+        dto.compensatoryRemainingDays,
+        req.user,
+        (manager) =>
+          this.authService.updateUser(id, dto, req.user, file, manager),
+      );
+      return { ...result.user, vacationBalance: result.vacationBalance };
+    }
+    const user = await this.authService.updateUser(id, dto, req.user, file);
+    return (await this.balances.withBalances([user], req.user))[0];
   }
 
   @UseGuards(AuthGuard)

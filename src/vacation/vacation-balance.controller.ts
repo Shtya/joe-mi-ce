@@ -38,41 +38,49 @@ export class VacationBalanceController {
 
   @Get("me")
   @Permissions(EPermission.VACATION_READ)
-  mine(@Req() request: EmployeeRequest) {
-    return this.balances.getBalance(request.user.id, request.user);
+  async mine(@Req() request: EmployeeRequest) {
+    return this.balances.summary(
+      await this.balances.getBalance(request.user.id, request.user),
+    );
   }
 
   @Get(":userId")
   @Permissions(EPermission.VACATION_READ)
-  employee(
+  async employee(
     @Param("userId", ParseUUIDPipe) userId: string,
     @Req() request: EmployeeRequest,
   ) {
-    return this.balances.getBalance(userId, request.user);
+    return this.balances.summary(
+      await this.balances.getBalance(userId, request.user),
+    );
   }
 
   @Put(":userId/joining-date")
   @Permissions(EPermission.VACATION_UPDATE)
-  joiningDate(
+  async joiningDate(
     @Param("userId", ParseUUIDPipe) userId: string,
     @Body() dto: SetVacationJoiningDateDto,
     @Req() request: EmployeeRequest,
   ) {
-    return this.balances.setJoiningDate(userId, dto.joiningDate, request.user);
+    return this.balances.summary(
+      await this.balances.setJoiningDate(userId, dto.joiningDate, request.user),
+    );
   }
 
   @Post(":userId/compensatory")
   @Permissions(EPermission.VACATION_UPDATE)
-  compensatory(
+  async compensatory(
     @Param("userId", ParseUUIDPipe) userId: string,
     @Body() dto: GrantCompensatoryDaysDto,
     @Req() request: EmployeeRequest,
   ) {
-    return this.balances.grantCompensatory(
-      userId,
-      dto.days,
-      dto.reason,
-      request.user,
+    return this.balances.summary(
+      await this.balances.grantCompensatory(
+        userId,
+        dto.days,
+        dto.reason,
+        request.user,
+      ),
     );
   }
 }

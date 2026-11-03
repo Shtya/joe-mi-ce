@@ -28,6 +28,7 @@ export interface LocationContextCacheItem {
   branchGeo: string | null;
   branchRadiusMeters: number | null;
   branchChainName: string | null;
+  branchName?: string | null;
 }
 
 @Injectable()
@@ -69,18 +70,24 @@ export class LocationCacheService implements OnModuleDestroy {
 
     try {
       const value = JSON.stringify(item);
-      const pipeline = this.redis.pipeline().set(this.userKey(item.userId), value);
+      const pipeline = this.redis
+        .pipeline()
+        .set(this.userKey(item.userId), value);
       if (item.projectId) {
         pipeline.hset(this.projectUsersKey(item.projectId), item.userId, value);
       }
 
       await pipeline.exec();
     } catch (error) {
-      this.logger.warn(`Failed to write latest location cache: ${error.message}`);
+      this.logger.warn(
+        `Failed to write latest location cache: ${error.message}`,
+      );
     }
   }
 
-  async getLatestLocation(userId: string): Promise<LatestLocationCacheItem | null> {
+  async getLatestLocation(
+    userId: string,
+  ): Promise<LatestLocationCacheItem | null> {
     if (!this.redis) return null;
 
     try {
@@ -92,7 +99,9 @@ export class LocationCacheService implements OnModuleDestroy {
     }
   }
 
-  async getProjectLocations(projectId: string): Promise<LatestLocationCacheItem[]> {
+  async getProjectLocations(
+    projectId: string,
+  ): Promise<LatestLocationCacheItem[]> {
     if (!this.redis) return [];
 
     try {
@@ -101,7 +110,9 @@ export class LocationCacheService implements OnModuleDestroy {
         .map((value) => this.parse(value))
         .filter((item): item is LatestLocationCacheItem => !!item);
     } catch (error) {
-      this.logger.warn(`Failed to read project location cache: ${error.message}`);
+      this.logger.warn(
+        `Failed to read project location cache: ${error.message}`,
+      );
       return [];
     }
   }
@@ -129,7 +140,9 @@ export class LocationCacheService implements OnModuleDestroy {
         await this.redis.get(this.contextKey(userId)),
       );
     } catch (error) {
-      this.logger.warn(`Failed to read location context cache: ${error.message}`);
+      this.logger.warn(
+        `Failed to read location context cache: ${error.message}`,
+      );
       return null;
     }
   }
@@ -145,7 +158,9 @@ export class LocationCacheService implements OnModuleDestroy {
         this.contextTtlSeconds,
       );
     } catch (error) {
-      this.logger.warn(`Failed to write location context cache: ${error.message}`);
+      this.logger.warn(
+        `Failed to write location context cache: ${error.message}`,
+      );
     }
   }
 
@@ -155,7 +170,9 @@ export class LocationCacheService implements OnModuleDestroy {
     try {
       await this.redis.del(this.contextKey(userId));
     } catch (error) {
-      this.logger.warn(`Failed to delete location context cache: ${error.message}`);
+      this.logger.warn(
+        `Failed to delete location context cache: ${error.message}`,
+      );
     }
   }
 

@@ -10,15 +10,25 @@ import {
   IsBoolean,
   IsLatitude,
   IsLongitude,
+  ValidateIf,
 } from "class-validator";
-import { Type } from "class-transformer";
+import { Type, Transform } from "class-transformer";
 
 export class CreateJourneyPlanDto {
   @IsUUID()
   userId: string;
 
+  @ValidateIf(
+    (dto, value) =>
+      dto.allowAttendanceFromAnyProjectLocation !== true || value != null,
+  )
   @IsUUID()
-  branchId: string;
+  branchId?: string | null;
+
+  @ValidateIf((_dto, value) => value !== undefined)
+  @Transform(({ obj, key }) => obj[key])
+  @IsBoolean()
+  allowAttendanceFromAnyProjectLocation?: boolean;
 
   @IsArray()
   @ArrayNotEmpty()
@@ -34,11 +44,16 @@ export class CreateJourneyPlanDto {
   includeToday?: boolean;
 }
 export class UpdateJourneyPlanDto {
+  @ValidateIf((_dto, value) => value !== undefined)
+  @Transform(({ obj, key }) => obj[key])
+  @IsBoolean()
+  allowAttendanceFromAnyProjectLocation?: boolean;
   @IsOptional()
   userId: string;
 
   @IsOptional()
-  branchId: string;
+  @IsUUID()
+  branchId?: string | null;
 
   @IsOptional()
   shiftId?: string;

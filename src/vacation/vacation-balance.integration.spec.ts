@@ -1,3 +1,9 @@
+import { AuthService } from "src/auth/auth.service";
+import { AuthController } from "src/auth/auth.controller";
+import { Role } from "entities/role.entity";
+import { JwtService } from "@nestjs/jwt";
+import { UsersService } from "src/users/users.service";
+import { ProjectService } from "src/project/project.service";
 import "reflect-metadata";
 import { readFileSync } from "fs";
 import { DataSource } from "typeorm";
@@ -74,6 +80,14 @@ integration("Taqnia vacation PostgreSQL integration", () => {
     await source.query(
       readFileSync("database/20261026_taqnia_vacation_balances.sql", "utf8"),
     );
+    for (let run = 0; run < 2; run++) {
+      await source.query(
+        readFileSync(
+          "database/20261103_compensatory_balance_adjustments.sql",
+          "utf8",
+        ),
+      );
+    }
     balances = new VacationBalanceService(source);
     vacations = new VacationService(
       source.getRepository(Vacation),
@@ -129,6 +143,112 @@ integration("Taqnia vacation PostgreSQL integration", () => {
       "en",
       employee,
     );
+
+  it("returns the same balance in bulk responses and the individual endpoint", async () => {
+    const single = await balances.getBalance(employee.id, admin);
+    const response = await balances.withBalances([employee, admin], admin);
+    expect(response[0].vacationBalance).toEqual({
+      annualRemainingDays: single.annualRemainingDays,
+      compensatoryRemainingDays: single.compensatoryRemainingDays,
+    });
+    expect(response[1].vacationBalance).toBeNull();
+    const self = await balances.withBalances([employee], employee);
+    expect(self[0].vacationBalance).toEqual(response[0].vacationBalance);
+  });
+
+  it("sets compensatory remaining days absolutely, records reductions, and is idempotent", async () => {
+    await balances.setCompensatoryRemainingDays(employee.id, 3, admin);
+    expect(
+      (await balances.getBalance(employee.id, admin)).compensatoryRemainingDays,
+    ).toBe(3);
+    await Promise.all([
+      balances.setCompensatoryRemainingDays(employee.id, 3, admin),
+      balances.setCompensatoryRemainingDays(employee.id, 3, admin),
+    ]);
+    expect(
+      (await balances.getBalance(employee.id, admin)).compensatoryRemainingDays,
+    ).toBe(3);
+    await balances.setCompensatoryRemainingDays(employee.id, 1, admin);
+    expect(
+      (await balances.getBalance(employee.id, admin)).compensatoryRemainingDays,
+    ).toBe(1);
+    const adjustments = await source.query(
+      "SELECT days FROM vacation_compensatory_credits WHERE user_id=$1 ORDER BY created_at",
+      [employee.id],
+    );
+    expect(adjustments.map((row) => Number(row.days))).toEqual([3, -2]);
+    await balances.setCompensatoryRemainingDays(employee.id, 0, admin);
+    expect(
+      (await balances.getBalance(employee.id, admin)).compensatoryRemainingDays,
+    ).toBe(0);
+    await source.query(
+      "DELETE FROM vacation_compensatory_credits WHERE user_id=$1",
+      [employee.id],
+    );
+  });
+
+  it("rolls back a balance adjustment if the combined user update fails", async () => {
+    await expect(
+      balances.setCompensatoryRemainingDays(employee.id, 5, admin, async () => {
+        throw new Error("Profile update failed");
+      }),
+    ).rejects.toThrow("Profile update failed");
+    expect(
+      (await balances.getBalance(employee.id, admin)).compensatoryRemainingDays,
+    ).toBe(0);
+  });
+
+  it("rejects balance changes without the individual grant permission", async () => {
+    await expect(
+      balances.setCompensatoryRemainingDays(employee.id, 4, employee),
+    ).rejects.toThrow();
+    for (const invalid of [-1, 366, NaN, Infinity, null, "3", 0.12345]) {
+      await expect(
+        balances.setCompensatoryRemainingDays(
+          employee.id,
+          invalid as number,
+          admin,
+        ),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("updates profile and balance atomically through the existing PUT controller", async () => {
+    const auth = new AuthService(
+      source.getRepository(User),
+      source.getRepository(Role),
+      source.getRepository(Project),
+      source.getRepository(Branch),
+      {} as JwtService,
+      {} as UsersService,
+      {} as ProjectService,
+    );
+    const controller = new AuthController(auth, {} as UsersService, balances);
+    const response = await controller.updateUser(
+      employee.id,
+      { name: "Updated employee", compensatoryRemainingDays: 2 },
+      { user: admin },
+    );
+    expect(response.vacationBalance.compensatoryRemainingDays).toBe(2);
+    expect(
+      (await source.getRepository(User).findOneByOrFail({ id: employee.id }))
+        .name,
+    ).toBe("Updated employee");
+    await expect(
+      controller.updateUser(
+        employee.id,
+        { username: admin.username, compensatoryRemainingDays: 9 },
+        { user: admin },
+      ),
+    ).rejects.toThrow("Username already exists");
+    expect(
+      (await balances.getBalance(employee.id, admin)).compensatoryRemainingDays,
+    ).toBe(2);
+    await source.query(
+      "DELETE FROM vacation_compensatory_credits WHERE user_id=$1",
+      [employee.id],
+    );
+  });
 
   it("serializes simultaneous requests so only one can reserve the same remaining allowance", async () => {
     const result = await Promise.allSettled([
@@ -224,6 +344,9 @@ integration("Taqnia vacation PostgreSQL integration", () => {
       });
       await expect(
         balances.grantCompensatory(employee.id, 1, "No permission", other),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        balances.setCompensatoryRemainingDays(employee.id, 1, other),
       ).rejects.toMatchObject({ status: 403 });
     }
   });

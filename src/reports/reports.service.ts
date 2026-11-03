@@ -152,7 +152,10 @@ export class ReportsService {
     // );
     const salesByModelSheet = workbook.addWorksheet("Sales by Model");
     const salesDetailSheet = workbook.addWorksheet(`Sales Detail`);
+    // Taqnia exports omit the retired Mega Sale and overtime worksheets.
     const includeTab = (tab: keyof MonthlyReportTabOptions) =>
+      tab !== "mgAttendance" &&
+      tab !== "overtime" &&
       options?.tabs?.[tab] !== false;
 
     const baseColumns = [

@@ -1,3 +1,4 @@
+import { VacationBalanceReadModule } from "src/vacation/vacation-balance-read.module";
 import { Module } from "@nestjs/common";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
@@ -13,6 +14,7 @@ import { ProjectModule } from "../project/project.module";
 
 @Module({
   imports: [
+    VacationBalanceReadModule,
     TypeOrmModule.forFeature([User, Role, Project, Branch]),
     ProjectModule,
   ],

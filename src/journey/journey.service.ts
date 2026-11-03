@@ -9,6 +9,9 @@ import {
   Logger,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { isRoamingLocation } from "./roaming-location";
+import { mobileJourneyBranch } from "./mobile-journey-branch";
+import { requestLanguage } from "common/request-language";
 import {
   Repository,
   FindOptionsWhere,
@@ -61,6 +64,10 @@ import {
   TrackingLocationStatus,
 } from "entities/tracking-event.entity";
 import { getDistance } from "geolib";
+import {
+  INATURAL_PROJECT_ID,
+  resolveProjectAttendance,
+} from "./project-attendance";
 import { CRUD } from "common/crud.service";
 import {
   trackingDateRange,
@@ -440,8 +447,7 @@ export class JourneyService {
     let distanceMeters: number | null = null;
 
     if (branch) {
-      const chainName = (branch as any).chain?.name ?? "";
-      if (!chainName.toLowerCase().includes("roaming")) {
+      if (!isRoamingLocation(branch)) {
         try {
           const assessment = this.evaluateLocationStatus(branch, lat, lng);
           isOutside = assessment.isOutside;
@@ -994,6 +1000,7 @@ export class JourneyService {
       branchGeo: branch?.geo ? String(branch.geo) : null,
       branchRadiusMeters: branch?.geofence_radius_meters ?? null,
       branchChainName: (branch as any)?.chain?.name ?? null,
+      branchName: branch?.name ?? null,
     });
 
     return {
@@ -1014,6 +1021,7 @@ export class JourneyService {
 
     return {
       geo: cached.branchGeo,
+      name: cached.branchName,
       geofence_radius_meters: cached.branchRadiusMeters,
       chain: cached.branchChainName ? { name: cached.branchChainName } : null,
     } as unknown as Branch;
@@ -1158,157 +1166,193 @@ export class JourneyService {
 
   // ===== إدارة الخطط =====
   async createPlan(dto: CreateJourneyPlanDto) {
-    const [user, branch] = await Promise.all([
-      this.userRepo.findOne({ where: { id: dto.userId } }),
-      this.branchRepo.findOne({
-        where: { id: dto.branchId },
-        relations: ["city", "city.region", "project"],
-      }),
-    ]);
-
+    const allowAny = dto.allowAttendanceFromAnyProjectLocation === true;
+    const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new NotFoundException("User not found");
-    if (!branch) throw new NotFoundException("Branch not found");
-
-    if (!branch.project) {
-      throw new BadRequestException("Branch has no project assigned");
-    }
-
+    const branch = dto.branchId
+      ? await this.branchRepo.findOne({
+          where: { id: dto.branchId },
+          relations: ["city", "city.region", "project"],
+        })
+      : null;
+    if (dto.branchId && !branch)
+      throw new NotFoundException("Branch not found");
+    if (!allowAny && !branch)
+      throw new BadRequestException(
+        "Branch is required for assigned-location attendance",
+      );
+    const projectId = user.project_id || branch?.project?.id;
+    if (!projectId)
+      throw new BadRequestException("User has no project assigned");
+    if (branch && branch.project?.id !== projectId)
+      throw new BadRequestException("Branch must belong to the user's project");
     const shifts = await this.shiftRepo.find({
       where: { id: In(dto.shiftId) },
+      relations: ["project"],
     });
-
-    if (shifts.length !== dto.shiftId.length) {
+    if (shifts.length !== dto.shiftId.length)
       throw new NotFoundException("One or more shifts not found");
-    }
-
+    if (shifts.some((shift) => shift.project?.id !== projectId))
+      throw new BadRequestException("Shifts must belong to the user's project");
     const savedPlans: JourneyPlan[] = [];
-
     for (const shift of shifts) {
-      // ❗ Check if same plan already exists
       const existing = await this.journeyPlanRepo.find({
-        where: {
-          user: { id: dto.userId },
-          branch: { id: dto.branchId },
-          shift: { id: shift.id },
-        },
+        where: { user: { id: user.id }, shift: { id: shift.id }, projectId },
       });
-
-      const inactivePlan = existing.find((plan) => !plan.is_active);
-      const activePlans = existing.filter((plan) => plan.is_active);
-
-      for (const plan of activePlans) {
-        const overlap = plan.days.filter((d) => dto.days.includes(d));
-        if (overlap.length > 0) {
+      const overlapping = existing.filter(
+        (plan) =>
+          plan.is_active &&
+          (allowAny ||
+            plan.allowAttendanceFromAnyProjectLocation ||
+            plan.branch?.id === branch?.id),
+      );
+      for (const plan of overlapping) {
+        const overlap = plan.days.filter((day) => dto.days.includes(day));
+        if (overlap.length)
           throw new ConflictException({
             message: `Conflict with existing plan days for shift ${shift.name}`,
             overlappingDays: overlap,
           });
-        }
       }
-
-      if (inactivePlan) {
-        inactivePlan.user = user;
-        inactivePlan.branch = branch;
-        inactivePlan.shift = shift;
-        inactivePlan.projectId = branch.project.id;
-        inactivePlan.days = dto.days;
-        inactivePlan.createdBy = user;
-        inactivePlan.is_active = true;
-        const savedPlan = await this.journeyPlanRepo.save(inactivePlan);
-        savedPlans.push(savedPlan);
-        continue;
-      }
-
-      const newPlan = this.journeyPlanRepo.create({
+      const inactive = existing.find(
+        (plan) => !plan.is_active && plan.branch?.id === branch?.id,
+      );
+      const values = {
         user,
         branch,
         shift,
-        projectId: branch.project.id,
+        projectId,
         days: dto.days,
+        allowAttendanceFromAnyProjectLocation: allowAny,
         createdBy: user,
         is_active: true,
-      });
-
-      const savedPlan = await this.journeyPlanRepo.save(newPlan);
-      savedPlans.push(savedPlan);
+      };
+      const plan = inactive
+        ? Object.assign(inactive, values)
+        : this.journeyPlanRepo.create(values);
+      savedPlans.push(await this.journeyPlanRepo.save(plan));
     }
-
     if (dto.includeToday) {
-      await this.removeTodayPlannedJourneysForUser(dto.userId);
       await this.createJourneysForToday(dto.userId);
     }
-
     return savedPlans;
   }
 
   async updatePlan(id: string, dto: UpdateJourneyPlanDto) {
     const plan = await this.journeyPlanRepo.findOne({
       where: { id, is_active: true },
-      relations: ["user", "branch", "shift", "branch.project"],
+      relations: ["user", "branch", "shift", "branch.project", "shift.project"],
     });
-
     if (!plan) throw new NotFoundException("Journey plan not found");
-
     if (dto.userId) {
       const user = await this.userRepo.findOne({ where: { id: dto.userId } });
       if (!user) throw new NotFoundException("User not found");
       plan.user = user;
     }
-
-    if (dto.branchId) {
+    if (dto.branchId === null) plan.branch = null;
+    else if (dto.branchId) {
       const branch = await this.branchRepo.findOne({
         where: { id: dto.branchId },
         relations: ["project"],
       });
       if (!branch) throw new NotFoundException("Branch not found");
-      if (!branch.project) {
-        throw new BadRequestException("Branch has no project");
-      }
       plan.branch = branch;
-      plan.projectId = branch.project.id;
     }
-
     if (dto.shiftId) {
       const shift = await this.shiftRepo.findOne({
         where: { id: dto.shiftId },
+        relations: ["project"],
       });
       if (!shift) throw new NotFoundException("Shift not found");
       plan.shift = shift;
     }
-
-    if (dto.days) {
-      plan.days = dto.days;
-    }
-
-    // ❗ Check for conflicts with other plans
+    if (dto.allowAttendanceFromAnyProjectLocation !== undefined)
+      plan.allowAttendanceFromAnyProjectLocation =
+        dto.allowAttendanceFromAnyProjectLocation;
+    if (!plan.allowAttendanceFromAnyProjectLocation && !plan.branch)
+      throw new BadRequestException(
+        "Branch is required for assigned-location attendance",
+      );
+    const projectId =
+      plan.user.project_id || plan.projectId || plan.branch?.project?.id;
+    if (!projectId)
+      throw new BadRequestException("User has no project assigned");
+    const shiftBelongsToProject = plan.shift?.project?.id
+      ? plan.shift.project.id === projectId
+      : !!(
+          plan.shift?.id &&
+          (await this.shiftRepo.findOne({
+            where: {
+              id: plan.shift.id,
+              project: { id: projectId, is_active: true },
+            },
+          }))
+        );
+    const branchBelongsToProject =
+      !plan.branch ||
+      (plan.branch.project?.id
+        ? plan.branch.project.id === projectId
+        : !!(await this.branchRepo.findOne({
+            where: {
+              id: plan.branch.id,
+              project: { id: projectId, is_active: true },
+            },
+          })));
+    if (!branchBelongsToProject || !shiftBelongsToProject)
+      throw new BadRequestException(
+        "User, branch and shift must belong to the same project",
+      );
+    plan.projectId = projectId;
+    if (dto.days) plan.days = dto.days;
     const existing = await this.journeyPlanRepo.find({
       where: {
         user: { id: plan.user.id },
-        branch: { id: plan.branch.id },
         shift: { id: plan.shift.id },
-        id: Not(plan.id), // Exclude self
+        projectId,
+        id: Not(plan.id),
         is_active: true,
       },
     });
-
-    for (const otherPlan of existing) {
-      const overlap = otherPlan.days.filter((d) => plan.days.includes(d));
-      if (overlap.length > 0) {
+    for (const other of existing) {
+      if (
+        !plan.allowAttendanceFromAnyProjectLocation &&
+        !other.allowAttendanceFromAnyProjectLocation &&
+        other.branch?.id !== plan.branch?.id
+      )
+        continue;
+      const overlap = other.days.filter((day) => plan.days.includes(day));
+      if (overlap.length)
         throw new ConflictException({
           message: "Conflict with existing plan days",
           overlappingDays: overlap,
         });
-      }
     }
-
+    const savedPlan = await this.journeyPlanRepo.manager.transaction(
+      async (em) => {
+        const saved = await em.save(JourneyPlan, plan);
+        // Copy the plan policy only to unstarted current/future journeys. Recorded
+        // attendance retains its historical policy and actual branch.
+        await em.update(
+          Journey,
+          {
+            journeyPlan: { id: plan.id },
+            is_active: true,
+            date: MoreThanOrEqual(dayjs().format("YYYY-MM-DD")),
+            status: In([JourneyStatus.ABSENT, JourneyStatus.VACATION]),
+          },
+          {
+            allowAttendanceFromAnyProjectLocation:
+              plan.allowAttendanceFromAnyProjectLocation === true,
+            branch: plan.branch,
+          },
+        );
+        return saved;
+      },
+    );
     if (dto.includeToday) {
-      const savedPlan = await this.journeyPlanRepo.save(plan);
-      await this.removeTodayPlannedJourneysForUser(savedPlan.user.id);
       await this.createJourneysForToday(savedPlan.user.id);
-      return savedPlan;
     }
-
-    return this.journeyPlanRepo.save(plan);
+    return savedPlan;
   }
 
   async getPlanById(id: string) {
@@ -1383,7 +1427,7 @@ export class JourneyService {
     for (const plan of plans) {
       const key = `${plan.user?.id ?? "null"}|${plan.branch?.id ?? "null"}|${
         plan.shift?.id ?? "null"
-      }|${plan.projectId ?? ""}`;
+      }|${plan.projectId ?? ""}|${plan.allowAttendanceFromAnyProjectLocation === true}`;
       if (!groups.has(key)) {
         groups.set(key, []);
       }
@@ -1919,7 +1963,9 @@ export class JourneyService {
     journey.user = plan.user;
     journey.branch = plan.branch;
     journey.shift = plan.shift;
-    journey.projectId = plan.projectId || plan.branch.project?.id;
+    journey.allowAttendanceFromAnyProjectLocation =
+      plan.allowAttendanceFromAnyProjectLocation === true;
+    journey.projectId = plan.projectId || plan.branch?.project?.id;
     journey.date = date;
     journey.type = JourneyType.PLANNED;
     journey.status = status;
@@ -1931,6 +1977,7 @@ export class JourneyService {
   }
 
   async getTodayJourneysForUserMobile(userId: string, lang: string = "en") {
+    lang = requestLanguage(lang);
     const today = dayjs().format("YYYY-MM-DD");
 
     const journeys = await this.journeyRepo.find({
@@ -1989,8 +2036,15 @@ export class JourneyService {
       return {
         id: journey.id,
         date: journey.date,
+        allowAttendanceFromAnyProjectLocation:
+          journey.allowAttendanceFromAnyProjectLocation === true,
 
-        branch: journey.branch,
+        branch: mobileJourneyBranch(
+          journey.branch,
+          journey.allowAttendanceFromAnyProjectLocation === true,
+          lang,
+        ),
+        assignedBranchId: journey.branch?.id ?? null,
         city: journey.branch?.city?.name,
         region: journey.branch?.city?.region?.name,
 
@@ -2096,7 +2150,11 @@ export class JourneyService {
     };
   }
 
-  async checkInOut(dto: CheckInOutDto, lang: string = "en") {
+  async checkInOut(
+    dto: CheckInOutDto,
+    lang: string = "en",
+    actorUserId?: string,
+  ) {
     const journey = await this.journeyRepo.findOne({
       where: { id: dto.journeyId, is_active: true },
       relations: [
@@ -2106,6 +2164,9 @@ export class JourneyService {
         "user",
         "branch.chain",
         "user.role",
+        "journeyPlan",
+        "journeyPlan.branch",
+        "shift.project",
       ],
     });
 
@@ -2124,17 +2185,88 @@ export class JourneyService {
     const isUpdate = !!dto.checkInTime && !!dto.checkOutTime;
 
     // Check roaming settings
-    const chainName = journey.branch?.chain?.name;
+    const isRoaming = isRoamingLocation(journey.branch);
 
-    const isCheckGeo = !chainName?.toLowerCase().includes("roaming");
-
-    const isWithinGeofence = isCheckGeo
-      ? this.isWithinGeofence(
-          journey.branch,
-          dto.geo,
-          journey.visitGeo ?? journey.branch?.geo,
+    let actualBranch: Branch | undefined;
+    const usesProjectLocations =
+      journey.allowAttendanceFromAnyProjectLocation === true;
+    let isWithinGeofence: boolean;
+    if (usesProjectLocations || isRoaming) {
+      if (
+        !journey.projectId ||
+        journey.user?.project_id !== journey.projectId ||
+        (journey.shift?.project?.id &&
+          journey.shift.project.id !== journey.projectId) ||
+        (actorUserId && actorUserId !== journey.user.id) ||
+        (dto.userId && dto.userId !== journey.user.id)
+      ) {
+        throw new ForbiddenException(
+          "Attendance user and journey must belong to the same project",
+        );
+      }
+      // Some eager relation graphs omit shift.project. Verify membership using
+      // a project-scoped query rather than treating an omitted join as foreign.
+      if (
+        !isRoaming &&
+        !journey.shift?.project?.id &&
+        !(
+          journey.shift?.id &&
+          (await this.shiftRepo.findOne({
+            where: {
+              id: journey.shift.id,
+              project: { id: journey.projectId, is_active: true },
+            },
+          }))
         )
-      : true;
+      ) {
+        throw new ForbiddenException("Shift must belong to this project");
+      }
+      const branches = await this.branchRepo.find({
+        where: { project: { id: journey.projectId, is_active: true } },
+        relations: ["project", "chain", "city", "supervisor"],
+      });
+      // Nested eager loading may omit branch.project. Validate the scheduled
+      // site against the independently project-scoped branch list instead.
+      if (
+        journey.branch &&
+        !branches.some(
+          (branch) =>
+            branch.id === journey.branch?.id &&
+            branch.project?.id === journey.projectId &&
+            !branch.deleted_at,
+        )
+      ) {
+        throw new ForbiddenException(
+          "Journey branch must belong to this project",
+        );
+      }
+      if (isRoaming) {
+        // Roaming is an explicit branch/chain policy and takes precedence over
+        // both plan location modes. Identity and project checks above still apply.
+        isWithinGeofence = true;
+      } else {
+        const match = resolveProjectAttendance(
+          this.parseLatLng(dto.geo),
+          branches,
+          journey.branch?.id,
+          lang,
+          journey.projectId,
+        );
+        actualBranch = match.branch;
+        isWithinGeofence = true;
+      }
+    } else {
+      const assignedBranch = journey.branch;
+      if (!assignedBranch)
+        throw new BadRequestException(
+          "Branch is required for assigned-location attendance",
+        );
+      isWithinGeofence = this.isWithinGeofence(
+        assignedBranch,
+        dto.geo,
+        journey.visitGeo ?? assignedBranch.geo,
+      );
+    }
 
     // 📍 Log location on every check-in/out (even if within radius)
     try {
@@ -2175,6 +2307,15 @@ export class JourneyService {
       throw new BadRequestException(
         this.messages.tooFar[lang] || this.messages.tooFar.en,
       );
+    }
+    // The shift journey records the first check-in's actual site. The plan keeps
+    // the scheduled site; checkout at another allowed site must not overwrite it.
+    if (
+      actualBranch &&
+      (!journey.branch || (dto.checkInTime && !checkIn?.checkInTime))
+    ) {
+      journey.branch = actualBranch;
+      journey.visitGeo = actualBranch.geo;
     }
     if (checkIn) {
       if (dto.checkInTime) {
@@ -2615,7 +2756,10 @@ export class JourneyService {
       .andWhere("plan.is_active = :planIsActive", { planIsActive: true })
       .andWhere("user.deleted_at IS NULL")
       .andWhere("user.is_active = :isActive", { isActive: true })
-      .andWhere("branch.deleted_at IS NULL");
+      .andWhere("branch.deleted_at IS NULL")
+      .andWhere(
+        '(branch.id IS NOT NULL OR plan."allowAttendanceFromAnyProjectLocation" = true)',
+      );
 
     if (userId) {
       qb.andWhere("user.id = :userId", { userId });
@@ -2627,7 +2771,11 @@ export class JourneyService {
     console.log(plans);
     for (const plan of plans) {
       // Skip and Cleanup plans with missing relations
-      if (!plan.user || !plan.branch || !plan.shift) {
+      if (
+        !plan.user ||
+        (!plan.branch && !plan.allowAttendanceFromAnyProjectLocation) ||
+        !plan.shift
+      ) {
         console.warn(
           `Cleaning up plan ${plan.id}: missing user, branch, or shift relation`,
         );
@@ -2648,12 +2796,15 @@ export class JourneyService {
         ? JourneyStatus.VACATION
         : JourneyStatus.ABSENT;
 
-      const exists = await this.journeyRepo.findOne({
+      const exists = await this.findExistingPlannedJourney(plan, {
         where: {
           user: { id: plan.user.id },
           shift: { id: plan.shift.id },
           date: tomorrow,
-          branch: { id: plan.branch.id },
+          ...(plan.allowAttendanceFromAnyProjectLocation ||
+          plan.projectId === INATURAL_PROJECT_ID
+            ? { projectId: plan.projectId }
+            : { branch: { id: plan.branch?.id } }),
         },
         relations: ["journeyPlan"],
         withDeleted: true,
@@ -2678,7 +2829,9 @@ export class JourneyService {
         user: plan.user,
         branch: plan.branch,
         shift: plan.shift,
-        projectId: plan.projectId || plan.branch.project?.id,
+        allowAttendanceFromAnyProjectLocation:
+          plan.allowAttendanceFromAnyProjectLocation === true,
+        projectId: plan.projectId || plan.branch?.project?.id,
         date: tomorrow,
         type: JourneyType.PLANNED,
         status: initialStatus,
@@ -2714,6 +2867,30 @@ export class JourneyService {
       journey.journeyPlan = plan;
       await this.journeyRepo.save(journey);
     }
+  }
+
+  private async findExistingPlannedJourney(
+    plan: JourneyPlan,
+    options: {
+      where: FindOptionsWhere<Journey>;
+      relations?: string[];
+      withDeleted?: boolean;
+    },
+  ) {
+    const existing = await this.journeyRepo.findOne(options);
+    if (existing || plan.allowAttendanceFromAnyProjectLocation !== false)
+      return existing;
+    // A previously enabled shift may already have recorded a different actual
+    // branch. Turning the flag off must not create a second copy of that plan.
+    const { branch: _branch, ...identity } = options.where;
+    return this.journeyRepo.findOne({
+      ...options,
+      where: {
+        ...identity,
+        projectId: plan.projectId,
+        journeyPlan: { id: plan.id },
+      },
+    });
   }
 
   private isWithinGeofence(
@@ -2813,7 +2990,10 @@ export class JourneyService {
       .andWhere("plan.is_active = :planIsActive", { planIsActive: true })
       .andWhere("user.deleted_at IS NULL")
       .andWhere("user.is_active = :isActive", { isActive: true })
-      .andWhere("branch.deleted_at IS NULL");
+      .andWhere("branch.deleted_at IS NULL")
+      .andWhere(
+        '(branch.id IS NOT NULL OR plan."allowAttendanceFromAnyProjectLocation" = true)',
+      );
 
     if (userId) {
       qb.andWhere("user.id = :userId", { userId });
@@ -2826,7 +3006,11 @@ export class JourneyService {
 
     for (const plan of plans) {
       // Skip and Cleanup plans with missing relations
-      if (!plan.user || !plan.branch || !plan.shift) {
+      if (
+        !plan.user ||
+        (!plan.branch && !plan.allowAttendanceFromAnyProjectLocation) ||
+        !plan.shift
+      ) {
         console.warn(
           `Cleaning up plan ${plan.id}: missing user, branch, or shift relation`,
         );
@@ -2847,12 +3031,16 @@ export class JourneyService {
         ? JourneyStatus.VACATION
         : JourneyStatus.ABSENT;
 
-      const exists = await this.journeyRepo.findOne({
+      const exists = await this.findExistingPlannedJourney(plan, {
         where: {
           user: { id: plan.user.id },
           shift: { id: plan.shift.id },
           date: today,
-          branch: { id: plan.branch.id }, // ✅ Check branch to allow multiple journeys/shift
+          // Inatural's actual site can change at check-in; it is not its identity.
+          ...(plan.allowAttendanceFromAnyProjectLocation ||
+          plan.projectId === INATURAL_PROJECT_ID
+            ? { projectId: plan.projectId }
+            : { branch: { id: plan.branch?.id } }),
           status: Not(
             In([
               JourneyStatus.UNPLANNED_ABSENT,
@@ -2879,7 +3067,9 @@ export class JourneyService {
         user: plan.user,
         branch: plan.branch,
         shift: plan.shift,
-        projectId: plan.projectId || plan.branch.project?.id,
+        allowAttendanceFromAnyProjectLocation:
+          plan.allowAttendanceFromAnyProjectLocation === true,
+        projectId: plan.projectId || plan.branch?.project?.id,
         date: today,
         type: JourneyType.PLANNED,
         status: initialStatus,
@@ -2946,7 +3136,10 @@ export class JourneyService {
       .andWhere("plan.is_active = :planIsActive", { planIsActive: true })
       .andWhere("user.deleted_at IS NULL")
       .andWhere("user.is_active = :isActive", { isActive: true })
-      .andWhere("branch.deleted_at IS NULL");
+      .andWhere("branch.deleted_at IS NULL")
+      .andWhere(
+        '(branch.id IS NOT NULL OR plan."allowAttendanceFromAnyProjectLocation" = true)',
+      );
 
     const plans = await qb.getMany();
 
@@ -2955,16 +3148,24 @@ export class JourneyService {
     const errors = [];
 
     for (const plan of plans) {
-      if (!plan.user || !plan.branch || !plan.shift) continue;
+      if (
+        !plan.user ||
+        (!plan.branch && !plan.allowAttendanceFromAnyProjectLocation) ||
+        !plan.shift
+      )
+        continue;
 
       try {
         // 2. Check if journey exists, including inactive rows that can be restored.
-        const journey = await this.journeyRepo.findOne({
+        const journey = await this.findExistingPlannedJourney(plan, {
           where: {
             user: { id: plan.user.id },
             shift: { id: plan.shift.id },
             date: targetDate,
-            branch: { id: plan.branch.id },
+            ...(plan.allowAttendanceFromAnyProjectLocation ||
+            plan.projectId === INATURAL_PROJECT_ID
+              ? { projectId: plan.projectId }
+              : { branch: { id: plan.branch?.id } }),
             status: Not(
               In([
                 JourneyStatus.UNPLANNED_ABSENT,
@@ -2994,7 +3195,9 @@ export class JourneyService {
             user: plan.user,
             branch: plan.branch,
             shift: plan.shift,
-            projectId: plan.projectId || plan.branch.project?.id,
+            allowAttendanceFromAnyProjectLocation:
+              plan.allowAttendanceFromAnyProjectLocation === true,
+            projectId: plan.projectId || plan.branch?.project?.id,
             date: targetDate,
             type: JourneyType.PLANNED,
             status: JourneyStatus.ABSENT,

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { DataSource, EntityManager } from "typeorm";
+import { DataSource, EntityManager, In } from "typeorm";
 import { User } from "entities/user.entity";
 import { Project } from "entities/project.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
@@ -21,6 +21,7 @@ import {
 import { vacationBalanceType } from "./vacation-balance-type";
 
 interface UsageRow {
+  userId?: string;
   date: string;
   period: string | null;
   annual: string;
@@ -136,14 +137,14 @@ export class VacationBalanceService {
 
   private async usage(
     manager: EntityManager,
-    userId: string,
+    userId: string | string[],
     excludeVacationId?: string,
   ): Promise<UsageRow[]> {
     const rows: (UsageRow & {
       reason: string;
       compensatoryTracked: boolean;
     })[] = await manager.query(
-      `SELECT d.date::text AS date, d.balance_period_start::text AS period,
+      `SELECT v.user_id AS "userId", d.date::text AS date, d.balance_period_start::text AS period,
         COALESCE(d.annual_balance_days, 1)::text AS annual,
         COALESCE(d.compensatory_balance_days, 0)::text AS compensatory,
         v.overall_status::text AS status, v.reason,
@@ -154,10 +155,10 @@ export class VacationBalanceService {
               (d.compensatory_balance_days IS NOT NULL AND c.created_at <= d.updated_at))
         ) AS "compensatoryTracked"
       FROM vacation_dates d JOIN vacations v ON v.id = d.vacation_id
-      WHERE v.user_id = $1 AND v.deleted_at IS NULL AND d.deleted_at IS NULL
+      WHERE v.user_id = ANY($1::uuid[]) AND v.deleted_at IS NULL AND d.deleted_at IS NULL
         AND v.overall_status IN ('pending', 'approved')
         AND ($2::uuid IS NULL OR v.id <> $2::uuid)`,
-      [userId, excludeVacationId ?? null],
+      [Array.isArray(userId) ? userId : [userId], excludeVacationId ?? null],
     );
     return rows.map((row) => {
       const type = vacationBalanceType(row.reason);
@@ -177,12 +178,26 @@ export class VacationBalanceService {
     excludeVacationId?: string,
   ) {
     const account = await this.account(manager, user, today);
-    const period = contractPeriod(account.joiningDate, today);
     const rows = await this.usage(manager, user.id, excludeVacationId);
     const credits: { days: string }[] = await manager.query(
       `SELECT COALESCE(SUM(days),0)::text AS days FROM vacation_compensatory_credits WHERE user_id = $1 AND deleted_at IS NULL`,
       [user.id],
     );
+    return this.calculateSnapshot(
+      { ...account, userId: user.id },
+      today,
+      rows,
+      Number(credits[0]?.days ?? 0),
+    );
+  }
+
+  private calculateSnapshot(
+    account: VacationBalanceAccount,
+    today: string,
+    rows: UsageRow[],
+    compensatoryGranted: number,
+  ) {
+    const period = contractPeriod(account.joiningDate, today);
     const inCurrentPeriod = (row: UsageRow) =>
       row.date >= account.joiningDate &&
       (row.period ?? contractPeriod(account.joiningDate, row.date).start) ===
@@ -193,7 +208,6 @@ export class VacationBalanceService {
     const accrued = earnedAnnualDays(account.joiningDate, today);
     const annualUsed = sum(periodRows, "annual");
     const compensatoryUsed = sum(rows, "compensatory");
-    const compensatoryGranted = Number(credits[0]?.days ?? 0);
     // Keep historical debt visible: imported/existing leave can exceed
     // today's accrual and must not disappear when credits are granted.
     const annualRemaining = roundDays(accrued - annualUsed);
@@ -202,7 +216,7 @@ export class VacationBalanceService {
       roundDays(compensatoryGranted - compensatoryUsed),
     );
     return {
-      userId: user.id,
+      userId: account.userId,
       joiningDate: account.joiningDate,
       periodStart: period.start,
       periodEndExclusive: period.end,
@@ -230,6 +244,97 @@ export class VacationBalanceService {
         roundDays(Math.max(0, annualRemaining) + compensatoryRemaining),
       ),
     };
+  }
+
+  summary(balance: {
+    annualRemainingDays: number;
+    compensatoryRemainingDays: number;
+  }) {
+    return {
+      annualRemainingDays: balance.annualRemainingDays,
+      compensatoryRemainingDays: balance.compensatoryRemainingDays,
+    };
+  }
+
+  // Enrich an existing authorized response; do not grant extra balance access.
+  // All page balances share one consistent database snapshot, without write locks.
+  async withBalances<T extends { id: string }>(
+    users: T[],
+    actor: User,
+    now = new Date(),
+  ) {
+    type Balance = ReturnType<VacationBalanceService["calculateSnapshot"]>;
+    const balances = new Map<string, Balance>();
+    if (users.length && actor?.id) {
+      await this.dataSource.transaction("REPEATABLE READ", async (manager) => {
+        const requester = await manager.findOne(User, {
+          where: { id: actor.id },
+          relations: ["role", "project", "branch", "branch.project"],
+        });
+        if (!requester) return;
+        const employees = await manager.find(User, {
+          where: { id: In(users.map((user) => user.id)) },
+          relations: ["project", "branch", "branch.project"],
+        });
+        const allowed = employees.filter(
+          (employee) =>
+            requester.role?.name === "super_admin" ||
+            requester.id === employee.id ||
+            (requester.role?.name === "admin" &&
+              this.projectId(requester) === this.projectId(employee)),
+        );
+        if (!allowed.length) return;
+        const employeeProjects = new Map(
+          allowed.map((user) => [user.id, this.projectId(user)]),
+        );
+        const accounts = (
+          await manager.find(VacationBalanceAccount, {
+            where: { userId: In(allowed.map((user) => user.id)) },
+            relations: ["project"],
+          })
+        ).filter(
+          (account) =>
+            account.project?.name?.trim().toLowerCase() === "taqnia" &&
+            account.projectId === employeeProjects.get(account.userId),
+        );
+        if (!accounts.length) return;
+        const ids = accounts.map((account) => account.userId);
+        const usage = await this.usage(manager, ids);
+        const credits: { userId: string; days: string }[] = await manager.query(
+          `SELECT user_id AS "userId", SUM(days)::text AS days
+           FROM vacation_compensatory_credits
+           WHERE user_id = ANY($1::uuid[]) AND deleted_at IS NULL GROUP BY user_id`,
+          [ids],
+        );
+        const creditsByUser = new Map(
+          credits.map((credit) => [credit.userId, Number(credit.days)]),
+        );
+        const usageByUser = new Map<string, UsageRow[]>();
+        for (const row of usage) {
+          const rows = usageByUser.get(row.userId) ?? [];
+          rows.push(row);
+          usageByUser.set(row.userId, rows);
+        }
+        const today = balanceToday(now);
+        for (const account of accounts) {
+          balances.set(
+            account.userId,
+            this.calculateSnapshot(
+              account,
+              today,
+              usageByUser.get(account.userId) ?? [],
+              creditsByUser.get(account.userId) ?? 0,
+            ),
+          );
+        }
+      });
+    }
+    return users.map((user) => ({
+      ...user,
+      vacationBalance: balances.has(user.id)
+        ? this.summary(balances.get(user.id))
+        : null,
+    }));
   }
 
   async getBalance(userId: string, actor: User, now = new Date()) {
@@ -288,14 +393,7 @@ export class VacationBalanceService {
       );
     return this.withEmployee(userId, async (manager, user) => {
       await this.access(manager, user, actor, true);
-      const granter = await manager.findOne(User, {
-        where: { id: actor.id, is_active: true },
-      });
-      if (granter?.canGrantCompensatoryLeave !== true) {
-        throw new ForbiddenException(
-          "You do not have permission to add compensatory vacation days / ليس لديك صلاحية إضافة رصيد إجازة تعويضية",
-        );
-      }
+      await this.authorizeCompensatoryGrant(manager, actor);
       await this.account(manager, user, balanceToday());
       await manager.save(VacationCompensatoryCredit, {
         userId,
@@ -305,6 +403,62 @@ export class VacationBalanceService {
       });
       return this.snapshot(manager, user, balanceToday());
     });
+  }
+
+  async setCompensatoryRemainingDays<T = undefined>(
+    userId: string,
+    days: number,
+    actor: User,
+    updateUser?: (manager: EntityManager) => Promise<T>,
+  ) {
+    if (
+      typeof days !== "number" ||
+      !Number.isFinite(days) ||
+      days < 0 ||
+      days > 365 ||
+      roundDays(days) !== days
+    ) {
+      throw new BadRequestException(
+        "Compensatory remaining days must be between 0 and 365, with at most four decimal places",
+      );
+    }
+    return this.withEmployee(userId, async (manager, user) => {
+      await this.access(manager, user, actor, true);
+      await this.authorizeCompensatoryGrant(manager, actor);
+      const current = await this.snapshot(manager, user, balanceToday());
+      const adjustment = roundDays(
+        days -
+          (current.compensatoryGrantedDays -
+            current.compensatoryUsedOrReservedDays),
+      );
+      if (adjustment !== 0) {
+        await manager.save(VacationCompensatoryCredit, {
+          userId,
+          days: String(adjustment),
+          reason: `Compensatory remaining balance set to ${days} days via user update`,
+          grantedById: actor.id,
+        });
+      }
+      const updatedUser = updateUser ? await updateUser(manager) : undefined;
+      const balance = this.summary(
+        await this.snapshot(manager, user, balanceToday()),
+      );
+      return { user: updatedUser, vacationBalance: balance };
+    });
+  }
+
+  private async authorizeCompensatoryGrant(
+    manager: EntityManager,
+    actor: User,
+  ) {
+    const granter = await manager.findOne(User, {
+      where: { id: actor.id, is_active: true },
+    });
+    if (granter?.canGrantCompensatoryLeave !== true) {
+      throw new ForbiddenException(
+        "You do not have permission to add compensatory vacation days / ليس لديك صلاحية إضافة رصيد إجازة تعويضية",
+      );
+    }
   }
 
   async allocate(

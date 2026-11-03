@@ -2,6 +2,10 @@ import {
   IsArray,
   IsEnum,
   IsNotEmpty,
+  IsNumber,
+  Min,
+  Max,
+  ValidateIf,
   IsOptional,
   IsString,
   IsUUID,
@@ -82,6 +86,12 @@ export class RegisterDto {
 }
 
 export class UpdateUserDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ maxDecimalPlaces: 4, allowInfinity: false, allowNaN: false })
+  @Min(0)
+  @Max(365)
+  compensatoryRemainingDays?: number;
+
   @IsOptional()
   @IsString()
   name?: string;
