@@ -82,6 +82,19 @@ slash URLs. Existing device-binding rules remain enforced.
 
 ### Mobile defects to report, without changing the app here
 
+**Additional Android identifier defect confirmed from source:**
+`Utils.getDeviceId()` returns `androidInfo.id`, and the login button submits that
+value as `mac_id`. This is an Android build label/changelist identifier, not a
+unique phone identifier or hardware MAC address. See the
+[device_info_plus field documentation](https://pub.dev/documentation/device_info_plus/latest/device_info_plus/AndroidDeviceInfo/id.html)
+and [Android Build.ID reference](https://developer.android.com/reference/android/os/Build#ID).
+The mobile developer must correct identifier selection and coordinate migration
+of existing bindings; the server cannot recover a unique phone identifier from
+a shared build label. The submitted screenshot saying “registered to another
+MAC ID” establishes an identifier mismatch, but its username is unknown, so no
+specific account or physical-device cause has been established and no binding
+was reset.
+
 1. `custom_login_btn.dart` can submit while its asynchronous device-ID lookup is
    still pending, sending `mac_id: null`. The backend correctly rejects this for
    an already-bound account. Wait for the identifier, reject sentinel/error
@@ -114,6 +127,28 @@ scoped ESLint, formatting, and diff checks passed. The full suite had 357 passin
 on a separate scratch baseline with these changes removed. The repository's
 `init` build wrapper and legacy ESLint configuration were not executed.
 
-No database migration is required. Deploying the backend is required before
-production clients receive these responses. A physical-device check and the
-mobile cache/session follow-ups remain necessary for full client verification.
+Deployed to production on November 3, 2026. Eight source files and 24 compiled
+artifacts were published, preserving unrelated server edits. The production
+source was compiled and all 81 focused tests passed in a separate staging copy.
+Only `ce-api-back` was restarted; all three application processes were online
+after verification. No migration, environment change, or mobile release was made.
+
+Rollback backup and release manifest:
+`/var/www/joe-mi-ce/backups/mobile-login-journeys-20261103T173240Z`.
+The verified `rollback.tar.gz` SHA-256 is
+`28f8c1c0bdbc324f35ffb3dd7b93122c949dfdaf0ee0a66ee07620cf6a0896a0`.
+The first restart automatically rolled back because compiled TypeScript aliases
+had not been rewritten to production's relative-import convention. The staged
+artifacts were corrected and their imports loaded successfully in an isolated
+runtime before the successful second publication.
+
+Post-deployment public API checks passed: both `inat#6579` and `inat#2345` logged
+in with HTTP 201 and received diagnostic IDs; profile and journey reads returned 200. `inat#2345` received the display-only branch label in English and `ar-SA`.
+Omitting its required device ID correctly returned localized 403 responses with
+`DEVICE_ID_REQUIRED`. Both device bindings remained unchanged. Unauthenticated
+journey access still returned 401. The deployed guard returned 503 for a simulated
+user-lookup timeout in an isolated test, without injecting a real database fault.
+
+A physical-device check and the mobile cache/session follow-ups remain necessary
+for full client verification. The exact historical `AEC-278` logout cause remains
+unconfirmed.

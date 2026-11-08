@@ -619,7 +619,6 @@ export class JourneyController {
     };
 
     let supervisorBranchIds: string[] = [];
-    let teamUserIds: string[] = [];
 
     if (user.role.name === ERole.SUPERVISOR) {
       const branches = await this.journeyService.getSupervisorBranches(user.id);
@@ -634,17 +633,6 @@ export class JourneyController {
         };
       }
       supervisorBranchIds = branches.map((b) => b.id);
-
-      // Fetch IDs of all promoters assigned to these branches
-      const teamUsers = await this.journeyService.userRepo.find({
-        where: {
-          branch: { id: In(supervisorBranchIds) },
-          role: { name: ERole.PROMOTER },
-          project_id: projectId,
-        },
-        select: ["id"],
-      });
-      teamUserIds = teamUsers.map((u) => u.id);
     }
 
     // Parse dates robustly using dayjs
@@ -855,20 +843,6 @@ export class JourneyController {
     }
     const dedupedUnplannedJourneys = Array.from(unplannedJourneyMap.values());
 
-    // Fetch all promoters assigned to supervisor's branches
-    let assignedPromoters: any[] = [];
-    if (user.role.name === ERole.SUPERVISOR && supervisorBranchIds.length > 0) {
-      assignedPromoters = await this.journeyService.userRepo.find({
-        where: {
-          branch: { id: In(supervisorBranchIds) },
-          role: { name: ERole.PROMOTER },
-          project_id: projectId,
-          is_active: true,
-        },
-        relations: ["branch", "role", "branch.city", "branch.city.region"],
-      });
-    }
-
     // Fallback index of planned journeys that are linked to a deactivated or
     // replaced plan. The daily cron links a journey to the plan that existed at
     // creation time; when the promoter is later re-planned (old plan
@@ -904,8 +878,6 @@ export class JourneyController {
     }
 
     const transformedData: any[] = [];
-    const seenPromoterDate = new Set<string>(); // Track 'userId:date:branchId'
-    const seenUserDateGlobal = new Set<string>(); // Track 'userId:date' to avoid fallback row if they worked elsewhere
 
     plans.records.forEach((plan: any) => {
       datesInRange.forEach((dateStr) => {
@@ -931,13 +903,8 @@ export class JourneyController {
           if (misplaced) matchingJourneys.push(misplaced);
         }
 
-        // If no journeys exist for this plan/date, mark as seen and push one row (even if inactive to show plan info)
+        // Active plans remain visible before a daily journey is generated.
         if (matchingJourneys.length === 0) {
-          seenPromoterDate.add(
-            `${plan.user?.id}:${dateStr}:${plan.branch?.id}`,
-          );
-          seenUserDateGlobal.add(`${plan.user?.id}:${dateStr}`);
-
           const attendanceStatus = "Absent";
           const attendanceStatusEn = getTranslatedStatus(
             attendanceStatus,
@@ -986,11 +953,6 @@ export class JourneyController {
 
         // If one or more journeys exist, push a row for each one
         matchingJourneys.forEach((journey) => {
-          seenPromoterDate.add(
-            `${plan.user?.id}:${dateStr}:${plan.branch?.id}`,
-          );
-          seenUserDateGlobal.add(`${plan.user?.id}:${dateStr}`);
-
           const checkin = journey?.checkin;
           const checkInTime = checkin?.checkInTime
             ? new Date(checkin.checkInTime)
@@ -1159,13 +1121,6 @@ export class JourneyController {
       const journeyStatusEn = getTranslatedStatus(journey.status, "en");
       const finalJourneyStatus = getTranslatedStatus(journey.status, lang);
 
-      // Filter: Only include if the journey's branch matches the promoter's assigned branch (if they have one)
-
-      seenPromoterDate.add(
-        `${journey.user?.id}:${journey.date}:${journey.branch?.id}`,
-      );
-      seenUserDateGlobal.add(`${journey.user?.id}:${journey.date}`);
-
       transformedData.push({
         planId: null,
         allowAttendanceFromAnyProjectLocation:
@@ -1205,65 +1160,6 @@ export class JourneyController {
         updatedAt: journey.updated_at,
         isActive: true,
         totalJourneys: 1,
-      });
-    });
-
-    // Add missing promoters who are assigned to supervisor branches but had no plan/journey for the dates
-    assignedPromoters.forEach((promoter) => {
-      datesInRange.forEach((dateStr) => {
-        if (
-          !seenPromoterDate.has(
-            `${promoter.id}:${dateStr}:${promoter.branch?.id}`,
-          ) &&
-          !seenUserDateGlobal.has(`${promoter.id}:${dateStr}`)
-        ) {
-          const attendanceStatus = "Absent";
-          const finalAttendanceStatus = getTranslatedStatus(
-            attendanceStatus,
-            lang,
-          );
-          const attendanceStatusEn = getTranslatedStatus(
-            attendanceStatus,
-            "en",
-          );
-
-          transformedData.push({
-            planId: null,
-            allowAttendanceFromAnyProjectLocation: false,
-            branchName: promoter.branch?.name,
-            branchId: promoter.branch?.id,
-            city: promoter.branch?.city?.name,
-            region: promoter.branch?.city?.region?.name,
-            promoterName: promoter.name,
-            promoterId: promoter.id,
-            shiftName: null,
-            days: [],
-            isActiveForToday: false,
-            attendanceStatus: finalAttendanceStatus,
-            attendanceStatusEn,
-            checkInDocument: null,
-            checkOutDocument: null,
-            checkInTime: null,
-            checkOutTime: null,
-            shiftStartTime: null,
-            shiftEndTime: null,
-            noteIn: null,
-            noteOut: null,
-            isWithinRadius: null,
-            journeyId: null,
-            journeyStatus: null,
-            journeyStatusEn: null,
-            journeyDate: dateStr,
-            createdAt: promoter.created_at,
-            updatedAt: promoter.updated_at,
-            isActive: promoter.is_active,
-            totalJourneys: 0,
-          });
-          seenPromoterDate.add(
-            `${promoter.id}:${dateStr}:${promoter.branch?.id}`,
-          );
-          seenUserDateGlobal.add(`${promoter.id}:${dateStr}`);
-        }
       });
     });
 
