@@ -62,8 +62,9 @@ export class VacationBalanceService {
     allowSelf: boolean,
   ) {
     if (!(await this.isEnabled(manager, user))) return;
-    if (!actor?.id)
+    if (!actor?.id) {
       throw new ForbiddenException("Authenticated employee is required");
+    }
     const requester = await manager.findOne(User, {
       where: { id: actor.id },
       relations: ["role", "project", "branch", "branch.project"],
@@ -74,8 +75,9 @@ export class VacationBalanceService {
       !requester ||
       !["admin", "supervisor"].includes(requester.role?.name) ||
       this.projectId(requester) !== this.projectId(user)
-    )
+    ) {
       throw new ForbiddenException("Vacation request is outside your project");
+    }
   }
 
   private async access(
@@ -84,10 +86,11 @@ export class VacationBalanceService {
     actor: User,
     adminOnly = false,
   ) {
-    if (!(await this.isEnabled(manager, user)))
+    if (!(await this.isEnabled(manager, user))) {
       throw new BadRequestException(
         "Vacation balances are enabled for Taqnia only",
       );
+    }
     const requester = await manager.findOne(User, {
       where: { id: actor.id },
       relations: ["role", "project", "branch", "branch.project"],
@@ -96,10 +99,14 @@ export class VacationBalanceService {
     const role = requester.role?.name;
     if (role === "super_admin") return;
     if (!adminOnly && requester.id === user.id) return;
-    if (role !== "admin" || this.projectId(requester) !== this.projectId(user))
+    if (
+      role !== "admin" ||
+      this.projectId(requester) !== this.projectId(user)
+    ) {
       throw new ForbiddenException(
         "Only the employee or their project administrator can access this balance",
       );
+    }
   }
 
   // Lock the employee before the account: all submission, status and credit
@@ -118,19 +125,33 @@ export class VacationBalanceService {
     });
   }
 
-  private async account(manager: EntityManager, user: User, today: string) {
+  // Compensatory credits are admin-granted and never accrue from employment
+  // time, so they do not require a registered joining date; annual accrual does.
+  private static joinMessage =
+    "Employment joining date is missing. Ask the Taqnia administrator to set it. / تاريخ الالتحاق بالعمل غير مسجل";
+
+  private async obtainAccount(
+    manager: EntityManager,
+    user: User,
+    today: string,
+  ): Promise<VacationBalanceAccount | null> {
     const account = await manager.findOne(VacationBalanceAccount, {
       where: { userId: user.id },
       lock: { mode: "pessimistic_write" },
     });
-    if (!account || account.projectId !== this.projectId(user))
-      throw new BadRequestException(
-        "Employment joining date is missing. Ask the Taqnia administrator to set it. / تاريخ الالتحاق بالعمل غير مسجل",
-      );
+    if (!account || account.projectId !== this.projectId(user)) return null;
     const period = contractPeriod(account.joiningDate, today);
     if (account.periodStart !== period.start) {
       account.periodStart = period.start;
       await manager.save(VacationBalanceAccount, account);
+    }
+    return account;
+  }
+
+  private async account(manager: EntityManager, user: User, today: string) {
+    const account = await this.obtainAccount(manager, user, today);
+    if (!account) {
+      throw new BadRequestException(VacationBalanceService.joinMessage);
     }
     return account;
   }
@@ -177,35 +198,42 @@ export class VacationBalanceService {
     today: string,
     excludeVacationId?: string,
   ) {
-    const account = await this.account(manager, user, today);
+    const account = await this.obtainAccount(manager, user, today);
     const rows = await this.usage(manager, user.id, excludeVacationId);
     const credits: { days: string }[] = await manager.query(
       `SELECT COALESCE(SUM(days),0)::text AS days FROM vacation_compensatory_credits WHERE user_id = $1 AND deleted_at IS NULL`,
       [user.id],
     );
     return this.calculateSnapshot(
-      { ...account, userId: user.id },
+      account,
+      user.id,
       today,
       rows,
       Number(credits[0]?.days ?? 0),
     );
   }
 
+  // When no balance account exists yet (no joining date), only compensatory
+  // fields are meaningful; annual accrual stays zero until a date is set.
   private calculateSnapshot(
-    account: VacationBalanceAccount,
+    account: VacationBalanceAccount | null,
+    userId: string,
     today: string,
     rows: UsageRow[],
     compensatoryGranted: number,
   ) {
-    const period = contractPeriod(account.joiningDate, today);
-    const inCurrentPeriod = (row: UsageRow) =>
-      row.date >= account.joiningDate &&
-      (row.period ?? contractPeriod(account.joiningDate, row.date).start) ===
-        period.start;
+    const period = account ? contractPeriod(account.joiningDate, today) : null;
+    const inCurrentPeriod = account
+      ? (row: UsageRow) =>
+          row.date >= account.joiningDate &&
+          (row.period ??
+            contractPeriod(account.joiningDate, row.date).start) ===
+            period.start
+      : () => false;
     const periodRows = rows.filter(inCurrentPeriod);
     const sum = (values: UsageRow[], key: "annual" | "compensatory") =>
       roundDays(values.reduce((total, row) => total + Number(row[key]), 0));
-    const accrued = earnedAnnualDays(account.joiningDate, today);
+    const accrued = account ? earnedAnnualDays(account.joiningDate, today) : 0;
     const annualUsed = sum(periodRows, "annual");
     const compensatoryUsed = sum(rows, "compensatory");
     // Keep historical debt visible: imported/existing leave can exceed
@@ -216,10 +244,10 @@ export class VacationBalanceService {
       roundDays(compensatoryGranted - compensatoryUsed),
     );
     return {
-      userId: account.userId,
-      joiningDate: account.joiningDate,
-      periodStart: period.start,
-      periodEndExclusive: period.end,
+      userId,
+      joiningDate: account?.joiningDate ?? null,
+      periodStart: period?.start ?? null,
+      periodEndExclusive: period?.end ?? null,
       asOf: today,
       annualEntitlementDays: 21,
       accruedDays: accrued,
@@ -321,6 +349,7 @@ export class VacationBalanceService {
             account.userId,
             this.calculateSnapshot(
               account,
+              account.userId,
               today,
               usageByUser.get(account.userId) ?? [],
               creditsByUser.get(account.userId) ?? 0,
@@ -360,10 +389,11 @@ export class VacationBalanceService {
           `SELECT count(*)::text AS count FROM vacation_dates d JOIN vacations v ON v.id=d.vacation_id WHERE v.user_id=$1 AND d.balance_period_start IS NOT NULL AND v.deleted_at IS NULL AND d.deleted_at IS NULL AND v.overall_status IN ('pending','approved')`,
           [userId],
         );
-        if (Number(allocated[0]?.count) > 0)
+        if (Number(allocated[0]?.count) > 0) {
           throw new BadRequestException(
             "Joining date cannot change while allocated vacation requests exist",
           );
+        }
       }
       await manager.save(VacationBalanceAccount, {
         userId,
@@ -387,14 +417,14 @@ export class VacationBalanceService {
       days > 365 ||
       roundDays(days) !== days ||
       !reason?.trim()
-    )
+    ) {
       throw new BadRequestException(
         "A positive number of days (maximum 365) and a reason are required",
       );
+    }
     return this.withEmployee(userId, async (manager, user) => {
       await this.access(manager, user, actor, true);
       await this.authorizeCompensatoryGrant(manager, actor);
-      await this.account(manager, user, balanceToday());
       await manager.save(VacationCompensatoryCredit, {
         userId,
         days: String(days),
@@ -479,10 +509,15 @@ export class VacationBalanceService {
       today,
       excludeVacationId,
     );
-    if (dates.some((date) => date < balance.joiningDate))
+    if (!balance.joiningDate) {
+      if (type === "annual") {
+        throw new BadRequestException(VacationBalanceService.joinMessage);
+      }
+    } else if (dates.some((date) => date < balance.joiningDate)) {
       throw new BadRequestException(
         "Vacation cannot precede the employment joining date",
       );
+    }
     let annual =
       type === "annual" ? Math.max(0, balance.annualRemainingDays) : 0;
     let compensatory =
@@ -490,8 +525,12 @@ export class VacationBalanceService {
     const selectedAvailable = type === "annual" ? annual : compensatory;
     const results: Partial<VacationDate>[] = [];
     for (const date of dates) {
-      const period = contractPeriod(balance.joiningDate, date);
-      const eligibleAnnual = period.start === balance.periodStart ? annual : 0;
+      // Without a joining date there is no contract period: everything is
+      // compensated from admin credits and no period is recorded.
+      const period = balance.joiningDate
+        ? contractPeriod(balance.joiningDate, date)
+        : null;
+      const eligibleAnnual = period?.start === balance.periodStart ? annual : 0;
       if (roundDays(eligibleAnnual + compensatory) < 1) {
         const available = Math.floor(selectedAvailable * 100) / 100;
         throw new BadRequestException({
@@ -501,7 +540,7 @@ export class VacationBalanceService {
           message: lang.toLowerCase().startsWith("ar")
             ? `رصيد الإجازات المتاح لديك هو ${available} يومًا`
             : `You only have ${available} vacation days available`,
-          periodStart: period.start,
+          periodStart: period?.start ?? null,
         });
       }
       const allocation = allocateVacationDays(
@@ -512,7 +551,7 @@ export class VacationBalanceService {
       annual = roundDays(annual - allocation.annualDays);
       compensatory = roundDays(compensatory - allocation.compensatoryDays);
       results.push({
-        balancePeriodStart: period.start,
+        balancePeriodStart: period?.start ?? null,
         annualBalanceDays: String(allocation.annualDays),
         compensatoryBalanceDays: String(allocation.compensatoryDays),
       });

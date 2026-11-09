@@ -29,7 +29,7 @@ Grant requests are additive: submit once per intended grant. Adding credits requ
 
 Login, refresh and `/api/v1/auth/me` responses expose `canGrantCompensatoryLeave` as a boolean for the frontend. Show the grant control only when this value is `true`; the server rechecks the stored permission for every grant. It is not accepted by the public registration or user-update DTOs.
 
-The balance response includes `joiningDate`, `periodStart`, `periodEndExclusive`, `asOf`, `annualEntitlementDays`, `accruedDays`, `annualUsedOrReservedDays`, `annualRemainingDays`, `compensatoryGrantedDays`, `compensatoryUsedOrReservedDays`, `compensatoryRemainingDays`, `pendingReservedDays` and `availableDays`.
+The balance response includes `joiningDate`, `periodStart`, `periodEndExclusive`, `asOf`, `annualEntitlementDays`, `accruedDays`, `annualUsedOrReservedDays`, `annualRemainingDays`, `compensatoryGrantedDays`, `compensatoryUsedOrReservedDays`, `compensatoryRemainingDays`, `pendingReservedDays` and `availableDays`. When no balance account exists yet (no registering joining date), `joiningDate`, `periodStart` and `periodEndExclusive` are `null`, all annual fields are zero, and only the compensatory amounts and `pendingReservedDays` are meaningful.
 
 Use `availableDays` to guide submission. `annualEntitlementDays` is a rate, not available leave. The server is authoritative. An insufficient request returns HTTP 400 with `code: "INSUFFICIENT_VACATION_BALANCE"`, numeric `availableDays`, `periodStart`, and an Arabic/English `message` selected by the existing language headers. Example: `رصيد الإجازات المتاح لديك هو 14 يومًا`.
 
@@ -37,7 +37,7 @@ Use `availableDays` to guide submission. `annualEntitlementDays` is a rate, not 
 
 Example compensatory request: `POST /api/v1/vacations` with `{ "userId": "<employee UUID>", "reason": "compensatory_leave", "dates": ["2026-11-01"] }`. Use `reason: "annual_leave"` for annual leave or `reason: "weekend_vacation"` for a weekly day off. The grant endpoint remains unchanged.
 
-Missing employment dates block Taqnia submissions with an actionable message. Set the date through the admin endpoint or the provided import.
+Only annual submissions require the registered joining date; a missing date answers HTTP 400 with an actionable message. Weekly and compensatory submissions work without one: compensatory days come entirely from admin grants and never accrue from employment time. Set the date through the admin endpoint or the provided import.
 
 ## Migration and import
 
@@ -119,3 +119,15 @@ The requested `reports.service.ts` update was deployed with this change: Taqnia 
 All 75 focused tests passed locally, including 15 PostgreSQL integration tests and an exported-workbook worksheet check. The staged production build/typecheck and 60 non-database tests passed. A verified full database dump, source backup, and previous compiled build are retained under `/root/deployments/taqnia-simple-vacation-20261103/backup`. Production activation applied the migration and restarted only `ce-api-back`; health and public compact GET checks passed. The deployed report service checksum matches the requested local file.
 
 No live balance was changed during verification. The supplied user belongs to Main Project and has no vacation balance account, so the initial same-value PUT check stopped before sending any PUT. Balance editing remains scoped to Taqnia as requested. Automatic approval review rejected a proposed PUT test on a different employee; setter behavior and permission denials were verified against disposable PostgreSQL instead.
+
+## Compensatory grants without a joining date — November 9, 2026
+
+Balance actions behind the admin "Add compensatory days" control no longer require a registered joining date. The admin compensatory grant endpoint, the absolute compensatory setter (`PUT /api/v1/users/:id` with `compensatoryRemainingDays`), compensatory submissions, and `GET /api/v1/vacations/balance/:userId` all succeed without a balance account. Rationale: compensatory credits are granted by administrators and never accrue from employment time, so the joining date is not required for them. Annual submissions and the joining-date endpoints keep requiring the date, because annual accrual is derived from it.
+
+When no account exists, the individual balance response returns `joiningDate`, `periodStart` and `periodEndExclusive` as `null` with all annual fields zero, while compensatory amounts and `pendingReservedDays` remain real. Compensatory allocations on vacation dates record `balance_period_start: null`, and annual eligibility stays zero for those dates. The response shape is otherwise unchanged. Bulk user and team responses still show `vacationBalance: null` for users without an account, even when they hold compensatory credits; the individual endpoint already shows the compensatory-only snapshot. Treat this display omission as accepted until a request below the list shows different numbers.
+
+No schema migration is required: `vacation_dates.balance_period_start` and the balance columns are already nullable.
+
+Verification: typecheck and the production build pass; all 44 unit tests across the five vacation suites pass, including new coverage for granting, setting, reading and submitting compensatory leave without a joining date plus the annual rejection path; all 15 opt-in PostgreSQL integration tests pass against a disposable local server. The full jest suite shows failures only in the export, documentbuilder, journey and payroll suites; those suites fail identically on the clean tree, so they are pre-existing. ESLint is clean for the two touched files after the repo lint script's scoped fixes, which also applied the pre-existing curly brace fixes inside those files.
+
+Not yet deployed. To activate: copy the touched sources (`src/vacation/vacation-balance.service.ts` and its spec) to the backend directory, rebuild with the relative module-path convention, restart only `ce-api-back`, and retain the previous source/build under the backup convention. Verify afterwards: HTTP 200 individual balance for an accountless Taqnia employee holding credits, a compensatory grant without a joining date, and HTTP 400 with the joining-date message for an annual submission from the same employee.

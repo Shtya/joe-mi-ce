@@ -27,10 +27,11 @@ describe("VacationBalanceService isolation", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     manager.findOne.mockImplementation(async (entity, options) => {
-      if (entity === User)
+      if (entity === User) {
         return options.where.id === "employee"
           ? target
           : { id: "admin", project_id: "other-id", role: { name: "admin" } };
+      }
       return { id: "taqnia-id", name: "taqnia" };
     });
   });
@@ -64,7 +65,7 @@ describe("VacationBalanceService isolation", () => {
       credit = 2;
       usage = [];
       manager.findOne.mockImplementation(async (entity, options) => {
-        if (entity === User)
+        if (entity === User) {
           return options.where.id === "employee"
             ? target
             : {
@@ -74,14 +75,16 @@ describe("VacationBalanceService isolation", () => {
                 is_active: true,
                 canGrantCompensatoryLeave: true,
               };
+        }
         if (entity === Project) return { id: "taqnia-id", name: "taqnia" };
-        if (entity === VacationBalanceAccount)
+        if (entity === VacationBalanceAccount) {
           return {
             userId: "employee",
             projectId: "taqnia-id",
             joiningDate: "2026-07-01",
             periodStart: "2026-07-01",
           };
+        }
         return null;
       });
       manager.query.mockImplementation(async (sql: string) =>
@@ -97,8 +100,9 @@ describe("VacationBalanceService isolation", () => {
             })),
       );
       manager.save.mockImplementation(async (entity, record) => {
-        if (entity === VacationCompensatoryCredit)
+        if (entity === VacationCompensatoryCredit) {
           credit += Number(record.days);
+        }
         return record;
       });
     });
@@ -187,7 +191,7 @@ describe("VacationBalanceService isolation", () => {
       "denies %s without the explicit user-level grant permission",
       async (role) => {
         manager.findOne.mockImplementation(async (entity) => {
-          if (entity === User)
+          if (entity === User) {
             return {
               ...target,
               id: "other-admin",
@@ -195,6 +199,7 @@ describe("VacationBalanceService isolation", () => {
               is_active: true,
               canGrantCompensatoryLeave: false,
             };
+          }
           if (entity === Project) return { name: "taqnia" };
           return null;
         });
@@ -312,5 +317,99 @@ describe("VacationBalanceService isolation", () => {
         ).toEqual([{}]);
       },
     );
+
+    // The admin mock from the enclosing beforeEach, minus the balance
+    // account: the employee has no registered joining date yet.
+    const withoutJoiningDate = () => {
+      manager.findOne.mockImplementation(async (entity, options) => {
+        if (entity === User) {
+          return options.where.id === "employee"
+            ? target
+            : {
+                id: "admin",
+                project_id: "taqnia-id",
+                role: { name: "admin" },
+                is_active: true,
+                canGrantCompensatoryLeave: true,
+              };
+        }
+        if (entity === Project) return { id: "taqnia-id", name: "taqnia" };
+        return null;
+      });
+    };
+
+    it("grants compensatory days without a joining date", async () => {
+      withoutJoiningDate();
+      const balance = await service.grantCompensatory(
+        "employee",
+        3,
+        "Extra work",
+        { id: "admin" } as User,
+      );
+      expect(balance.joiningDate).toBeNull();
+      expect(balance.periodStart).toBeNull();
+      expect(balance.accruedDays).toBe(0);
+      expect(balance.annualRemainingDays).toBe(0);
+      expect(balance.compensatoryGrantedDays).toBe(5);
+      expect(balance.compensatoryRemainingDays).toBe(5);
+      expect(balance.availableDays).toBe(5);
+    });
+
+    it("sets compensatory remaining days without a joining date", async () => {
+      withoutJoiningDate();
+      const result = await service.setCompensatoryRemainingDays("employee", 2, {
+        id: "admin",
+      } as User);
+      expect(result.vacationBalance.compensatoryRemainingDays).toBe(2);
+    });
+
+    it("reports a compensatory-only balance without a joining date", async () => {
+      withoutJoiningDate();
+      usage = [
+        {
+          date: "2026-10-02",
+          period: null,
+          annual: "0",
+          compensatory: "1",
+          status: "pending",
+        },
+      ];
+      const balance = await service.getBalance("employee", {
+        id: "employee",
+      } as User);
+      expect(balance.joiningDate).toBeNull();
+      expect(balance.annualRemainingDays).toBe(0);
+      expect(balance.compensatoryRemainingDays).toBe(1);
+      expect(balance.pendingReservedDays).toBe(1);
+    });
+
+    it("allocates compensatory leave without a joining date", async () => {
+      withoutJoiningDate();
+      expect(
+        await service.allocate(
+          manager as unknown as EntityManager,
+          target as User,
+          ["2026-10-02"],
+          "en",
+          undefined,
+          "compensatory_leave",
+        ),
+      ).toEqual([
+        {
+          balancePeriodStart: null,
+          annualBalanceDays: "0",
+          compensatoryBalanceDays: "1",
+        },
+      ]);
+    });
+
+    it("still requires the joining date for annual leave", async () => {
+      withoutJoiningDate();
+      await expect(
+        service.allocate(manager as unknown as EntityManager, target as User, [
+          "2026-10-02",
+        ]),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
   });
 });
