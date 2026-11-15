@@ -583,15 +583,27 @@ export class ExportService {
           (typeof item.vacationBalance === "object"
             ? item.vacationBalance
             : undefined);
-        if (balance && typeof balance.compensatoryRemainingDays === "number") {
-          for (const key of Object.keys(flattened)) {
-            if (
-              /^(user )?(joiningDate|annualRemainingDays|compensatoryRemainingDays)$/.test(
-                key,
-              )
-            )
-              delete flattened[key];
+        const hasBalance =
+          balance && typeof balance.compensatoryRemainingDays === "number";
+        for (const key of Object.keys(flattened)) {
+          // Nested fields inherit the requested module's prefix (users/teams).
+          const field = key
+            .toLowerCase()
+            .replace(/[\s_-]/g, "")
+            .replace(/^(users?|teams?|promoters?)/, "");
+          if (
+            ["vacationbalance", "cangrantcompensatoryleave"].includes(field) ||
+            (hasBalance &&
+              [
+                "joiningdate",
+                "annualremainingdays",
+                "compensatoryremainingdays",
+              ].includes(field))
+          ) {
+            delete flattened[key];
           }
+        }
+        if (hasBalance) {
           flattened["joining date"] =
             balance.joiningDate ?? item.joiningDate ?? "";
           flattened["annual remaining days"] = balance.annualRemainingDays;

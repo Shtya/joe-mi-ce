@@ -6,7 +6,7 @@ import { ExportService } from "./export.service";
 import { readVacationBalanceImport } from "src/vacation/vacation-balance-excel";
 
 describe("Taqnia balance workbook", () => {
-  it.each(["user", "teams"])(
+  it.each(["user", "users", "teams"])(
     "exports editable numeric balances for %s and imports the same columns",
     async (entity) => {
       const chunks: Buffer[] = [];
@@ -26,6 +26,8 @@ describe("Taqnia balance workbook", () => {
           {
             username: "AEC-01",
             name: "Employee",
+            joiningDate: "2026-07-01",
+            canGrantCompensatoryLeave: true,
             vacationBalance: "Annual: 14 | Compensatory: 3",
             vacationBalanceDetails: {
               joiningDate: "2026-07-01",
@@ -35,6 +37,7 @@ describe("Taqnia balance workbook", () => {
           },
           {
             username: "AEC-02",
+            canGrantCompensatoryLeave: false,
             vacationBalance: {
               joiningDate: null,
               annualRemainingDays: 0,
@@ -56,6 +59,16 @@ describe("Taqnia balance workbook", () => {
       expect(row["Annual Remaining Days"]).toBe(14);
       expect(row["Compensatory Remaining Days"]).toBe(3);
       expect(row["Joining Date"]).toBe("2026-07-01");
+      const balanceHeaders = Object.keys(row).filter((header) =>
+        /vacationbalance|annualremainingdays|compensatoryremainingdays|joiningdate|cangrantcompensatoryleave/.test(
+          header.toLowerCase().replace(/\s/g, ""),
+        ),
+      );
+      expect(balanceHeaders.sort()).toEqual([
+        "Annual Remaining Days",
+        "Compensatory Remaining Days",
+        "Joining Date",
+      ]);
       expect(readVacationBalanceImport(row)).toEqual({
         joiningDate: "2026-07-01",
         annualRemainingDays: 14,
