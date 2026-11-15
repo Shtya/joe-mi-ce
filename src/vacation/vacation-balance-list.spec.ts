@@ -34,32 +34,34 @@ describe("balances in employee responses", () => {
           : [],
     );
     manager.query.mockImplementation(async (sql: string) =>
-      sql.includes("FROM vacation_dates")
-        ? [
-            {
-              userId: "one",
-              date: "2026-09-01",
-              period: null,
-              status: "approved",
-              reason: "annual_leave",
-            },
-            {
-              userId: "one",
-              date: "2026-09-02",
-              period: null,
-              status: "pending",
-              reason: "compensatory_leave",
-              compensatoryTracked: true,
-            },
-            {
-              userId: "two",
-              date: "2026-09-03",
-              period: null,
-              status: "approved",
-              reason: "weekly_leave",
-            },
-          ]
-        : [{ userId: "one", days: "3" }],
+      sql.includes("vacation_annual_adjustments")
+        ? []
+        : sql.includes("FROM vacation_dates")
+          ? [
+              {
+                userId: "one",
+                date: "2026-09-01",
+                period: null,
+                status: "approved",
+                reason: "annual_leave",
+              },
+              {
+                userId: "one",
+                date: "2026-09-02",
+                period: null,
+                status: "pending",
+                reason: "compensatory_leave",
+                compensatoryTracked: true,
+              },
+              {
+                userId: "two",
+                date: "2026-09-03",
+                period: null,
+                status: "approved",
+                reason: "weekly_leave",
+              },
+            ]
+          : [{ userId: "one", days: "3" }],
     );
   });
   const read = () =>
@@ -70,7 +72,12 @@ describe("balances in employee responses", () => {
     );
   it("adds separate earned annual and compensatory balances to every eligible user in a batch", async () => {
     const result = await read();
+    expect(result[0].joiningDate).toBe("2026-07-01");
+    expect(result[1].joiningDate).toBe("2026-07-01");
+    expect(result[2].joiningDate).toBeNull();
+    expect(result[3].joiningDate).toBeNull();
     expect(result[0].vacationBalance).toMatchObject({
+      joiningDate: "2026-07-01",
       annualRemainingDays: 4.25,
       compensatoryRemainingDays: 2,
     });
@@ -83,9 +90,10 @@ describe("balances in employee responses", () => {
     expect(Object.keys(result[0].vacationBalance).sort()).toEqual([
       "annualRemainingDays",
       "compensatoryRemainingDays",
+      "joiningDate",
     ]);
     expect(result[0].id).toBe("one");
-    expect(manager.query).toHaveBeenCalledTimes(2);
+    expect(manager.query).toHaveBeenCalledTimes(3);
   });
   it("does not expose balances to another project's administrator", async () => {
     actor = {
@@ -93,15 +101,17 @@ describe("balances in employee responses", () => {
       project_id: "other-project",
       role: { name: "admin" },
     };
-    expect((await read()).every((user) => user.vacationBalance === null)).toBe(
-      true,
-    );
+    const records = await read();
+    expect(records.every((user) => user.vacationBalance === null)).toBe(true);
+    expect(records.every((user) => user.joiningDate === null)).toBe(true);
     expect(manager.query).not.toHaveBeenCalled();
   });
   it("limits an employee to their own balance", async () => {
     actor = { id: "one", project_id: "taqnia", role: { name: "promoter" } };
     const result = await read();
+    expect(result[0].joiningDate).toBe("2026-07-01");
     expect(result[0].vacationBalance).not.toBeNull();
+    expect(result[1].joiningDate).toBeNull();
     expect(result[1].vacationBalance).toBeNull();
   });
   it("allows super admin reads", async () => {

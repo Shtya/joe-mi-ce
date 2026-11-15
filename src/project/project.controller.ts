@@ -16,6 +16,7 @@ import {
   BadRequestException,
   ParseIntPipe,
   DefaultValuePipe,
+  Headers,
 } from "@nestjs/common";
 import { ProjectService } from "./project.service";
 import { AuthGuard } from "../auth/auth.guard";
@@ -25,6 +26,7 @@ import { CRUD } from "common/crud.service";
 import { Permissions } from "decorators/permissions.decorators";
 import { EPermission } from "enums/Permissions.enum";
 import { Brackets } from "typeorm";
+import { requestLanguage } from "common/request-language";
 
 @Controller("projects")
 @UseGuards(AuthGuard)
@@ -64,6 +66,7 @@ export class ProjectController {
     @Param("projectId") projectId: string,
     @Query() query: any,
     @Req() req: { user: User },
+    @Headers("lang") lang: string = "en",
   ) {
     // Robustly parse nested filters from query parameters
     const filters: any = {};
@@ -104,9 +107,23 @@ export class ProjectController {
       ["name", "mobile", "username"],
       filters,
     );
+    const records = await this.balances.withBalances(result.records, req.user);
+    const labels =
+      requestLanguage(lang) === "ar"
+        ? { annual: "سنوي", compensatory: "تعويضي" }
+        : { annual: "Annual", compensatory: "Compensatory" };
     return {
       ...result,
-      records: await this.balances.withBalances(result.records, req.user),
+      records: records.map((user) => ({
+        ...user,
+        // The existing Users table renders this field directly as a React child.
+        // Keep the numeric breakdown separately for clients needing each balance.
+        vacationBalance:
+          user.vacationBalance === null
+            ? null
+            : `${labels.annual}: ${user.vacationBalance.annualRemainingDays} | ${labels.compensatory}: ${user.vacationBalance.compensatoryRemainingDays}`,
+        vacationBalanceDetails: user.vacationBalance,
+      })),
     };
   }
 

@@ -7,10 +7,19 @@ import { User } from "entities/user.entity";
 import { Role } from "entities/role.entity";
 import { Project } from "entities/project.entity";
 import { Branch } from "entities/branch.entity";
+import { VacationBalanceAccount } from "entities/employee/vacation-balance-account.entity";
+import { VacationBalanceReadModule } from "src/vacation/vacation-balance-read.module";
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Role, Project, Branch]),
+    VacationBalanceReadModule,
+    TypeOrmModule.forFeature([
+      User,
+      Role,
+      Project,
+      Branch,
+      VacationBalanceAccount,
+    ]),
     JourneyModule,
   ],
 

@@ -92,3 +92,67 @@ describe("UsersService brand assignment", () => {
     expect(service.canAccessBrand(scope, "brand-3")).toBe(false);
   });
 });
+
+describe("UsersService joining date retrieval", () => {
+  const user = {
+    id: "user-1",
+    username: "john",
+    name: "John Doe",
+    project_id: "project-1",
+    role: { name: "promoter" },
+  };
+  const accountRepo = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+  };
+  const userRepo = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+  };
+  const dataSource = {
+    getRepository: jest.fn(() => accountRepo),
+  };
+
+  let service: UsersService;
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new UsersService(
+      userRepo as any,
+      {} as any,
+      {} as any,
+      dataSource as any,
+    );
+  });
+
+  it("includes joiningDate in getUserById", async () => {
+    userRepo.findOne.mockResolvedValue(user);
+    accountRepo.findOne.mockResolvedValue({
+      userId: "user-1",
+      joiningDate: "2026-07-01",
+    });
+
+    const result = await service.getUserById("user-1", "project-1");
+    expect(result.joiningDate).toBe("2026-07-01");
+    expect(accountRepo.findOne).toHaveBeenCalledWith({
+      where: { userId: "user-1", projectId: "project-1" },
+    });
+  });
+
+  it("returns null joiningDate when no account exists in getUserById", async () => {
+    userRepo.findOne.mockResolvedValue(user);
+    accountRepo.findOne.mockResolvedValue(null);
+
+    const result = await service.getUserById("user-1", "project-1");
+    expect(result.joiningDate).toBeNull();
+  });
+
+  it("includes joiningDate in getUsersInProject", async () => {
+    userRepo.find.mockResolvedValue([user]);
+    accountRepo.find.mockResolvedValue([
+      { userId: "user-1", joiningDate: "2026-07-01" },
+    ]);
+
+    const result = await service.getUsersInProject("project-1");
+    expect(result[0].joiningDate).toBe("2026-07-01");
+  });
+});

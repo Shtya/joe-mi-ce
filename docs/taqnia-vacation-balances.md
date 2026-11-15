@@ -49,6 +49,10 @@ Only annual submissions require the registered joining date; a missing date answ
 
 ## Verification
 
+### Compensatory grants without a joining date (November 15, 2026)
+
+Apply `database/20261115_compensatory_credits_employee_fk.sql` before deploying the updated credit entity. It replaces the credit's foreign key to the annual balance account with a direct reference to `users(id)`, preserving existing credits, reasons, grant administrators, and employee-deletion cleanup. It supports SQL-created and TypeORM-generated constraint names and can be rerun. A busy table causes a lock-timeout failure after five seconds; retry the migration during a quieter period. No joining dates or annual balances are invented. This is required for both additive grants and absolute compensatory balance edits before a joining date is registered.
+
 Run unit tests with `node node_modules/jest/bin/jest.js --runInBand src/vacation`.
 
 The opt-in PostgreSQL tests require a **disposable** local database named `taqnia_vacation_test` on `/tmp` Unix sockets, port 55439, owned by `mostafa`. They recreate that database's public schema. Run `TAQNIA_TEST_POSTGRES=1 node node_modules/jest/bin/jest.js --runInBand --runTestsByPath src/vacation/vacation-balance.integration.spec.ts`. They never use the application's database environment variables. The business clock is fixed to October 26, 2026 for repeatability.
@@ -131,3 +135,17 @@ No schema migration is required: `vacation_dates.balance_period_start` and the b
 Verification: typecheck and the production build pass; all 44 unit tests across the five vacation suites pass, including new coverage for granting, setting, reading and submitting compensatory leave without a joining date plus the annual rejection path; all 15 opt-in PostgreSQL integration tests pass against a disposable local server. The full jest suite shows failures only in the export, documentbuilder, journey and payroll suites; those suites fail identically on the clean tree, so they are pre-existing. ESLint is clean for the two touched files after the repo lint script's scoped fixes, which also applied the pre-existing curly brace fixes inside those files.
 
 Not yet deployed. To activate: copy the touched sources (`src/vacation/vacation-balance.service.ts` and its spec) to the backend directory, rebuild with the relative module-path convention, restart only `ce-api-back`, and retain the previous source/build under the backup convention. Verify afterwards: HTTP 200 individual balance for an accountless Taqnia employee holding credits, a compensatory grant without a joining date, and HTTP 400 with the joining-date message for an annual submission from the same employee.
+
+## Joining date and annual balance edits — November 12, 2026
+
+GET balance responses now include `joiningDate`, `annualRemainingDays`, and `compensatoryRemainingDays`. User responses expose these in the existing balance object. `PUT /api/v1/users/:id` accepts any combination of the same fields at the root of the request, alongside existing profile fields:
+
+```json
+{"joiningDate":"2026-07-01","annualRemainingDays":14,"compensatoryRemainingDays":3}
+```
+
+Joining dates must be actual calendar dates in YYYY-MM-DD format. Annual remaining days accept 0–21 and compensatory days accept 0–365, with up to four decimal places. Balance edits set the available remainder absolutely and require the existing individual balance permission. Joining-date-only edits retain the existing project administrator access policy. Annual edits require a joining date, which can be provided in the same request.
+
+Annual corrections are recorded with actor/reason in `vacation_annual_adjustments`, scoped to the current contract period. Accrual continues after a correction, and the correction expires on the contract anniversary. Pending and approved annual requests are evaluated against their dates and the current joining date, so correcting a joining date does not leave old allocation-period metadata as the source of truth. Compensatory credits remain separate and survive annual renewal. All balance changes and profile persistence share one employee lock and transaction.
+
+Apply `database/20261112_vacation_annual_adjustments.sql` before deploying the code. The migration is rerunnable and changes no employee balances. Local authentication/vacation regression checks passed: 87 tests, including PostgreSQL cases for combined edits, retry idempotency, ongoing accrual, anniversary expiry, pending requests, validation, and rollback. Deployed November 12 after a verified full database backup. The staged production build and 68 non-database tests passed; the migration was applied and only ce-api-back restarted. Rollback source/build and the database dump are retained under /root/deployments/taqnia-joining-20261112/backup.

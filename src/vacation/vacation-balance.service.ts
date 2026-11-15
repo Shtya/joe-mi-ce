@@ -1,3 +1,4 @@
+import { VacationAnnualAdjustment } from "entities/employee/vacation-annual-adjustment.entity";
 import {
   BadRequestException,
   ForbiddenException,
@@ -19,6 +20,12 @@ import {
   roundDays,
 } from "./vacation-balance.util";
 import { vacationBalanceType } from "./vacation-balance-type";
+
+export interface UserVacationBalanceUpdate {
+  joiningDate?: string;
+  annualRemainingDays?: number;
+  compensatoryRemainingDays?: number;
+}
 
 interface UsageRow {
   userId?: string;
@@ -204,12 +211,20 @@ export class VacationBalanceService {
       `SELECT COALESCE(SUM(days),0)::text AS days FROM vacation_compensatory_credits WHERE user_id = $1 AND deleted_at IS NULL`,
       [user.id],
     );
+    const annualAdjustments: { days: string }[] = account
+      ? await manager.query(
+          `SELECT COALESCE(SUM(days),0)::text AS days FROM vacation_annual_adjustments
+       WHERE user_id=$1 AND period_start=$2 AND deleted_at IS NULL`,
+          [user.id, contractPeriod(account.joiningDate, today).start],
+        )
+      : [];
     return this.calculateSnapshot(
       account,
       user.id,
       today,
       rows,
       Number(credits[0]?.days ?? 0),
+      Number(annualAdjustments[0]?.days ?? 0),
     );
   }
 
@@ -221,14 +236,13 @@ export class VacationBalanceService {
     today: string,
     rows: UsageRow[],
     compensatoryGranted: number,
+    annualAdjustmentDays = 0,
   ) {
     const period = account ? contractPeriod(account.joiningDate, today) : null;
     const inCurrentPeriod = account
       ? (row: UsageRow) =>
           row.date >= account.joiningDate &&
-          (row.period ??
-            contractPeriod(account.joiningDate, row.date).start) ===
-            period.start
+          contractPeriod(account.joiningDate, row.date).start === period.start
       : () => false;
     const periodRows = rows.filter(inCurrentPeriod);
     const sum = (values: UsageRow[], key: "annual" | "compensatory") =>
@@ -238,7 +252,9 @@ export class VacationBalanceService {
     const compensatoryUsed = sum(rows, "compensatory");
     // Keep historical debt visible: imported/existing leave can exceed
     // today's accrual and must not disappear when credits are granted.
-    const annualRemaining = roundDays(accrued - annualUsed);
+    const annualRemaining = roundDays(
+      accrued + annualAdjustmentDays - annualUsed,
+    );
     const compensatoryRemaining = Math.max(
       0,
       roundDays(compensatoryGranted - compensatoryUsed),
@@ -275,10 +291,12 @@ export class VacationBalanceService {
   }
 
   summary(balance: {
+    joiningDate: string | null;
     annualRemainingDays: number;
     compensatoryRemainingDays: number;
   }) {
     return {
+      joiningDate: balance.joiningDate,
       annualRemainingDays: balance.annualRemainingDays,
       compensatoryRemainingDays: balance.compensatoryRemainingDays,
     };
@@ -293,6 +311,7 @@ export class VacationBalanceService {
   ) {
     type Balance = ReturnType<VacationBalanceService["calculateSnapshot"]>;
     const balances = new Map<string, Balance>();
+    const joiningDates = new Map<string, string>();
     if (users.length && actor?.id) {
       await this.dataSource.transaction("REPEATABLE READ", async (manager) => {
         const requester = await manager.findOne(User, {
@@ -315,18 +334,30 @@ export class VacationBalanceService {
         const employeeProjects = new Map(
           allowed.map((user) => [user.id, this.projectId(user)]),
         );
-        const accounts = (
-          await manager.find(VacationBalanceAccount, {
-            where: { userId: In(allowed.map((user) => user.id)) },
-            relations: ["project"],
-          })
-        ).filter(
+        const allAccounts = await manager.find(VacationBalanceAccount, {
+          where: { userId: In(allowed.map((user) => user.id)) },
+          relations: ["project"],
+        });
+        for (const account of allAccounts) {
+          if (account.projectId === employeeProjects.get(account.userId)) {
+            joiningDates.set(account.userId, account.joiningDate);
+          }
+        }
+        const accounts = allAccounts.filter(
           (account) =>
             account.project?.name?.trim().toLowerCase() === "taqnia" &&
             account.projectId === employeeProjects.get(account.userId),
         );
-        if (!accounts.length) return;
-        const ids = accounts.map((account) => account.userId);
+        const accountIds = new Set(accounts.map((account) => account.userId));
+        const withoutAccount = allowed.filter(
+          (user) =>
+            !accountIds.has(user.id) &&
+            (user.project?.name ?? user.branch?.project?.name)
+              ?.trim()
+              .toLowerCase() === "taqnia",
+        );
+        const ids = [...accountIds, ...withoutAccount.map((user) => user.id)];
+        if (!ids.length) return;
         const usage = await this.usage(manager, ids);
         const credits: { userId: string; days: string }[] = await manager.query(
           `SELECT user_id AS "userId", SUM(days)::text AS days
@@ -337,6 +368,19 @@ export class VacationBalanceService {
         const creditsByUser = new Map(
           credits.map((credit) => [credit.userId, Number(credit.days)]),
         );
+        const annualRows: { userId: string; period: string; days: string }[] =
+          await manager.query(
+            `SELECT user_id AS "userId", period_start::text AS period, SUM(days)::text AS days
+           FROM vacation_annual_adjustments WHERE user_id=ANY($1::uuid[]) AND deleted_at IS NULL
+           GROUP BY user_id, period_start`,
+            [ids],
+          );
+        const annualByUserPeriod = new Map(
+          annualRows.map((row) => [
+            `${row.userId}:${row.period}`,
+            Number(row.days),
+          ]),
+        );
         const usageByUser = new Map<string, UsageRow[]>();
         for (const row of usage) {
           const rows = usageByUser.get(row.userId) ?? [];
@@ -344,6 +388,18 @@ export class VacationBalanceService {
           usageByUser.set(row.userId, rows);
         }
         const today = balanceToday(now);
+        for (const user of withoutAccount) {
+          balances.set(
+            user.id,
+            this.calculateSnapshot(
+              null,
+              user.id,
+              today,
+              usageByUser.get(user.id) ?? [],
+              creditsByUser.get(user.id) ?? 0,
+            ),
+          );
+        }
         for (const account of accounts) {
           balances.set(
             account.userId,
@@ -353,6 +409,9 @@ export class VacationBalanceService {
               today,
               usageByUser.get(account.userId) ?? [],
               creditsByUser.get(account.userId) ?? 0,
+              annualByUserPeriod.get(
+                `${account.userId}:${contractPeriod(account.joiningDate, today).start}`,
+              ) ?? 0,
             ),
           );
         }
@@ -360,6 +419,8 @@ export class VacationBalanceService {
     }
     return users.map((user) => ({
       ...user,
+      joiningDate:
+        joiningDates.get(user.id) ?? (user as any).joiningDate ?? null,
       vacationBalance: balances.has(user.id)
         ? this.summary(balances.get(user.id))
         : null,
@@ -374,34 +435,28 @@ export class VacationBalanceService {
   }
 
   async setJoiningDate(userId: string, joiningDate: string, actor: User) {
+    return this.withEmployee(userId, async (manager, user) => {
+      await this.access(manager, user, actor, true);
+      await this.saveJoiningDate(manager, user, joiningDate);
+      return this.snapshot(manager, user, balanceToday());
+    });
+  }
+
+  private async saveJoiningDate(
+    manager: EntityManager,
+    user: User,
+    joiningDate: string,
+  ) {
     try {
       parseBalanceDate(joiningDate);
     } catch {
-      throw new BadRequestException("Invalid joining date");
+      throw new BadRequestException("Invalid joining date; use YYYY-MM-DD");
     }
-    return this.withEmployee(userId, async (manager, user) => {
-      await this.access(manager, user, actor, true);
-      const existing = await manager.findOne(VacationBalanceAccount, {
-        where: { userId },
-      });
-      if (existing && existing.joiningDate !== joiningDate) {
-        const allocated: { count: string }[] = await manager.query(
-          `SELECT count(*)::text AS count FROM vacation_dates d JOIN vacations v ON v.id=d.vacation_id WHERE v.user_id=$1 AND d.balance_period_start IS NOT NULL AND v.deleted_at IS NULL AND d.deleted_at IS NULL AND v.overall_status IN ('pending','approved')`,
-          [userId],
-        );
-        if (Number(allocated[0]?.count) > 0) {
-          throw new BadRequestException(
-            "Joining date cannot change while allocated vacation requests exist",
-          );
-        }
-      }
-      await manager.save(VacationBalanceAccount, {
-        userId,
-        projectId: this.projectId(user),
-        joiningDate,
-        periodStart: contractPeriod(joiningDate, balanceToday()).start,
-      });
-      return this.snapshot(manager, user, balanceToday());
+    await manager.save(VacationBalanceAccount, {
+      userId: user.id,
+      projectId: this.projectId(user),
+      joiningDate,
+      periodStart: contractPeriod(joiningDate, balanceToday()).start,
     });
   }
 
@@ -441,39 +496,165 @@ export class VacationBalanceService {
     actor: User,
     updateUser?: (manager: EntityManager) => Promise<T>,
   ) {
-    if (
-      typeof days !== "number" ||
-      !Number.isFinite(days) ||
-      days < 0 ||
-      days > 365 ||
-      roundDays(days) !== days
-    ) {
-      throw new BadRequestException(
-        "Compensatory remaining days must be between 0 and 365, with at most four decimal places",
-      );
+    return this.updateUserBalance(
+      userId,
+      { compensatoryRemainingDays: days },
+      actor,
+      updateUser,
+    );
+  }
+
+  private validateBalanceUpdateInput(values: UserVacationBalanceUpdate) {
+    if (values.joiningDate !== undefined) {
+      try {
+        parseBalanceDate(values.joiningDate);
+      } catch {
+        throw new BadRequestException("Invalid joining date; use YYYY-MM-DD");
+      }
     }
-    return this.withEmployee(userId, async (manager, user) => {
-      await this.access(manager, user, actor, true);
+    for (const [value, maximum, label] of [
+      [values.annualRemainingDays, 21, "Annual"],
+      [values.compensatoryRemainingDays, 365, "Compensatory"],
+    ] as const) {
+      if (
+        value !== undefined &&
+        (typeof value !== "number" ||
+          !Number.isFinite(value) ||
+          value < 0 ||
+          value > maximum ||
+          roundDays(value) !== value)
+      ) {
+        throw new BadRequestException(
+          `${label} remaining days must be between 0 and ${maximum}, with at most four decimal places`,
+        );
+      }
+    }
+  }
+
+  private async applyBalanceUpdates(
+    manager: EntityManager,
+    user: User,
+    values: UserVacationBalanceUpdate,
+    actor: User,
+    action: "create" | "update",
+  ) {
+    if (
+      values.annualRemainingDays !== undefined ||
+      values.compensatoryRemainingDays !== undefined
+    ) {
       await this.authorizeCompensatoryGrant(manager, actor);
-      const current = await this.snapshot(manager, user, balanceToday());
+    }
+    if (values.joiningDate !== undefined) {
+      await this.saveJoiningDate(manager, user, values.joiningDate);
+    }
+    const current = await this.snapshot(manager, user, balanceToday());
+    if (values.annualRemainingDays !== undefined) {
+      if (!current.joiningDate) {
+        throw new BadRequestException(VacationBalanceService.joinMessage);
+      }
       const adjustment = roundDays(
-        days -
+        values.annualRemainingDays - current.annualRemainingDays,
+      );
+      if (adjustment !== 0) {
+        await manager.save(VacationAnnualAdjustment, {
+          userId: user.id,
+          periodStart: current.periodStart,
+          days: String(adjustment),
+          grantedById: actor.id,
+          reason: `Annual remaining balance set to ${values.annualRemainingDays} days via user ${action === "create" ? "creation" : "update"}`,
+        });
+      }
+    }
+    if (values.compensatoryRemainingDays !== undefined) {
+      const adjustment = roundDays(
+        values.compensatoryRemainingDays -
           (current.compensatoryGrantedDays -
             current.compensatoryUsedOrReservedDays),
       );
       if (adjustment !== 0) {
         await manager.save(VacationCompensatoryCredit, {
-          userId,
+          userId: user.id,
           days: String(adjustment),
-          reason: `Compensatory remaining balance set to ${days} days via user update`,
           grantedById: actor.id,
+          reason: `Compensatory remaining balance set to ${values.compensatoryRemainingDays} days via user ${action === "create" ? "creation" : "update"}`,
         });
       }
+    }
+  }
+
+  async createUserBalance<T extends { id: string }>(
+    values: UserVacationBalanceUpdate,
+    actor: User,
+    createUser: (manager: EntityManager) => Promise<T>,
+  ): Promise<{
+    user: T;
+    vacationBalance: ReturnType<VacationBalanceService["summary"]>;
+  }> {
+    this.validateBalanceUpdateInput(values);
+    return this.dataSource.transaction(async (manager) => {
+      if (
+        values.annualRemainingDays !== undefined ||
+        values.compensatoryRemainingDays !== undefined
+      ) {
+        await this.authorizeCompensatoryGrant(manager, actor);
+      }
+      const createdUser = await createUser(manager);
+      const user = await this.employee(manager, createdUser.id);
+      await this.access(manager, user, actor, true);
+      await this.applyBalanceUpdates(manager, user, values, actor, "create");
+      return {
+        user: createdUser,
+        vacationBalance: this.summary(
+          await this.snapshot(manager, user, balanceToday()),
+        ),
+      };
+    });
+  }
+
+  async validateImportedBalance(
+    userId: string,
+    values: UserVacationBalanceUpdate,
+    actor: User,
+  ) {
+    this.validateBalanceUpdateInput(values);
+    const manager = this.dataSource.manager;
+    const user = await this.employee(manager, userId);
+    await this.access(manager, user, actor, true);
+    if (
+      values.annualRemainingDays !== undefined ||
+      values.compensatoryRemainingDays !== undefined
+    ) {
+      await this.authorizeCompensatoryGrant(manager, actor);
+    }
+    const account = await manager.findOne(VacationBalanceAccount, {
+      where: { userId },
+    });
+    if (
+      values.annualRemainingDays !== undefined &&
+      !values.joiningDate &&
+      !account
+    ) {
+      throw new BadRequestException(VacationBalanceService.joinMessage);
+    }
+  }
+
+  async updateUserBalance<T = undefined>(
+    userId: string,
+    values: UserVacationBalanceUpdate,
+    actor: User,
+    updateUser?: (manager: EntityManager) => Promise<T>,
+  ) {
+    this.validateBalanceUpdateInput(values);
+    return this.withEmployee(userId, async (manager, user) => {
+      await this.access(manager, user, actor, true);
+      await this.applyBalanceUpdates(manager, user, values, actor, "update");
       const updatedUser = updateUser ? await updateUser(manager) : undefined;
-      const balance = this.summary(
-        await this.snapshot(manager, user, balanceToday()),
-      );
-      return { user: updatedUser, vacationBalance: balance };
+      return {
+        user: updatedUser,
+        vacationBalance: this.summary(
+          await this.snapshot(manager, user, balanceToday()),
+        ),
+      };
     });
   }
 

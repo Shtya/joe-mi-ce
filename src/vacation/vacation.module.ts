@@ -1,3 +1,4 @@
+import { VacationAnnualAdjustment } from "entities/employee/vacation-annual-adjustment.entity";
 import { VacationBalanceReadModule } from "src/vacation/vacation-balance-read.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -26,6 +27,7 @@ import { Project } from "entities/project.entity";
       Project,
       VacationBalanceAccount,
       VacationCompensatoryCredit,
+      VacationAnnualAdjustment,
     ]),
   ],
   controllers: [VacationBalanceController, VacationController],

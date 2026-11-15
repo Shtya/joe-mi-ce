@@ -48,7 +48,7 @@ export class AuthController {
   ) {}
 
   @UseGuards(AuthGuard)
-  @Post("auth/register")
+  @Post(["auth/register", "users"])
   @UseInterceptors(FileInterceptor("avatar", multerOptions))
   async register(
     @Req() req: any,
@@ -58,7 +58,28 @@ export class AuthController {
     if (!req.user && dto.role !== ERole.SUPER_ADMIN) {
       throw new ForbiddenException("Only super admin can be created this way");
     }
-    return this.authService.register(req.user, dto, file);
+    if (
+      dto.joiningDate !== undefined ||
+      dto.annualRemainingDays !== undefined ||
+      dto.compensatoryRemainingDays !== undefined
+    ) {
+      const result = await this.balances.createUserBalance(
+        {
+          joiningDate: dto.joiningDate,
+          annualRemainingDays: dto.annualRemainingDays,
+          compensatoryRemainingDays: dto.compensatoryRemainingDays,
+        },
+        req.user,
+        (manager) => this.authService.register(req.user, dto, file, manager),
+      );
+      return {
+        ...result.user,
+        joiningDate: result.vacationBalance?.joiningDate ?? null,
+        vacationBalance: result.vacationBalance,
+      };
+    }
+    const user = await this.authService.register(req.user, dto, file);
+    return (await this.balances.withBalances([user], req.user))[0];
   }
 
   @Post("auth/login")
@@ -129,15 +150,27 @@ export class AuthController {
     @Req() req: any,
     @UploadedFile() file?: Express.Multer.File,
   ) {
-    if (dto.compensatoryRemainingDays !== undefined) {
-      const result = await this.balances.setCompensatoryRemainingDays(
+    if (
+      dto.joiningDate !== undefined ||
+      dto.annualRemainingDays !== undefined ||
+      dto.compensatoryRemainingDays !== undefined
+    ) {
+      const result = await this.balances.updateUserBalance(
         id,
-        dto.compensatoryRemainingDays,
+        {
+          joiningDate: dto.joiningDate,
+          annualRemainingDays: dto.annualRemainingDays,
+          compensatoryRemainingDays: dto.compensatoryRemainingDays,
+        },
         req.user,
         (manager) =>
           this.authService.updateUser(id, dto, req.user, file, manager),
       );
-      return { ...result.user, vacationBalance: result.vacationBalance };
+      return {
+        ...result.user,
+        joiningDate: result.vacationBalance?.joiningDate ?? null,
+        vacationBalance: result.vacationBalance,
+      };
     }
     const user = await this.authService.updateUser(id, dto, req.user, file);
     return (await this.balances.withBalances([user], req.user))[0];
@@ -287,7 +320,7 @@ export class AuthController {
 
     try {
       if (filePath.endsWith(".xls")) {
-        const workbook = XLSX.readFile(filePath);
+        const workbook = XLSX.readFile(filePath, { cellDates: true });
         const sheetName = workbook.SheetNames[0];
         const rows: any[] = XLSX.utils.sheet_to_json(
           workbook.Sheets[sheetName],
@@ -332,7 +365,10 @@ export class AuthController {
             row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
               const header = headers[colNumber - 1];
               if (header) {
-                rowData[header] = cell.value?.toString().trim();
+                rowData[header] =
+                  cell.value instanceof Date
+                    ? cell.value
+                    : cell.value?.toString().trim();
                 hasData = true;
               }
             });

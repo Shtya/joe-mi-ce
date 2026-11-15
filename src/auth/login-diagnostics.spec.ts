@@ -16,6 +16,7 @@ describe("Login failure diagnostics", () => {
       { signAsync: jest.fn().mockResolvedValue("token") } as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     jest.spyOn(argon2, "verify").mockResolvedValue(true);
     jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);

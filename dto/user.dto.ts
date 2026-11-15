@@ -3,6 +3,8 @@ import {
   IsEnum,
   IsNotEmpty,
   IsNumber,
+  IsDateString,
+  Matches,
   Min,
   Max,
   ValidateIf,
@@ -83,9 +85,37 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   iban?: string;
+
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  joiningDate?: string;
+
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ maxDecimalPlaces: 4, allowInfinity: false, allowNaN: false })
+  @Min(0)
+  @Max(21)
+  annualRemainingDays?: number;
+
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ maxDecimalPlaces: 4, allowInfinity: false, allowNaN: false })
+  @Min(0)
+  @Max(365)
+  compensatoryRemainingDays?: number;
 }
 
 export class UpdateUserDto {
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsDateString({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  joiningDate?: string;
+
+  @ValidateIf((_object, value) => value !== undefined)
+  @IsNumber({ maxDecimalPlaces: 4, allowInfinity: false, allowNaN: false })
+  @Min(0)
+  @Max(21)
+  annualRemainingDays?: number;
+
   @ValidateIf((_object, value) => value !== undefined)
   @IsNumber({ maxDecimalPlaces: 4, allowInfinity: false, allowNaN: false })
   @Min(0)

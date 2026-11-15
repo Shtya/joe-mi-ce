@@ -572,6 +572,33 @@ export class ExportService {
 
     return exportRows.map((item) => {
       const flattened = this.flattenObjectWithEntityPrefixes(item, mainEntity);
+      if (
+        ["user", "users", "team", "teams", "promoter", "promoters"].includes(
+          mainEntityLower,
+        )
+      ) {
+        // These details are supplied only by the authorized Taqnia response.
+        const balance =
+          item.vacationBalanceDetails ??
+          (typeof item.vacationBalance === "object"
+            ? item.vacationBalance
+            : undefined);
+        if (balance && typeof balance.compensatoryRemainingDays === "number") {
+          for (const key of Object.keys(flattened)) {
+            if (
+              /^(user )?(joiningDate|annualRemainingDays|compensatoryRemainingDays)$/.test(
+                key,
+              )
+            )
+              delete flattened[key];
+          }
+          flattened["joining date"] =
+            balance.joiningDate ?? item.joiningDate ?? "";
+          flattened["annual remaining days"] = balance.annualRemainingDays;
+          flattened["compensatory remaining days"] =
+            balance.compensatoryRemainingDays;
+        }
+      }
 
       const isActuallyUnplanned =
         mainEntityLower.includes("unplanned") ||

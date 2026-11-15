@@ -177,6 +177,8 @@ describe("ExportService", () => {
         "shift startTime",
         "shift endTime",
         "Duration",
+        "Late Time",
+        "Total Late Time",
         "Status Code",
       ];
 

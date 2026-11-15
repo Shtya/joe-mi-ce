@@ -35,6 +35,7 @@ import * as fs from "fs";
 import * as ExcelJS from "exceljs";
 import * as XLSX from "xlsx";
 import { parse } from "papaparse";
+import { User } from "entities/user.entity";
 
 @Controller("user")
 @UseGuards(AuthGuard)
@@ -140,6 +141,7 @@ export class UsersController {
   @UseInterceptors(FileInterceptor("file", multerOptions))
   async importUsers(
     @UploadedFile() file: Express.Multer.File,
+    @Req() req: { user: User },
     @Query("dryRun") dryRun?: string,
   ) {
     if (!file) {
@@ -161,7 +163,7 @@ export class UsersController {
         file.mimetype === "application/vnd.ms-excel" ||
         file.originalname.endsWith(".xls")
       ) {
-        const workbook = XLSX.readFile(filePath);
+        const workbook = XLSX.readFile(filePath, { cellDates: true });
         const sheetName = workbook.SheetNames[0];
         rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
           defval: "",
@@ -182,7 +184,7 @@ export class UsersController {
           headers.forEach((h, idx) => {
             const v = row.getCell(idx + 1).value;
             if (v !== null && v !== undefined) {
-              obj[h] = v.toString().trim();
+              obj[h] = v instanceof Date ? v : v.toString().trim();
             }
           });
           rows.push(obj);
@@ -192,7 +194,7 @@ export class UsersController {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
       const isDryRun = dryRun === "true";
-      return await this.usersService.importUsersData(rows, isDryRun);
+      return await this.usersService.importUsersData(rows, isDryRun, req.user);
     } catch (err) {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
       throw err;

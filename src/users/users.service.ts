@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   BadRequestException,
   UnauthorizedException,
+  Optional,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, EntityManager, In, Repository } from "typeorm";
@@ -12,8 +13,14 @@ import { User } from "entities/user.entity";
 import { Branch } from "entities/branch.entity";
 import { Project } from "entities/project.entity";
 import { Brand } from "entities/products/brand.entity";
+import { VacationBalanceAccount } from "entities/employee/vacation-balance-account.entity";
 import { CheckIn, Journey, JourneyPlan } from "entities/all_plans.entity";
 import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
+import {
+  VacationBalanceService,
+  UserVacationBalanceUpdate,
+} from "src/vacation/vacation-balance.service";
+import { readVacationBalanceImport } from "src/vacation/vacation-balance-excel";
 import { ERole } from "enums/Role.enum";
 import {
   UserResponseDto,
@@ -38,10 +45,29 @@ export class UsersService {
     @InjectRepository(Project)
     private readonly projectRepository: Repository<Project>,
     private readonly dataSource: DataSource,
+    // Only UsersModule/AuthModule enable balance-aware spreadsheet imports.
+    @Optional() private readonly balances?: VacationBalanceService,
   ) {}
 
   private get brandRepository(): Repository<Brand> {
     return this.dataSource.getRepository(Brand);
+  }
+
+  private get vacationAccountRepository(): Repository<VacationBalanceAccount> {
+    return this.dataSource.getRepository(VacationBalanceAccount);
+  }
+
+  private async getJoiningDates(
+    userIds: string[],
+    projectId?: string,
+  ): Promise<Map<string, string>> {
+    if (!userIds.length) return new Map();
+    const where: any = { userId: In(userIds) };
+    if (projectId) {
+      where.projectId = projectId;
+    }
+    const accounts = await this.vacationAccountRepository.find({ where });
+    return new Map(accounts.map((a) => [a.userId, a.joiningDate]));
   }
 
   async getUserProfile(userId: string): Promise<UserResponseDto> {
@@ -54,7 +80,11 @@ export class UsersService {
       throw new NotFoundException("User not found");
     }
 
-    return this.mapUserToDto(user);
+    const account = await this.vacationAccountRepository.findOne({
+      where: { userId },
+    });
+
+    return this.mapUserToDto(user, account?.joiningDate ?? null);
   }
   async resolveUserWithProject(userId: string) {
     const user = await this.userRepository.findOne({
@@ -84,7 +114,14 @@ export class UsersService {
       throw new NotFoundException("User not found in this project");
     }
 
-    return this.mapUserToDto(user);
+    const account = await this.vacationAccountRepository.findOne({
+      where: {
+        userId,
+        projectId,
+      },
+    });
+
+    return this.mapUserToDto(user, account?.joiningDate ?? null);
   }
 
   async getProjectUsers(projectId: string): Promise<ProjectUsersResponseDto> {
@@ -119,10 +156,15 @@ export class UsersService {
       relations: ["team", "team.role", "team.assignedBrands"],
     });
 
+    const allUserIds = branches.flatMap((b) => (b.team || []).map((u) => u.id));
+    const joiningDates = await this.getJoiningDates(allUserIds, projectId);
+
     return branches.map((branch) => ({
       branchId: branch.id,
       branchName: branch.name,
-      users: branch.team.map((user) => this.mapUserToDto(user)),
+      users: (branch.team || []).map((user) =>
+        this.mapUserToDto(user, joiningDates.get(user.id) ?? null),
+      ),
     }));
   }
 
@@ -142,10 +184,15 @@ export class UsersService {
       throw new NotFoundException("Branch not found in this project");
     }
 
+    const userIds = (branch.team || []).map((u) => u.id);
+    const joiningDates = await this.getJoiningDates(userIds, projectId);
+
     return {
       branchId: branch.id,
       branchName: branch.name,
-      users: branch.team.map((user) => this.mapUserToDto(user)),
+      users: (branch.team || []).map((user) =>
+        this.mapUserToDto(user, joiningDates.get(user.id) ?? null),
+      ),
     };
   }
 
@@ -155,10 +202,20 @@ export class UsersService {
       relations: ["role", "branch", "assignedBrands"],
     });
 
-    return users.map((user) => this.mapUserToDto(user));
+    const joiningDates = await this.getJoiningDates(
+      users.map((u) => u.id),
+      projectId,
+    );
+
+    return users.map((user) =>
+      this.mapUserToDto(user, joiningDates.get(user.id) ?? null),
+    );
   }
 
-  private mapUserToDto(user: User): UserResponseDto {
+  private mapUserToDto(
+    user: User,
+    joiningDate?: string | null,
+  ): UserResponseDto {
     return {
       id: user.id,
       username: user.username,
@@ -168,6 +225,7 @@ export class UsersService {
       device_id: user.device_id,
       is_active: user.is_active,
       role: user.role?.name,
+      joiningDate: joiningDate ?? null,
       brandAssignmentMode: user.brandAssignmentMode || BrandAssignmentMode.ALL,
       assignedBrands: (user.assignedBrands || []).map((brand) => ({
         id: brand.id,
@@ -199,7 +257,14 @@ export class UsersService {
       relations: ["role", "branch", "assignedBrands"],
     });
 
-    return users.map((user) => this.mapUserToDto(user));
+    const joiningDates = await this.getJoiningDates(
+      users.map((u) => u.id),
+      projectId,
+    );
+
+    return users.map((user) =>
+      this.mapUserToDto(user, joiningDates.get(user.id) ?? null),
+    );
   }
 
   async resolveProjectIdFromUser(userId: string): Promise<string> {
@@ -240,7 +305,9 @@ export class UsersService {
     }
 
     if (!projectId) {
-      throw new BadRequestException("Project ID is required for brand assignment");
+      throw new BadRequestException(
+        "Project ID is required for brand assignment",
+      );
     }
 
     const uniqueBrandIds = [...new Set(brandIds || [])];
@@ -276,12 +343,18 @@ export class UsersService {
     user.brandAssignmentMode = normalizedMode;
     user.assignedBrands =
       normalizedMode === BrandAssignmentMode.CUSTOM
-        ? await this.validateBrandAssignment(projectId, normalizedMode, brandIds)
+        ? await this.validateBrandAssignment(
+            projectId,
+            normalizedMode,
+            brandIds,
+          )
         : [];
     return user;
   }
 
-  async resolveBrandAccessScope(userOrId: User | string): Promise<BrandAccessScope> {
+  async resolveBrandAccessScope(
+    userOrId: User | string,
+  ): Promise<BrandAccessScope> {
     if (!userOrId) {
       throw new UnauthorizedException("Authenticated user is required");
     }
@@ -293,7 +366,13 @@ export class UsersService {
 
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      relations: ["role", "project", "branch", "branch.project", "assignedBrands"],
+      relations: [
+        "role",
+        "project",
+        "branch",
+        "branch.project",
+        "assignedBrands",
+      ],
     });
 
     if (!user) {
@@ -344,7 +423,11 @@ export class UsersService {
     }
   }
 
-  applyBrandScopeToProductQuery(qb: any, productAlias: string, scope: BrandAccessScope) {
+  applyBrandScopeToProductQuery(
+    qb: any,
+    productAlias: string,
+    scope: BrandAccessScope,
+  ) {
     if (scope.isSuper) return;
 
     qb.andWhere(`${productAlias}.project_id = :productScopeProjectId`, {
@@ -444,15 +527,23 @@ export class UsersService {
   async importUsersData(
     rows: any[],
     dryRun: boolean = false,
-  ): Promise<{ success: boolean; updatedCount: number; errors: string[]; preview?: any[] }> {
+    actor?: User,
+  ): Promise<{
+    success: boolean;
+    updatedCount: number;
+    errors: string[];
+    preview?: any[];
+  }> {
     const errors: string[] = [];
     let updatedCount = 0;
     const preview: any[] = [];
 
     for (const row of rows) {
-      const username = row["User"] || row["username"] || row["username "];
+      const username =
+        row["User"] || row["Username"] || row["username"] || row["username "];
       const nationalId = row["ID"] || row["national_id"] || row["national_id "];
-      const mobileNumber = row["Phone"] || row["Phone "] || row["mobile"] || row["mobile "];
+      const mobileNumber =
+        row["Phone"] || row["Phone "] || row["mobile"] || row["mobile "];
 
       if (!username) {
         errors.push(`Row missing username: ${JSON.stringify(row)}`);
@@ -467,7 +558,15 @@ export class UsersService {
         updateData.mobile = mobileNumber.toString().trim();
       }
 
-      if (Object.keys(updateData).length === 0) {
+      let balanceValues: UserVacationBalanceUpdate;
+      try {
+        balanceValues = readVacationBalanceImport(row);
+      } catch (error) {
+        errors.push(`User ${username}: ${error.message}`);
+        continue;
+      }
+      const hasBalance = Object.keys(balanceValues).length > 0;
+      if (Object.keys(updateData).length === 0 && !hasBalance) {
         errors.push(
           `Row for user ${username} missing both national ID and mobile number`,
         );
@@ -483,19 +582,48 @@ export class UsersService {
         continue;
       }
 
-      if (dryRun) {
-        preview.push({
-          username,
-          current: {
-            national_id: user.national_id,
-            mobile: user.mobile,
-          },
-          proposed: updateData,
-        });
-      } else {
-        await this.userRepository.update({ id: user.id }, updateData);
+      try {
+        if (hasBalance) {
+          if (!actor?.id)
+            throw new ForbiddenException("Authenticated importer is required");
+          if (!this.balances)
+            throw new BadRequestException(
+              "Vacation balance import is unavailable",
+            );
+          if (dryRun) {
+            await this.balances.validateImportedBalance(
+              user.id,
+              balanceValues,
+              actor,
+            );
+          } else {
+            await this.balances.updateUserBalance(
+              user.id,
+              balanceValues,
+              actor,
+              async (manager) => {
+                if (Object.keys(updateData).length)
+                  await manager.update(User, { id: user.id }, updateData);
+              },
+            );
+          }
+        }
+        if (dryRun) {
+          preview.push({
+            username,
+            current: {
+              national_id: user.national_id,
+              mobile: user.mobile,
+            },
+            proposed: { ...updateData, ...balanceValues },
+          });
+        } else if (!hasBalance) {
+          await this.userRepository.update({ id: user.id }, updateData);
+        }
+        updatedCount++;
+      } catch (error) {
+        errors.push(`User ${username}: ${error.message}`);
       }
-      updatedCount++;
     }
 
     return {
@@ -506,38 +634,44 @@ export class UsersService {
     };
   }
 
-  async makeUserInactive(userId: string): Promise<{ success: boolean; message: string }> {
+  async makeUserInactive(
+    userId: string,
+  ): Promise<{ success: boolean; message: string }> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
-    
+
     await this.userRepository.update({ id: userId }, { is_active: false });
-    return { success: true, message: 'User is now inactive' };
+    return { success: true, message: "User is now inactive" };
   }
 
-  async toggleUserActive(userId: string): Promise<{ success: boolean; message: string; is_active: boolean }> {
+  async toggleUserActive(
+    userId: string,
+  ): Promise<{ success: boolean; message: string; is_active: boolean }> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
-    
+
     const newStatus = !user.is_active;
     await this.userRepository.update({ id: userId }, { is_active: newStatus });
-    return { 
-      success: true, 
-      message: newStatus ? 'User is now active' : 'User is now inactive',
-      is_active: newStatus 
+    return {
+      success: true,
+      message: newStatus ? "User is now active" : "User is now inactive",
+      is_active: newStatus,
     };
   }
 
-  async removeUserFromBranch(userId: string): Promise<{ success: boolean; message: string }> {
+  async removeUserFromBranch(
+    userId: string,
+  ): Promise<{ success: boolean; message: string }> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundException("User not found");
     }
-    
+
     await this.userRepository.update({ id: userId }, { branch: null });
-    return { success: true, message: 'User removed from branch' };
+    return { success: true, message: "User removed from branch" };
   }
 }

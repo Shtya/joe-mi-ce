@@ -28,6 +28,7 @@ describe("AuthService MAC binding", () => {
       jwtService as any,
       usersService as any,
       {} as any,
+      {} as never,
     );
     jest.spyOn(argon2, "verify").mockResolvedValue(true);
   });
@@ -216,5 +217,102 @@ describe("AuthService MAC binding", () => {
     ).rejects.toBeInstanceOf(ForbiddenException);
 
     expect(userRepository.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("AuthService importSinglePromoter with vacation balances", () => {
+  const userRepository = {
+    findOne: jest.fn(),
+    create: jest.fn((dto) => ({ ...dto, id: "created-promoter-id" })),
+    save: jest.fn(async (user) => user),
+  };
+  const roleRepository = {
+    findOne: jest
+      .fn()
+      .mockResolvedValue({ id: "role-promoter", name: ERole.PROMOTER }),
+  };
+  const balances = {
+    createUserBalance: jest.fn(async (values, actor, createUser) => {
+      const user = await createUser({
+        getRepository: () => userRepository,
+      } as any);
+      return { user, vacationBalance: values };
+    }),
+    updateUserBalance: jest.fn(),
+  };
+  const usersService = {
+    resolveProjectIdFromUser: jest.fn().mockResolvedValue("project-1"),
+  };
+
+  let service: AuthService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new AuthService(
+      userRepository as any,
+      roleRepository as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      usersService as any,
+      {} as any,
+      balances as any,
+    );
+  });
+
+  it("creates a new promoter and initializes balances atomically via createUserBalance", async () => {
+    userRepository.findOne.mockResolvedValue(null);
+    const actor = { id: "admin-1", role: { name: "admin" } } as any;
+
+    const row = {
+      username: "promoter-import",
+      name: "New Promoter",
+      "joining date": "2026-07-01",
+      "annual remaining days": "14",
+      "compensatory remaining days": "3",
+    };
+
+    const result = await service.importSinglePromoter(row, actor, "project-1");
+    expect(balances.createUserBalance).toHaveBeenCalledWith(
+      {
+        joiningDate: "2026-07-01",
+        annualRemainingDays: 14,
+        compensatoryRemainingDays: 3,
+      },
+      actor,
+      expect.any(Function),
+    );
+    expect(result).toBeDefined();
+    expect(result.username).toBe("promoter-import");
+  });
+
+  it("updates balance of an existing promoter via updateUserBalance", async () => {
+    const existing = {
+      id: "existing-id",
+      username: "existing-promoter",
+      deleted_at: null,
+    };
+    userRepository.findOne.mockResolvedValue(existing);
+    const actor = { id: "admin-1", role: { name: "admin" } } as any;
+
+    const row = {
+      username: "existing-promoter",
+      name: "Existing Promoter",
+      "joining date": "2026-07-01",
+      "annual remaining days": "10",
+      "compensatory remaining days": "2",
+    };
+
+    const result = await service.importSinglePromoter(row, actor, "project-1");
+    expect(balances.updateUserBalance).toHaveBeenCalledWith(
+      "existing-id",
+      {
+        joiningDate: "2026-07-01",
+        annualRemainingDays: 10,
+        compensatoryRemainingDays: 2,
+      },
+      actor,
+    );
+    expect(result).toBe(existing);
   });
 });

@@ -26,6 +26,8 @@ import axios from "axios";
 import { ProjectService } from "src/project/project.service";
 import { BrandAssignmentMode } from "enums/BrandAssignmentMode.enum";
 import { describeLoginFailure } from "./login-failure";
+import { VacationBalanceService } from "src/vacation/vacation-balance.service";
+import { readVacationBalanceImport } from "src/vacation/vacation-balance-excel";
 const PROMOTER_HEADER_MAP: Record<string, string> = {
   "promoter username": "username",
   username: "username",
@@ -45,6 +47,18 @@ const PROMOTER_HEADER_MAP: Record<string, string> = {
   "promoter image": "avatar_url",
   password: "password",
   pass: "password",
+  "joining date": "joiningDate",
+  joiningdate: "joiningDate",
+  joining_date: "joiningDate",
+  "annual remaining days": "annualRemainingDays",
+  annualremainingdays: "annualRemainingDays",
+  annual_remaining_days: "annualRemainingDays",
+  "compensatory remaining days": "compensatoryRemainingDays",
+  compensatoryremainingdays: "compensatoryRemainingDays",
+  compensatory_remaining_days: "compensatoryRemainingDays",
+  "تاريخ الالتحاق": "joiningDate",
+  "رصيد الإجازة السنوية": "annualRemainingDays",
+  "رصيد الإجازة التعويضية": "compensatoryRemainingDays",
 };
 const normalizeHeader = (h: string) =>
   h.trim().toLowerCase().replace(/\s+/g, " ");
@@ -62,14 +76,23 @@ export class AuthService {
     private jwtService: JwtService,
     private readonly userService: UsersService,
     private readonly projectService: ProjectService,
+    private readonly balances: VacationBalanceService,
   ) {}
 
   async register(
     requester: User | null,
     dto: RegisterDto,
     file?: Express.Multer.File,
+    manager?: EntityManager,
   ) {
-    const existingUser = await this.userRepository.findOne({
+    const userRepository = manager?.getRepository(User) ?? this.userRepository;
+    const roleRepository = manager?.getRepository(Role) ?? this.roleRepository;
+    const projectRepository =
+      manager?.getRepository(Project) ?? this.projectRepository;
+    const branchRepository =
+      manager?.getRepository(Branch) ?? this.branchRepository;
+
+    const existingUser = await userRepository.findOne({
       where: { username: dto.username },
       withDeleted: true,
     });
@@ -77,11 +100,13 @@ export class AuthService {
       if (existingUser.deleted_at) {
         existingUser.deleted_at = null;
 
-        return await this.userRepository.save(existingUser);
+        const restored = await userRepository.save(existingUser);
+        const { password, ...result } = restored;
+        return result;
       } else throw new BadRequestException("username already exists");
     }
     if (dto.mobile) {
-      const existingUserPhone = await this.userRepository.findOne({
+      const existingUserPhone = await userRepository.findOne({
         where: { mobile: dto.mobile },
         withDeleted: true,
       });
@@ -90,7 +115,7 @@ export class AuthService {
         throw new BadRequestException("mobile already exists");
       }
     }
-    const role = await this.roleRepository.findOne({
+    const role = await roleRepository.findOne({
       where: { name: dto.role },
     });
     if (!role) throw new BadRequestException("Invalid role specified");
@@ -147,7 +172,7 @@ export class AuthService {
         throw new BadRequestException("Project ID is required for this role");
       }
 
-      project = await this.projectRepository.findOne({
+      project = await projectRepository.findOne({
         where: { id: projectId },
       });
       if (!project) throw new BadRequestException("Project not found");
@@ -156,7 +181,7 @@ export class AuthService {
     // Handle branch
     let branch: Branch | null = null;
     if (dto.branch_id) {
-      branch = await this.branchRepository.findOne({
+      branch = await branchRepository.findOne({
         where: { id: dto.branch_id, project: { id: project.id } },
         relations: ["supervisor", "team", "project"],
       });
@@ -167,7 +192,7 @@ export class AuthService {
       }
 
       // Load all branches in the same project
-      const projectBranches = await this.branchRepository.find({
+      const projectBranches = await branchRepository.find({
         where: { project: { id: project.id } },
         relations: ["supervisor", "team"],
       });
@@ -220,7 +245,7 @@ export class AuthService {
       avatar_url = `/uploads/avatars/${fileName}`;
     }
 
-    const user = this.userRepository.create({
+    const user = userRepository.create({
       username: dto.username,
       password: await argon2.hash(dto.password),
       name: dto.name,
@@ -246,18 +271,18 @@ export class AuthService {
       dto.brandIds || [],
     );
 
-    const savedUser = await this.userRepository.save(user);
+    const savedUser = await userRepository.save(user);
 
     // Assign supervisor or promoter to the branch
     if (branch && dto.role === ERole.SUPERVISOR) {
       branch.supervisor = savedUser;
-      await this.branchRepository.save(branch);
+      await branchRepository.save(branch);
     }
 
     if (branch && dto.role === ERole.PROMOTER) {
       if (!branch.team) branch.team = [];
       branch.team.push(savedUser);
-      await this.branchRepository.save(branch);
+      await branchRepository.save(branch);
     }
 
     if (
@@ -266,7 +291,7 @@ export class AuthService {
       project
     ) {
       project.owner = savedUser;
-      await this.projectRepository.save(project);
+      await projectRepository.save(project);
     }
 
     const { password, ...result } = savedUser;
@@ -639,8 +664,14 @@ export class AuthService {
       );
     }
 
-    const { password, brandIds, compensatoryRemainingDays, ...updateData } =
-      dto;
+    const {
+      password,
+      brandIds,
+      joiningDate,
+      annualRemainingDays,
+      compensatoryRemainingDays,
+      ...updateData
+    } = dto;
     Object.assign(user, updateData);
     return await userRepository.save(user);
   }
@@ -818,12 +849,21 @@ export class AuthService {
       projectId ||
       (await this.userService.resolveProjectIdFromUser(requester.id));
 
-    if (
-      await this.userRepository.findOne({
-        where: { username: row.username },
-        withDeleted: true,
-      })
-    ) {
+    const balanceValues = readVacationBalanceImport(row);
+    const hasBalance = Object.keys(balanceValues).length > 0;
+    const existing = await this.userRepository.findOne({
+      where: { username: row.username },
+      withDeleted: true,
+    });
+    if (existing) {
+      if (hasBalance && !existing.deleted_at) {
+        await this.balances.updateUserBalance(
+          existing.id,
+          balanceValues,
+          requester,
+        );
+        return existing;
+      }
       throw new ConflictException("Username already exists");
     }
 
@@ -866,6 +906,14 @@ export class AuthService {
       }
     }
 
+    if (hasBalance) {
+      const result = await this.balances.createUserBalance(
+        balanceValues,
+        requester,
+        (manager) => manager.getRepository(User).save(user),
+      );
+      return result.user;
+    }
     return await this.userRepository.save(user);
   }
 

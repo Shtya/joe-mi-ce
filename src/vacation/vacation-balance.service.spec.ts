@@ -5,6 +5,7 @@ import { VacationBalanceService } from "./vacation-balance.service";
 import { Project } from "entities/project.entity";
 import { VacationBalanceAccount } from "entities/employee/vacation-balance-account.entity";
 import { VacationCompensatoryCredit } from "entities/employee/vacation-compensatory-credit.entity";
+import { VacationAnnualAdjustment } from "entities/employee/vacation-annual-adjustment.entity";
 
 describe("VacationBalanceService isolation", () => {
   const target = {
@@ -88,16 +89,18 @@ describe("VacationBalanceService isolation", () => {
         return null;
       });
       manager.query.mockImplementation(async (sql: string) =>
-        sql.includes("SUM(days)")
-          ? [{ days: String(credit) }]
-          : usage.map((row) => ({
-              ...row,
-              reason:
-                Number(row.compensatory) > 0
-                  ? "compensatory_leave"
-                  : "annual_leave",
-              compensatoryTracked: true,
-            })),
+        sql.includes("vacation_annual_adjustments")
+          ? []
+          : sql.includes("SUM(days)")
+            ? [{ days: String(credit) }]
+            : usage.map((row) => ({
+                ...row,
+                reason:
+                  Number(row.compensatory) > 0
+                    ? "compensatory_leave"
+                    : "annual_leave",
+                compensatoryTracked: true,
+              })),
       );
       manager.save.mockImplementation(async (entity, record) => {
         if (entity === VacationCompensatoryCredit) {
@@ -410,6 +413,170 @@ describe("VacationBalanceService isolation", () => {
           "2026-10-02",
         ]),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("createUserBalance", () => {
+    const adminUser = {
+      id: "admin",
+      project_id: "taqnia-id",
+      role: { name: "admin" },
+      is_active: true,
+      canGrantCompensatoryLeave: true,
+    } as User;
+    let credit = 0;
+    let annualAdjustments = 0;
+
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date("2026-10-01T09:00:00Z"));
+      credit = 0;
+      annualAdjustments = 0;
+      manager.findOne.mockImplementation(async (entity, options) => {
+        if (entity === User) {
+          if (options?.where?.id === "admin") return adminUser;
+          return {
+            id: "new-user",
+            project_id: "taqnia-id",
+            role: { name: "promoter" },
+          };
+        }
+        if (entity === Project) return { id: "taqnia-id", name: "taqnia" };
+        if (entity === VacationBalanceAccount) {
+          return {
+            userId: "new-user",
+            projectId: "taqnia-id",
+            joiningDate: "2026-07-01",
+            periodStart: "2026-07-01",
+          };
+        }
+        return null;
+      });
+      manager.query.mockImplementation(async (sql: string) => {
+        if (sql.includes("vacation_annual_adjustments")) {
+          return [{ days: String(annualAdjustments) }];
+        }
+        if (sql.includes("SUM(days)")) {
+          return [{ days: String(credit) }];
+        }
+        return [];
+      });
+      manager.save.mockImplementation(async (entity, record) => {
+        if (entity === VacationCompensatoryCredit) {
+          credit += Number(record.days);
+        }
+        if (entity === VacationAnnualAdjustment) {
+          annualAdjustments += Number(record.days);
+        }
+        return record;
+      });
+    });
+
+    it("rejects invalid inputs before creating user", async () => {
+      const createUser = jest.fn();
+      await expect(
+        service.createUserBalance(
+          { annualRemainingDays: 25 },
+          adminUser,
+          createUser,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.createUserBalance(
+          { compensatoryRemainingDays: -1 },
+          adminUser,
+          createUser,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      await expect(
+        service.createUserBalance(
+          { joiningDate: "bad-date" },
+          adminUser,
+          createUser,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it("rejects setting balance adjustments without permission", async () => {
+      const createUser = jest.fn();
+      manager.findOne.mockImplementation(async (entity, options) => {
+        if (entity === User && options?.where?.id === "admin") {
+          return { ...adminUser, canGrantCompensatoryLeave: false };
+        }
+        return null;
+      });
+      await expect(
+        service.createUserBalance(
+          { joiningDate: "2026-07-01", annualRemainingDays: 14 },
+          adminUser,
+          createUser,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it("rejects balance fields for non-Taqnia projects and rolls back", async () => {
+      const createdUser = { id: "non-taqnia-user", name: "Non Taqnia" };
+      const createUser = jest.fn(async () => createdUser);
+      manager.findOne.mockImplementation(async (entity, options) => {
+        if (entity === User) {
+          if (options?.where?.id === "admin") return adminUser;
+          return {
+            id: "non-taqnia-user",
+            project_id: "other-id",
+            role: { name: "promoter" },
+          };
+        }
+        if (entity === Project)
+          return { id: "other-id", name: "Other Project" };
+        return null;
+      });
+
+      await expect(
+        service.createUserBalance(
+          { joiningDate: "2026-07-01", annualRemainingDays: 14 },
+          adminUser,
+          createUser,
+        ),
+      ).rejects.toThrow("Vacation balances are enabled for Taqnia only");
+      expect(createUser).toHaveBeenCalled();
+    });
+
+    it("creates balance account and adjustments atomically during employee creation", async () => {
+      const createdUser = {
+        id: "new-user",
+        username: "newemp",
+        name: "New Employee",
+      };
+      const createUser = jest.fn(async () => createdUser);
+
+      const result = await service.createUserBalance(
+        {
+          joiningDate: "2026-07-01",
+          annualRemainingDays: 14,
+          compensatoryRemainingDays: 3,
+        },
+        adminUser,
+        createUser,
+      );
+
+      expect(createUser).toHaveBeenCalled();
+      expect(manager.save).toHaveBeenCalledWith(
+        VacationBalanceAccount,
+        expect.objectContaining({
+          userId: "new-user",
+          projectId: "taqnia-id",
+          joiningDate: "2026-07-01",
+        }),
+      );
+      expect(result).toEqual({
+        user: createdUser,
+        vacationBalance: {
+          joiningDate: "2026-07-01",
+          annualRemainingDays: 14,
+          compensatoryRemainingDays: 3,
+        },
+      });
     });
   });
 });

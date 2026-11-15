@@ -1,7 +1,6 @@
 import { Column, Entity, JoinColumn, ManyToOne } from "typeorm";
 import { CoreEntity } from "entities/core.entity";
 import { User } from "entities/user.entity";
-import { VacationBalanceAccount } from "./vacation-balance-account.entity";
 
 @Entity("vacation_compensatory_credits")
 export class VacationCompensatoryCredit extends CoreEntity {
@@ -17,9 +16,10 @@ export class VacationCompensatoryCredit extends CoreEntity {
   @Column("text")
   reason: string;
 
-  @ManyToOne(() => VacationBalanceAccount, { onDelete: "CASCADE" })
+  // Compensatory grants can exist before an annual balance account is opened.
+  @ManyToOne(() => User, { onDelete: "CASCADE" })
   @JoinColumn({ name: "user_id" })
-  account: VacationBalanceAccount;
+  user: User;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: "granted_by" })
