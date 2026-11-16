@@ -79,24 +79,40 @@ export class VacationService {
       }
       const user = await this.userRepo.findOne({
         where: { id: dto.userId },
-        relations: ["branch", "journeys", "journeys.branch"],
+        relations: ["branch", "branch.project"],
       });
       if (!user) {
         throw new NotFoundException(
           this.t(this.vacationMessages.userNotFound, lang),
         );
       }
-      if (!dto.branchId) {
-        const branchId = user.branch?.id || user.journeys?.[0]?.branch?.id;
-        if (!branchId) {
-          throw new NotFoundException(
-            this.t(this.vacationMessages.noBranch, lang),
-          );
-        }
-        dto.branchId = branchId;
+      const formattedDates = this.transformAndValidateDates(dto.dates);
+      // Leave dates follow the Saudi business calendar. A planned journey or a
+      // stale branch sent by the app must not override the last actual check-in.
+      const checkInQuery = this.journeyRepo
+        .createQueryBuilder("journey")
+        .innerJoin("journey.checkin", "checkin")
+        .innerJoinAndSelect("journey.branch", "branch")
+        .where("journey.user = :userId", { userId: user.id })
+        .andWhere("checkin.checkInTime < :leaveStartsAt", {
+          leaveStartsAt: new Date(`${formattedDates[0]}T00:00:00+03:00`),
+        });
+      const projectId = user.project_id ?? user.branch?.project?.id;
+      if (projectId) {
+        checkInQuery.andWhere("branch.project = :projectId", { projectId });
+      }
+      const lastJourney = await checkInQuery
+        .orderBy("checkin.checkInTime", "DESC")
+        .addOrderBy("checkin.id", "DESC")
+        .getOne();
+      const branchId = lastJourney?.branch?.id ?? user.branch?.id;
+      if (!branchId) {
+        throw new NotFoundException(
+          this.t(this.vacationMessages.noBranch, lang),
+        );
       }
       const branch = await this.branchRepo.findOne({
-        where: { id: dto.branchId },
+        where: { id: branchId },
       });
       if (!branch) {
         throw new NotFoundException(
@@ -104,7 +120,6 @@ export class VacationService {
         );
       }
 
-      const formattedDates = this.transformAndValidateDates(dto.dates);
       const balanceUser = await this.balances.employee(
         this.userRepo.manager,
         user.id,
@@ -144,6 +159,13 @@ export class VacationService {
               undefined,
               dto.reason,
             );
+            // Allocation already enforces the Taqnia thresholds and contract period.
+            const autoApprove =
+              dto.reason?.trim().toLowerCase() === "annual_leave" &&
+              [1, 2].includes(formattedDates.length) &&
+              allocations.every(
+                (allocation) => allocation.annualBalanceDays === "1",
+              );
             const saved = await manager.save(
               Vacation,
               manager.create(Vacation, {
@@ -151,7 +173,7 @@ export class VacationService {
                 branch: scopedBranch,
                 reason: dto.reason,
                 image_url: imagePath || dto.imageUrl || null,
-                overall_status: "pending",
+                overall_status: autoApprove ? "approved" : "pending",
               }),
             );
             await manager.save(
@@ -164,6 +186,17 @@ export class VacationService {
                 }),
               ),
             );
+            if (autoApprove) {
+              await manager.update(
+                Journey,
+                {
+                  user: { id: employee.id },
+                  date: In(formattedDates),
+                  status: JourneyStatus.ABSENT,
+                },
+                { status: JourneyStatus.VACATION },
+              );
+            }
             return saved.id;
           },
         );
@@ -1116,7 +1149,8 @@ export class VacationService {
     const vacationDates = (vacation.vacationDates || []).map((vd) => ({
       id: vd.id,
       date: vd.date,
-      status: (vd as any).status || "pending",
+      // Dates share the request's approval status; there is no per-date status column.
+      status: vacation.overall_status ?? "pending",
       created_at: vd.created_at,
       updated_at: vd.updated_at,
       deleted_at: vd.deleted_at,

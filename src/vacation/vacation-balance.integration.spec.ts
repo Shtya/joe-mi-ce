@@ -15,7 +15,7 @@ import { Project } from "entities/project.entity";
 import { Branch } from "entities/branch.entity";
 import { Vacation } from "entities/employee/vacation.entity";
 import { VacationDate } from "entities/employee/vacation-date.entity";
-import { Journey } from "entities/all_plans.entity";
+import { Journey, JourneyStatus } from "entities/all_plans.entity";
 import { VacationBalanceService } from "./vacation-balance.service";
 import { VacationService } from "./vacation.service";
 import { readVacationBalanceImport } from "./vacation-balance-excel";
@@ -513,6 +513,186 @@ integration("Taqnia vacation PostgreSQL integration", () => {
     });
   });
 
+  describe("Taqnia annual automatic approval", () => {
+    let target: User;
+    beforeEach(async () => {
+      target = await source.getRepository(User).save({
+        username: "annual-auto-employee",
+        password: "unused",
+        project_id: employee.project_id,
+        branch,
+      });
+    });
+    afterEach(async () => {
+      await source.getRepository(Vacation).delete({ user: { id: target.id } });
+      await source.getRepository(Journey).delete({ user: { id: target.id } });
+      await source.getRepository(User).delete(target.id);
+    });
+    const submit = (dates: string[], reason = "annual_leave") =>
+      vacations.createVacation(
+        { userId: target.id, branchId: branch.id, dates, reason },
+        null,
+        "en",
+        target,
+      );
+
+    it.each([
+      { days: 1, available: 0.5001 },
+      { days: 1, available: 0.6 },
+      { days: 2, available: 1.6001 },
+      { days: 2, available: 1.7 },
+      { days: 2, available: 3 },
+    ])(
+      "immediately approves $days day(s) with $available annual days and deducts full days",
+      async ({ days, available }) => {
+        await balances.updateUserBalance(
+          target.id,
+          { joiningDate: "2026-07-01", annualRemainingDays: available },
+          admin,
+        );
+        const dates = ["2026-11-01", "2026-11-02"].slice(0, days);
+        const journey = await source.getRepository(Journey).save({
+          user: target,
+          branch,
+          projectId: employee.project_id,
+          date: dates[0],
+          status: JourneyStatus.ABSENT,
+        });
+        const result = await submit(dates);
+        expect(result.overall_status).toBe("approved");
+        expect(result.approvedDates).toBe(days);
+        expect(result.pendingDates).toBe(0);
+        expect(result.dates.every((date) => date.status === "approved")).toBe(
+          true,
+        );
+        expect(
+          (
+            await source
+              .getRepository(Vacation)
+              .findOneByOrFail({ id: result.id })
+          ).processedBy,
+        ).toBeUndefined();
+        const snapshot = await balances.getBalance(target.id, target);
+        expect(snapshot.annualRemainingDays).toBeCloseTo(available - days, 4);
+        expect(snapshot.compensatoryUsedOrReservedDays).toBe(0);
+        expect(snapshot.pendingReservedDays).toBe(0);
+        expect(
+          (
+            await source
+              .getRepository(Journey)
+              .findOneByOrFail({ id: journey.id })
+          ).status,
+        ).toBe(JourneyStatus.VACATION);
+        await vacations.updateDateStatus(
+          result.id,
+          { overall_status: "approved" },
+          admin,
+        );
+        expect(
+          (await balances.getBalance(target.id, target)).annualRemainingDays,
+        ).toBeCloseTo(available - days, 4);
+      },
+    );
+    it.each([
+      { days: 1, available: 0.5 },
+      { days: 2, available: 1.6 },
+      { days: 3, available: 2.7 },
+    ])(
+      "rejects $days day(s) at insufficient boundary $available",
+      async ({ days, available }) => {
+        await balances.updateUserBalance(
+          target.id,
+          { joiningDate: "2026-07-01", annualRemainingDays: available },
+          admin,
+        );
+        await expect(
+          submit(["2026-11-01", "2026-11-02", "2026-11-03"].slice(0, days)),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(
+          await source
+            .getRepository(Vacation)
+            .countBy({ user: { id: target.id } }),
+        ).toBe(0);
+      },
+    );
+    it("keeps three-day annual and compensatory requests pending", async () => {
+      await balances.updateUserBalance(
+        target.id,
+        {
+          joiningDate: "2026-07-01",
+          annualRemainingDays: 4,
+          compensatoryRemainingDays: 2,
+        },
+        admin,
+      );
+      expect(
+        (await submit(["2026-11-01", "2026-11-02", "2026-11-03"]))
+          .overall_status,
+      ).toBe("pending");
+      expect(
+        (await submit(["2026-11-04"], "compensatory_leave")).overall_status,
+      ).toBe("pending");
+    });
+    it("does not use the threshold allowance in another contract period", async () => {
+      await balances.updateUserBalance(
+        target.id,
+        { joiningDate: "2026-07-01", annualRemainingDays: 0.6 },
+        admin,
+      );
+      await expect(submit(["2027-07-01"])).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(
+        await source
+          .getRepository(Vacation)
+          .countBy({ user: { id: target.id } }),
+      ).toBe(0);
+    });
+    it("does not let simultaneous requests reuse the threshold allowance", async () => {
+      await balances.updateUserBalance(
+        target.id,
+        { joiningDate: "2026-07-01", annualRemainingDays: 0.6 },
+        admin,
+      );
+      const results = await Promise.allSettled([
+        submit(["2026-11-01"]),
+        submit(["2026-11-02"]),
+      ]);
+      expect(
+        results.filter((result) => result.status === "fulfilled"),
+      ).toHaveLength(1);
+      expect(
+        results.filter((result) => result.status === "rejected"),
+      ).toHaveLength(1);
+    });
+    it("allows zero annual balance imports without creating an annual account", async () => {
+      const users = new UsersService(
+        source.getRepository(User),
+        source.getRepository(Branch),
+        source.getRepository(Project),
+        source,
+        balances,
+      );
+      const row = {
+        Username: target.username,
+        "Annual Remaining Days": 0,
+        "Compensatory Remaining Days": 1.6285714285714283,
+      };
+      for (const dryRun of [true, false]) {
+        expect(await users.importUsersData([row], dryRun, admin)).toMatchObject(
+          { updatedCount: 1, errors: [] },
+        );
+      }
+      expect(
+        balances.summary(await balances.getBalance(target.id, target)),
+      ).toEqual({
+        joiningDate: null,
+        annualRemainingDays: 0,
+        compensatoryRemainingDays: 1.6286,
+      });
+    });
+  });
+
   const request = (dates: string[], reason = "annual_leave") =>
     vacations.createVacation(
       {
@@ -936,8 +1116,9 @@ integration("Taqnia vacation PostgreSQL integration", () => {
       (await balances.getBalance(employee.id, employee)).availableDays,
     ).toBe(before.availableDays);
     await vacations.deleteVacation(weekly.id, admin);
-    for (const id of created)
+    for (const id of created) {
       await source.getRepository(Vacation).softDelete(id);
+    }
   });
 
   it("refreshes anniversaries idempotently without changing compensatory credit", async () => {
@@ -974,13 +1155,14 @@ integration("Taqnia vacation PostgreSQL integration", () => {
         userId: otherEmployee.id,
         branchId: otherBranch.id,
         dates: ["2026-11-01"],
-        reason: "Existing behavior",
+        reason: "annual_leave",
       },
       null,
       "en",
       otherEmployee,
     );
     expect(vacation.id).toBeDefined();
+    expect(vacation.overall_status).toBe("pending");
     await expect(
       balances.getBalance(otherEmployee.id, otherEmployee),
     ).rejects.toMatchObject({ status: 400 });

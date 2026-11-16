@@ -50,11 +50,21 @@ describe("vacation balance Excel input", () => {
     "3 days",
     "0x10",
     "Infinity",
-    "1.12345",
     { formula: "1+2" },
   ])("rejects invalid input %s", (value) => {
     expect(() =>
       readVacationBalanceImport({ "Compensatory Remaining Days": value }),
     ).toThrow(BadRequestException);
+  });
+  it("rounds spreadsheet calculations to the database's four decimal places", () => {
+    expect(
+      readVacationBalanceImport({
+        annualRemainingDays: 1.6285714285714283,
+        compensatoryRemainingDays: "1.5071428571428573",
+      }),
+    ).toEqual({
+      annualRemainingDays: 1.6286,
+      compensatoryRemainingDays: 1.5071,
+    });
   });
 });

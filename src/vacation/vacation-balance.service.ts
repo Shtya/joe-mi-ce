@@ -20,6 +20,7 @@ import {
   roundDays,
 } from "./vacation-balance.util";
 import { vacationBalanceType } from "./vacation-balance-type";
+import { qualifiesForAnnualAutoApproval } from "./annual-vacation-policy";
 
 export interface UserVacationBalanceUpdate {
   joiningDate?: string;
@@ -549,7 +550,7 @@ export class VacationBalanceService {
     }
     const current = await this.snapshot(manager, user, balanceToday());
     if (values.annualRemainingDays !== undefined) {
-      if (!current.joiningDate) {
+      if (!current.joiningDate && values.annualRemainingDays !== 0) {
         throw new BadRequestException(VacationBalanceService.joinMessage);
       }
       const adjustment = roundDays(
@@ -631,6 +632,7 @@ export class VacationBalanceService {
     });
     if (
       values.annualRemainingDays !== undefined &&
+      values.annualRemainingDays !== 0 &&
       !values.joiningDate &&
       !account
     ) {
@@ -704,6 +706,13 @@ export class VacationBalanceService {
     let compensatory =
       type === "compensatory" ? balance.compensatoryRemainingDays : 0;
     const selectedAvailable = type === "annual" ? annual : compensatory;
+    const annualThresholdAllowance =
+      qualifiesForAnnualAutoApproval(dates.length, annual, reason) &&
+      dates.every(
+        (date) =>
+          contractPeriod(balance.joiningDate, date).start ===
+          balance.periodStart,
+      );
     const results: Partial<VacationDate>[] = [];
     for (const date of dates) {
       // Without a joining date there is no contract period: everything is
@@ -712,7 +721,10 @@ export class VacationBalanceService {
         ? contractPeriod(balance.joiningDate, date)
         : null;
       const eligibleAnnual = period?.start === balance.periodStart ? annual : 0;
-      if (roundDays(eligibleAnnual + compensatory) < 1) {
+      if (
+        !annualThresholdAllowance &&
+        roundDays(eligibleAnnual + compensatory) < 1
+      ) {
         const available = Math.floor(selectedAvailable * 100) / 100;
         throw new BadRequestException({
           code: "INSUFFICIENT_VACATION_BALANCE",
@@ -724,11 +736,9 @@ export class VacationBalanceService {
           periodStart: period?.start ?? null,
         });
       }
-      const allocation = allocateVacationDays(
-        1,
-        eligibleAnnual,
-        compensatory,
-      )[0];
+      const allocation = annualThresholdAllowance
+        ? { annualDays: 1, compensatoryDays: 0 }
+        : allocateVacationDays(1, eligibleAnnual, compensatory)[0];
       annual = roundDays(annual - allocation.annualDays);
       compensatory = roundDays(compensatory - allocation.compensatoryDays);
       results.push({
