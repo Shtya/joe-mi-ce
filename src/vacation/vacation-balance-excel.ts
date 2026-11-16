@@ -28,10 +28,12 @@ export function readVacationBalanceImport(
       raw === undefined ||
       raw === null ||
       (typeof raw === "string" && !raw.trim())
-    )
+    ) {
       continue;
-    if (result[key] !== undefined)
+    }
+    if (result[key] !== undefined) {
       throw new BadRequestException(`Duplicate ${key} column`);
+    }
     if (key === "joiningDate") {
       const value =
         raw instanceof Date
@@ -53,17 +55,11 @@ export function readVacationBalanceImport(
       throw new BadRequestException(`${key} must be a number`);
     }
     const value = Number(raw);
-    if (
-      !Number.isFinite(value) ||
-      value < 0 ||
-      value > maximum ||
-      roundDays(value) !== value
-    ) {
-      throw new BadRequestException(
-        `${key} must be between 0 and ${maximum} with at most four decimal places`,
-      );
+    if (!Number.isFinite(value) || value < 0 || value > maximum) {
+      throw new BadRequestException(`${key} must be between 0 and ${maximum}`);
     }
-    result[key] = value;
+    // Excel formulas can carry extra binary/decimal precision; the ledger is numeric(10,4).
+    result[key] = roundDays(value);
   }
   return result;
 }
