@@ -766,11 +766,24 @@ export class ExportService {
         flattened["Check in image"] = formatImageUrl(checkInDoc);
         flattened["Check out image"] = formatImageUrl(checkOutDoc);
 
-        // Normalize Branch Name (Handle flat 'branchName' vs nested 'branch name')
-        if (flattened["branchName"]) {
-          flattened["branch name"] = flattened["branchName"];
-          delete flattened["branchName"];
-        }
+        // Read the visit branch explicitly; deep geography is beyond the
+        // generic flattener's depth limit. Flat names come from optimized plans.
+        flattened["branch name"] = item.branch?.name || item.branchName || "-";
+        flattened["city name"] =
+          item.branch?.city?.name ||
+          item.cityName ||
+          (typeof item.city === "string" ? item.city : undefined) ||
+          "-";
+        flattened["country name"] =
+          item.branch?.city?.region?.country?.name ||
+          item.countryName ||
+          (typeof item.country === "string" ? item.country : undefined) ||
+          "-";
+        delete flattened["branchName"];
+        delete flattened["cityName"];
+        delete flattened["countryName"];
+        delete flattened["city"];
+        delete flattened["country"];
         // Ensure explicit Branch key exists for backward compatibility if needed,
         // but prefer 'branch name' for the ordered list
         if (!flattened["Branch"] && flattened["branch name"]) {
@@ -789,6 +802,7 @@ export class ExportService {
           "date",
           "Check out time",
           "city name",
+          "country name",
           "shift name",
           "shift starttime",
           "shift endtime",
@@ -1098,6 +1112,7 @@ export class ExportService {
           "user name",
           "user username",
           "city name",
+          "country name",
           "Chain",
           "branch name",
           "Check in time",

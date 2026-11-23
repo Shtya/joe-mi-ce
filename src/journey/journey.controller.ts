@@ -254,6 +254,7 @@ export class JourneyController {
         "branch",
         "branch.city",
         "branch.city.region",
+        "branch.city.region.country",
         "shift",
         "journeys",
         "journeys.checkin",
@@ -326,6 +327,7 @@ export class JourneyController {
         "branch",
         "branch.city",
         "branch.city.region",
+        "branch.city.region.country",
         "shift",
         "journeys",
         "journeys.checkin",
@@ -484,6 +486,7 @@ export class JourneyController {
           branchName: plan.branch?.name,
           branchId: plan.branch?.id,
           city: plan.branch?.city?.name,
+          country: plan.branch?.city?.region?.country?.name,
           region: plan.branch?.city?.region?.name,
           promoterName: plan.user?.name,
           promoterId: plan.user?.id,
@@ -1367,6 +1370,12 @@ export class JourneyController {
       is_active: true,
     };
 
+    // Older export clients send overall_status, but journeys persist status.
+    if (filters.status == null && filters.overall_status != null) {
+      filters.status = filters.overall_status;
+    }
+    delete filters.overall_status;
+
     // Handle nested status filter (e.g. filters[status][id])
     if (
       filters.status &&
@@ -1444,6 +1453,7 @@ export class JourneyController {
         "branch",
         "branch.city",
         "branch.city.region",
+        "branch.city.region.country",
         "shift",
         "checkin",
         "branch.chain",

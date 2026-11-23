@@ -118,6 +118,69 @@ describe("ExportService", () => {
     });
   });
 
+  describe("journey export geography", () => {
+    it.each(["journey", "journeys", "journeyplan", "unplanned"])(
+      "includes the actual branch geography in %s exports",
+      (moduleName) => {
+        const [row] = service["cleanDataForExport"](
+          [
+            {
+              branch: {
+                name: "Visit Branch",
+                city: {
+                  name: "Riyadh",
+                  region: { country: { name: "Saudi Arabia" } },
+                },
+              },
+              user: {
+                branch: {
+                  name: "Assigned Branch",
+                  city: { name: "Wrong City" },
+                },
+              },
+            },
+          ],
+          moduleName,
+        );
+        expect(row).toMatchObject({
+          "branch name": "Visit Branch",
+          "city name": "Riyadh",
+          "country name": "Saudi Arabia",
+        });
+      },
+    );
+
+    it.each([null, {}, { name: "Branch with no city", city: null }])(
+      "keeps geography columns when the branch is %p",
+      (branch) => {
+        const [row] = service["cleanDataForExport"]([{ branch }], "unplanned");
+        expect(row).toMatchObject({
+          "branch name": branch?.name || "-",
+          "city name": "-",
+          "country name": "-",
+        });
+      },
+    );
+
+    it("retains flat geography from optimized journey responses", () => {
+      const [row] = service["cleanDataForExport"](
+        [
+          {
+            branchName: "Visit Branch",
+            city: "Riyadh",
+            country: "Saudi Arabia",
+          },
+        ],
+        "journeyplan",
+      );
+      expect(row).toMatchObject({
+        "branch name": "Visit Branch",
+        "city name": "Riyadh",
+        "country name": "Saudi Arabia",
+      });
+    });
+  });
+
   describe("cleanDataForExport - Unplanned Module", () => {
     it("should filter and order columns correctly for unplanned module", () => {
       const sampleData = [
@@ -166,6 +229,7 @@ describe("ExportService", () => {
         "user name",
         "user username",
         "city name",
+        "country name",
         "Chain",
         "branch name",
         "Check in time",
